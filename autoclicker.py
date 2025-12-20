@@ -657,41 +657,64 @@ def handle_load(state: AutoClickerState) -> None:
     run_sequence_loader(state)
 
 def handle_show(state: AutoClickerState) -> None:
-    """Zeigt alle Punkte und Sequenzen an, mit Option zum Umbenennen."""
+    """Zeigt alle Punkte an, ermöglicht Testen und Umbenennen."""
     print_points(state)
 
     with state.lock:
         if not state.points:
             return
+        num_points = len(state.points)
 
-    print("Punkt umbenennen? Eingabe: <Nr> <NeuerName> (oder Enter zum Überspringen)")
-    try:
-        user_input = input("> ").strip()
-        if not user_input:
-            return
+    print("-" * 50)
+    print("Optionen:")
+    print("  <Nr>        - Punkt testen (Maus hinbewegen ohne Klick)")
+    print("  <Nr> <Name> - Punkt umbenennen")
+    print("  Enter       - Zurück")
+    print("-" * 50)
 
-        parts = user_input.split(maxsplit=1)
-        if len(parts) < 2:
-            print("[FEHLER] Format: <Nr> <NeuerName>")
-            return
-
-        point_num = int(parts[0])
-        new_name = parts[1]
-
-        with state.lock:
-            if point_num < 1 or point_num > len(state.points):
-                print(f"[FEHLER] Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
+    while True:
+        try:
+            user_input = input("> ").strip()
+            if not user_input:
                 return
 
-            state.points[point_num - 1].name = new_name
-            print(f"[OK] Punkt {point_num} umbenannt zu '{new_name}'")
+            parts = user_input.split(maxsplit=1)
+            point_num = int(parts[0])
 
-        save_data(state)
+            with state.lock:
+                if point_num < 1 or point_num > num_points:
+                    print(f"[FEHLER] Ungültiger Punkt! Verfügbar: 1-{num_points}")
+                    continue
 
-    except ValueError:
-        print("[FEHLER] Ungültige Nummer!")
-    except (KeyboardInterrupt, EOFError):
-        pass
+                point = state.points[point_num - 1]
+
+            if len(parts) == 1:
+                # Nur Nummer → Testen (Maus hinbewegen)
+                print(f"[TEST] Bewege Maus zu {point.name} ({point.x}, {point.y})...")
+                set_cursor_pos(point.x, point.y)
+                print(f"[TEST] Maus ist jetzt bei {point.name}. Neuer Name? (Enter = behalten)")
+
+                new_name = input("> ").strip()
+                if new_name:
+                    with state.lock:
+                        state.points[point_num - 1].name = new_name
+                    save_data(state)
+                    print(f"[OK] Punkt {point_num} umbenannt zu '{new_name}'")
+                else:
+                    print(f"[OK] Name '{point.name}' beibehalten.")
+
+            else:
+                # Nummer + Name → Direkt umbenennen
+                new_name = parts[1]
+                with state.lock:
+                    state.points[point_num - 1].name = new_name
+                save_data(state)
+                print(f"[OK] Punkt {point_num} umbenannt zu '{new_name}'")
+
+        except ValueError:
+            print("[FEHLER] Ungültige Eingabe!")
+        except (KeyboardInterrupt, EOFError):
+            return
 
 def handle_toggle(state: AutoClickerState) -> None:
     """Startet oder stoppt die Sequenz."""
