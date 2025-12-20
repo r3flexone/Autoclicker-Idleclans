@@ -8,7 +8,7 @@ Starten: python autoclicker.py
 Beenden: CTRL+ALT+Q oder Konsole schließen
 
 Hotkeys:
-  CTRL+ALT+R  - Aktuelle Mausposition aufnehmen
+  CTRL+ALT+A  - Aktuelle Mausposition aufnehmen (Add)
   CTRL+ALT+U  - Letzten Punkt entfernen
   CTRL+ALT+S  - Start/Stop Toggle
   CTRL+ALT+Q  - Programm beenden
@@ -41,7 +41,7 @@ MOD_CONTROL = 0x0002
 MOD_NOREPEAT = 0x4000
 
 # Virtual Key Codes
-VK_R = 0x52
+VK_A = 0x41  # A statt R (R oft von anderen Programmen belegt)
 VK_U = 0x55
 VK_S = 0x53
 VK_Q = 0x51
@@ -328,7 +328,7 @@ def handle_toggle(state: AutoClickerState) -> None:
         else:
             # Starten
             if not state.points:
-                print("\n[FEHLER] Keine Punkte gespeichert! Erst Punkte aufnehmen (CTRL+ALT+R).")
+                print("\n[FEHLER] Keine Punkte gespeichert! Erst Punkte aufnehmen (CTRL+ALT+A).")
                 return
 
             state.is_running = True
@@ -359,7 +359,7 @@ def register_hotkeys() -> bool:
     modifiers = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT
 
     hotkeys = [
-        (HOTKEY_RECORD, VK_R, "CTRL+ALT+R (Aufnehmen)"),
+        (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Aufnehmen)"),
         (HOTKEY_UNDO, VK_U, "CTRL+ALT+U (Rückgängig)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
@@ -390,10 +390,10 @@ def print_help() -> None:
     print("=" * 60)
     print()
     print("Hotkeys:")
-    print("  CTRL+ALT+R  - Aktuelle Mausposition aufnehmen")
-    print("  CTRL+ALT+U  - Letzten Punkt entfernen")
+    print("  CTRL+ALT+A  - Aktuelle Mausposition aufnehmen (Add)")
+    print("  CTRL+ALT+U  - Letzten Punkt entfernen (Undo)")
     print("  CTRL+ALT+S  - Start/Stop Toggle")
-    print("  CTRL+ALT+Q  - Programm beenden")
+    print("  CTRL+ALT+Q  - Programm beenden (Quit)")
     print()
     print("Einstellungen:")
     print(f"  Verzögerung:      {DELAY_SECONDS} Sekunde(n)")
@@ -421,7 +421,7 @@ def main() -> int:
         print("          Möglicherweise werden sie von einem anderen Programm verwendet.")
     print()
 
-    print("Bereit! Drücke CTRL+ALT+R um Punkte aufzunehmen.")
+    print("Bereit! Drücke CTRL+ALT+A um Punkte aufzunehmen.")
     print_status(state)
     print()
 
