@@ -54,7 +54,8 @@ MOD_NOREPEAT = 0x4000
 # Virtual Key Codes
 VK_A = 0x41  # Add Point
 VK_U = 0x55  # Undo
-VK_C = 0x43  # Clear all
+VK_C = 0x43  # Clear all points
+VK_R = 0x52  # Reset all (points + sequences)
 VK_E = 0x45  # Editor
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
@@ -65,11 +66,12 @@ VK_Q = 0x51  # Quit
 HOTKEY_RECORD = 1
 HOTKEY_UNDO = 2
 HOTKEY_CLEAR = 3
-HOTKEY_EDITOR = 4
-HOTKEY_LOAD = 5
-HOTKEY_SHOW = 6
-HOTKEY_TOGGLE = 7
-HOTKEY_QUIT = 8
+HOTKEY_RESET = 4
+HOTKEY_EDITOR = 5
+HOTKEY_LOAD = 6
+HOTKEY_SHOW = 7
+HOTKEY_TOGGLE = 8
+HOTKEY_QUIT = 9
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -169,12 +171,16 @@ class ClickPoint:
 
 @dataclass
 class SequenceStep:
-    """Ein Schritt in einer Sequenz: Punkt-Index und Wartezeit danach."""
-    point_index: int      # Index des Punktes in der Punkteliste
+    """Ein Schritt in einer Sequenz: Koordinaten und Wartezeit danach."""
+    x: int                # X-Koordinate (direkt gespeichert)
+    y: int                # Y-Koordinate (direkt gespeichert)
     delay_after: float    # Wartezeit in Sekunden NACH diesem Klick
+    name: str = ""        # Optionaler Name des Punktes
 
     def __str__(self) -> str:
-        return f"P{self.point_index + 1} → warte {self.delay_after}s"
+        if self.name:
+            return f"{self.name} ({self.x}, {self.y}) → warte {self.delay_after}s"
+        return f"({self.x}, {self.y}) → warte {self.delay_after}s"
 
 @dataclass
 class Sequence:
@@ -229,11 +235,14 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         json.dump(points_data, f, indent=2, ensure_ascii=False)
 
-    # Sequenzen speichern
+    # Sequenzen speichern (mit eingebetteten Koordinaten)
     for name, seq in state.sequences.items():
         seq_data = {
             "name": seq.name,
-            "steps": [{"point_index": s.point_index, "delay_after": s.delay_after} for s in seq.steps]
+            "steps": [
+                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after}
+                for s in seq.steps
+            ]
         }
         filename = f"{name.replace(' ', '_').lower()}.json"
         with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
@@ -251,11 +260,20 @@ def load_points(state: AutoClickerState) -> None:
         print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
-    """Lädt eine einzelne Sequenz-Datei."""
+    """Lädt eine einzelne Sequenz-Datei (neues Format mit eingebetteten Koordinaten)."""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
-            steps = [SequenceStep(s["point_index"], s["delay_after"]) for s in data["steps"]]
+            steps = []
+            for s in data["steps"]:
+                # Neues Format: x, y, name, delay_after direkt gespeichert
+                step = SequenceStep(
+                    x=s["x"],
+                    y=s["y"],
+                    delay_after=s["delay_after"],
+                    name=s.get("name", "")
+                )
+                steps.append(step)
             return Sequence(data["name"], steps)
     except Exception as e:
         print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
@@ -423,12 +441,18 @@ def run_sequence_editor(state: AutoClickerState) -> None:
                 if point_num < 1 or point_num > len(state.points):
                     print(f"  → Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
                     continue
+                # Punkt-Daten direkt kopieren
+                point = state.points[point_num - 1]
+                point_x = point.x
+                point_y = point.y
+                point_name = point.name
 
             if delay < 0:
                 print("  → Wartezeit muss >= 0 sein!")
                 continue
 
-            step = SequenceStep(point_index=point_num - 1, delay_after=delay)
+            # Koordinaten direkt in den Step speichern (unabhängig von Punkten)
+            step = SequenceStep(x=point_x, y=point_y, delay_after=delay, name=point_name)
             steps.append(step)
             print(f"  ✓ Hinzugefügt: {step}")
 
@@ -530,20 +554,13 @@ def sequence_worker(state: AutoClickerState) -> None:
 
             step = sequence.steps[state.current_step_index]
 
-            if step.point_index >= len(state.points):
-                print(f"\n[FEHLER] Punkt P{step.point_index + 1} existiert nicht!")
-                state.stop_event.set()
-                break
-
-            point = state.points[step.point_index]
-
         # Fail-Safe prüfen
         if check_failsafe():
             print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
             state.stop_event.set()
             break
 
-        # Klick ausführen
+        # Klick ausführen (Koordinaten direkt aus Step)
         for _ in range(CLICKS_PER_POINT):
             if state.stop_event.is_set():
                 break
@@ -553,7 +570,7 @@ def sequence_worker(state: AutoClickerState) -> None:
                 state.stop_event.set()
                 break
 
-            send_click(point.x, point.y)
+            send_click(step.x, step.y)
 
             with state.lock:
                 state.total_clicks += 1
@@ -639,6 +656,47 @@ def handle_clear(state: AutoClickerState) -> None:
     save_data(state)
     print(f"\n[CLEAR] Alle {count} Punkte gelöscht!")
     print_status(state)
+
+def handle_reset(state: AutoClickerState) -> None:
+    """Löscht ALLES - Punkte UND Sequenzen (Factory Reset)."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+
+    print("\n" + "=" * 60)
+    print("  ⚠️  FACTORY RESET - ALLES WIRD GELÖSCHT!")
+    print("=" * 60)
+    print("\nFolgendes wird gelöscht:")
+    print(f"  • {len(state.points)} Punkt(e)")
+    print(f"  • {len(list_available_sequences())} Sequenz-Datei(en)")
+    print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
+
+    try:
+        confirm = input("> ").strip()
+        if confirm != "JA":
+            print("[ABBRUCH] Nichts wurde gelöscht.")
+            return
+
+        # Punkte löschen
+        with state.lock:
+            state.points.clear()
+            state.sequences.clear()
+            state.active_sequence = None
+
+        # Alle Dateien im Sequenz-Ordner löschen
+        seq_dir = Path(SEQUENCES_DIR)
+        if seq_dir.exists():
+            import shutil
+            shutil.rmtree(seq_dir)
+        ensure_sequences_dir()
+
+        print("\n[RESET] ✓ Alles wurde gelöscht!")
+        print("[RESET] Das Programm ist jetzt wie neu.")
+        print_status(state)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n[ABBRUCH] Nichts wurde gelöscht.")
 
 def handle_editor(state: AutoClickerState) -> None:
     """Öffnet den Sequenz-Editor."""
@@ -759,7 +817,8 @@ def register_hotkeys() -> bool:
     hotkeys = [
         (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Punkt hinzufügen)"),
         (HOTKEY_UNDO, VK_U, "CTRL+ALT+U (Rückgängig)"),
-        (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (ALLE Punkte löschen)"),
+        (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (Punkte löschen)"),
+        (HOTKEY_RESET, VK_R, "CTRL+ALT+R (FACTORY RESET)"),
         (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
@@ -779,8 +838,8 @@ def register_hotkeys() -> bool:
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
-    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_EDITOR,
-                  HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
+    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
+                  HOTKEY_EDITOR, HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -795,10 +854,11 @@ def print_help() -> None:
     print("Hotkeys:")
     print("  CTRL+ALT+A  - Mausposition als Punkt speichern")
     print("  CTRL+ALT+U  - Letzten Punkt entfernen")
-    print("  CTRL+ALT+C  - ALLE Punkte löschen (Clear)")
+    print("  CTRL+ALT+C  - Alle Punkte löschen")
+    print("  CTRL+ALT+R  - FACTORY RESET (Punkte + Sequenzen)")
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
-    print("  CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen")
+    print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
     print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
     print("  CTRL+ALT+Q  - Programm beenden")
     print()
@@ -855,6 +915,8 @@ def main() -> int:
                         handle_undo(state)
                     elif hk_id == HOTKEY_CLEAR:
                         handle_clear(state)
+                    elif hk_id == HOTKEY_RESET:
+                        handle_reset(state)
                     elif hk_id == HOTKEY_EDITOR:
                         handle_editor(state)
                     elif hk_id == HOTKEY_LOAD:
