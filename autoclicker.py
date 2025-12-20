@@ -128,9 +128,15 @@ user32.RegisterHotKey.restype = wintypes.BOOL
 user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.UnregisterHotKey.restype = wintypes.BOOL
 
-# GetMessage
+# GetMessage / PeekMessage
 user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
 user32.GetMessageW.restype = wintypes.BOOL
+
+user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
+user32.PeekMessageW.restype = wintypes.BOOL
+
+# PeekMessage Flags
+PM_REMOVE = 0x0001
 
 # PostThreadMessage (zum Beenden der Message Loop)
 user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
@@ -425,33 +431,28 @@ def main() -> int:
     print_status(state)
     print()
 
-    # Message Loop
+    # Message Loop (non-blocking mit PeekMessage)
     msg = wintypes.MSG()
 
     try:
-        while True:
-            # Auf Nachrichten warten
-            ret = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+        while not state.quit_event.is_set():
+            # Nachrichten prüfen (non-blocking)
+            if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
+                if msg.message == WM_HOTKEY:
+                    hk_id = msg.wParam
 
-            if ret <= 0:  # WM_QUIT oder Fehler
-                break
-
-            if msg.message == WM_HOTKEY:
-                hk_id = msg.wParam
-
-                if hk_id == HOTKEY_RECORD:
-                    handle_record(state)
-                elif hk_id == HOTKEY_UNDO:
-                    handle_undo(state)
-                elif hk_id == HOTKEY_TOGGLE:
-                    handle_toggle(state)
-                elif hk_id == HOTKEY_QUIT:
-                    handle_quit(state, main_thread_id)
-                    break
-
-            # Quit-Event prüfen
-            if state.quit_event.is_set():
-                break
+                    if hk_id == HOTKEY_RECORD:
+                        handle_record(state)
+                    elif hk_id == HOTKEY_UNDO:
+                        handle_undo(state)
+                    elif hk_id == HOTKEY_TOGGLE:
+                        handle_toggle(state)
+                    elif hk_id == HOTKEY_QUIT:
+                        handle_quit(state, main_thread_id)
+                        break
+            else:
+                # Keine Nachricht - kurz warten um CPU zu schonen
+                time.sleep(0.01)
 
     except KeyboardInterrupt:
         print("\n[ABBRUCH] Programm wird beendet...")
