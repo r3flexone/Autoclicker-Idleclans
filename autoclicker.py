@@ -54,6 +54,7 @@ MOD_NOREPEAT = 0x4000
 # Virtual Key Codes
 VK_A = 0x41  # Add Point
 VK_U = 0x55  # Undo
+VK_C = 0x43  # Clear all
 VK_E = 0x45  # Editor
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
@@ -63,11 +64,12 @@ VK_Q = 0x51  # Quit
 # Hotkey IDs
 HOTKEY_RECORD = 1
 HOTKEY_UNDO = 2
-HOTKEY_EDITOR = 3
-HOTKEY_LOAD = 4
-HOTKEY_SHOW = 5
-HOTKEY_TOGGLE = 6
-HOTKEY_QUIT = 7
+HOTKEY_CLEAR = 3
+HOTKEY_EDITOR = 4
+HOTKEY_LOAD = 5
+HOTKEY_SHOW = 6
+HOTKEY_TOGGLE = 7
+HOTKEY_QUIT = 8
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -619,6 +621,25 @@ def handle_undo(state: AutoClickerState) -> None:
             print("\n[UNDO] Keine Punkte zum Entfernen.")
     print_status(state)
 
+def handle_clear(state: AutoClickerState) -> None:
+    """Löscht ALLE Punkte."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+
+        count = len(state.points)
+        if count == 0:
+            print("\n[CLEAR] Keine Punkte vorhanden.")
+            return
+
+        state.points.clear()
+        state.active_sequence = None
+
+    save_data(state)
+    print(f"\n[CLEAR] Alle {count} Punkte gelöscht!")
+    print_status(state)
+
 def handle_editor(state: AutoClickerState) -> None:
     """Öffnet den Sequenz-Editor."""
     with state.lock:
@@ -715,6 +736,7 @@ def register_hotkeys() -> bool:
     hotkeys = [
         (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Punkt hinzufügen)"),
         (HOTKEY_UNDO, VK_U, "CTRL+ALT+U (Rückgängig)"),
+        (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (ALLE Punkte löschen)"),
         (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
@@ -734,8 +756,8 @@ def register_hotkeys() -> bool:
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
-    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_EDITOR, HOTKEY_LOAD,
-                  HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
+    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_EDITOR,
+                  HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -750,6 +772,7 @@ def print_help() -> None:
     print("Hotkeys:")
     print("  CTRL+ALT+A  - Mausposition als Punkt speichern")
     print("  CTRL+ALT+U  - Letzten Punkt entfernen")
+    print("  CTRL+ALT+C  - ALLE Punkte löschen (Clear)")
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
     print("  CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen")
@@ -807,6 +830,8 @@ def main() -> int:
                         handle_record(state)
                     elif hk_id == HOTKEY_UNDO:
                         handle_undo(state)
+                    elif hk_id == HOTKEY_CLEAR:
+                        handle_clear(state)
                     elif hk_id == HOTKEY_EDITOR:
                         handle_editor(state)
                     elif hk_id == HOTKEY_LOAD:
