@@ -55,7 +55,7 @@ MOD_NOREPEAT = 0x4000
 VK_A = 0x41  # Add Point
 VK_U = 0x55  # Undo
 VK_C = 0x43  # Clear all points
-VK_R = 0x52  # Reset all (points + sequences)
+VK_X = 0x58  # Reset all (points + sequences) - X statt R (R oft belegt)
 VK_E = 0x45  # Editor
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
@@ -818,7 +818,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Punkt hinzufügen)"),
         (HOTKEY_UNDO, VK_U, "CTRL+ALT+U (Rückgängig)"),
         (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (Punkte löschen)"),
-        (HOTKEY_RESET, VK_R, "CTRL+ALT+R (FACTORY RESET)"),
+        (HOTKEY_RESET, VK_X, "CTRL+ALT+X (FACTORY RESET)"),
         (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
@@ -855,7 +855,7 @@ def print_help() -> None:
     print("  CTRL+ALT+A  - Mausposition als Punkt speichern")
     print("  CTRL+ALT+U  - Letzten Punkt entfernen")
     print("  CTRL+ALT+C  - Alle Punkte löschen")
-    print("  CTRL+ALT+R  - FACTORY RESET (Punkte + Sequenzen)")
+    print("  CTRL+ALT+X  - FACTORY RESET (Punkte + Sequenzen)")
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
