@@ -389,7 +389,7 @@ def print_points(state: AutoClickerState) -> None:
 # SEQUENZ-EDITOR (Konsolen-basiert)
 # =============================================================================
 def run_sequence_editor(state: AutoClickerState) -> None:
-    """Interaktiver Sequenz-Editor."""
+    """Interaktiver Sequenz-Editor - neu erstellen oder bestehende bearbeiten."""
     print("\n" + "=" * 60)
     print("  SEQUENZ-EDITOR")
     print("=" * 60)
@@ -399,36 +399,119 @@ def run_sequence_editor(state: AutoClickerState) -> None:
             print("\n[FEHLER] Erst Punkte aufnehmen (CTRL+ALT+A)!")
             return
 
+    # Bestehende Sequenzen laden
+    available_sequences = list_available_sequences()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neue Sequenz erstellen")
+
+    if available_sequences:
+        print("\nBestehende Sequenzen bearbeiten:")
+        for i, (name, path) in enumerate(available_sequences):
+            seq = load_sequence_file(path)
+            if seq:
+                print(f"  [{i+1}] {seq.name} ({len(seq.steps)} Schritte)")
+
+    print("\nAuswahl (oder 'abbruch'):")
+
+    try:
+        choice = input("> ").strip().lower()
+
+        if choice == "abbruch":
+            print("[ABBRUCH] Editor beendet.")
+            return
+
+        choice_num = int(choice)
+
+        if choice_num == 0:
+            # Neue Sequenz erstellen
+            edit_sequence(state, None)
+        elif 1 <= choice_num <= len(available_sequences):
+            # Bestehende Sequenz bearbeiten
+            name, path = available_sequences[choice_num - 1]
+            existing_seq = load_sequence_file(path)
+            if existing_seq:
+                edit_sequence(state, existing_seq)
+        else:
+            print("[FEHLER] Ungültige Auswahl!")
+
+    except ValueError:
+        print("[FEHLER] Bitte eine Nummer eingeben!")
+    except (KeyboardInterrupt, EOFError):
+        print("\n[ABBRUCH] Editor beendet.")
+
+
+def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
+    """Bearbeitet eine Sequenz (neu oder bestehend)."""
+
+    if existing:
+        print(f"\n--- Bearbeite Sequenz: {existing.name} ---")
+        seq_name = existing.name
+        steps = list(existing.steps)  # Kopie der bestehenden Schritte
+
+        print(f"\nAktuelle Schritte ({len(steps)}):")
+        for i, step in enumerate(steps):
+            print(f"  {i+1}. {step}")
+    else:
+        print("\n--- Neue Sequenz erstellen ---")
+        seq_name = input("Name der Sequenz: ").strip()
+        if not seq_name:
+            seq_name = f"Sequenz_{int(time.time())}"
+        steps = []
+
+    # Verfügbare Punkte anzeigen
+    with state.lock:
         print("\nVerfügbare Punkte:")
         for i, p in enumerate(state.points):
             print(f"  P{i+1}: {p}")
 
     print("\n" + "-" * 60)
-    print("Erstelle eine neue Sequenz.")
-    print("Gib für jeden Schritt ein: <Punkt-Nr> <Wartezeit in Sekunden>")
-    print("Beispiel: '1 30' = Punkt 1 klicken, dann 30s warten")
-    print("Eingabe 'fertig' zum Speichern, 'abbruch' zum Abbrechen")
-    print("-" * 60 + "\n")
-
-    # Sequenz-Name abfragen
-    seq_name = input("Name der Sequenz: ").strip()
-    if not seq_name:
-        seq_name = f"Sequenz_{int(time.time())}"
-
-    steps: list[SequenceStep] = []
+    print("Befehle:")
+    print("  <Nr> <Zeit>  - Schritt hinzufügen (z.B. '1 30')")
+    print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
+    print("  clear        - Alle Schritte löschen")
+    print("  show         - Aktuelle Schritte anzeigen")
+    print("  fertig       - Speichern und beenden")
+    print("  abbruch      - Ohne Speichern beenden")
+    print("-" * 60)
 
     while True:
         try:
-            user_input = input(f"Schritt {len(steps) + 1} (Punkt Zeit): ").strip().lower()
+            prompt = f"Schritt {len(steps) + 1}" if not steps else f"[{len(steps)} Schritte]"
+            user_input = input(f"{prompt} > ").strip()
 
-            if user_input == "fertig":
+            if user_input.lower() == "fertig":
                 break
-            elif user_input == "abbruch":
+            elif user_input.lower() == "abbruch":
                 print("[ABBRUCH] Sequenz nicht gespeichert.")
                 return
-            elif user_input == "":
+            elif user_input.lower() == "":
+                continue
+            elif user_input.lower() == "show":
+                if steps:
+                    print("\nAktuelle Schritte:")
+                    for i, step in enumerate(steps):
+                        print(f"  {i+1}. {step}")
+                else:
+                    print("  (Keine Schritte)")
+                continue
+            elif user_input.lower() == "clear":
+                steps.clear()
+                print("  ✓ Alle Schritte gelöscht")
+                continue
+            elif user_input.lower().startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    if 1 <= del_num <= len(steps):
+                        removed = steps.pop(del_num - 1)
+                        print(f"  ✓ Schritt {del_num} gelöscht: {removed}")
+                    else:
+                        print(f"  → Ungültiger Schritt! Verfügbar: 1-{len(steps)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
                 continue
 
+            # Neuen Schritt hinzufügen
             parts = user_input.split()
             if len(parts) != 2:
                 print("  → Format: <Punkt-Nr> <Sekunden> (z.B. '1 30')")
@@ -441,7 +524,6 @@ def run_sequence_editor(state: AutoClickerState) -> None:
                 if point_num < 1 or point_num > len(state.points):
                     print(f"  → Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
                     continue
-                # Punkt-Daten direkt kopieren
                 point = state.points[point_num - 1]
                 point_x = point.x
                 point_y = point.y
@@ -451,13 +533,12 @@ def run_sequence_editor(state: AutoClickerState) -> None:
                 print("  → Wartezeit muss >= 0 sein!")
                 continue
 
-            # Koordinaten direkt in den Step speichern (unabhängig von Punkten)
             step = SequenceStep(x=point_x, y=point_y, delay_after=delay, name=point_name)
             steps.append(step)
             print(f"  ✓ Hinzugefügt: {step}")
 
         except ValueError:
-            print("  → Ungültige Eingabe! Format: <Punkt-Nr> <Sekunden>")
+            print("  → Ungültige Eingabe!")
         except KeyboardInterrupt:
             print("\n[ABBRUCH] Editor beendet.")
             return
