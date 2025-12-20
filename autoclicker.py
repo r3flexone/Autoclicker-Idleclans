@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """
-Windows Autoclicker - Python 3.13
-=================================
-Ein Autoclicker für Windows 11, der nur die Standardbibliothek verwendet.
+Windows Autoclicker mit Sequenz-Unterstützung - Python 3.13
+============================================================
+Ein Autoclicker für Windows 11 mit sequenzieller Ausführung und Speicherung.
 
 Starten: python autoclicker.py
 Beenden: CTRL+ALT+Q oder Konsole schließen
 
 Hotkeys:
-  CTRL+ALT+A  - Aktuelle Mausposition aufnehmen (Add)
+  CTRL+ALT+A  - Aktuelle Mausposition als Punkt speichern
   CTRL+ALT+U  - Letzten Punkt entfernen
-  CTRL+ALT+S  - Start/Stop Toggle
+  CTRL+ALT+E  - Sequenz-Editor öffnen (Punkte mit Zeiten verknüpfen)
+  CTRL+ALT+L  - Gespeicherte Sequenz laden
+  CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen
+  CTRL+ALT+S  - Start/Stop Toggle (führt aktive Sequenz aus)
   CTRL+ALT+Q  - Programm beenden
+
+Sequenzen:
+  - Eine Sequenz besteht aus Schritten (Punkt + Wartezeit danach)
+  - Der gleiche Punkt kann mehrmals verwendet werden
+  - Sequenzen werden in 'sequences/' gespeichert
 
 Fail-Safe: Maus in obere linke Ecke bewegen (x<=2, y<=2) stoppt den Klicker.
 """
@@ -21,36 +29,45 @@ import ctypes.wintypes as wintypes
 import threading
 import time
 import sys
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import dataclass, field, asdict
 from typing import Optional
+from pathlib import Path
 
 # =============================================================================
-# KONFIGURATION - Hier anpassen
+# KONFIGURATION
 # =============================================================================
-DELAY_SECONDS: float = 1.0          # Wartezeit zwischen Klicks (Sekunden)
-CLICKS_PER_POINT: int = 1           # Anzahl Klicks pro Punkt
-MAX_TOTAL_CLICKS: Optional[int] = None  # None oder 0 = unendlich, sonst Limit
-FAILSAFE_ENABLED: bool = True       # Fail-Safe aktivieren (Ecke oben links)
+SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
+CLICKS_PER_POINT: int = 1              # Anzahl Klicks pro Punkt
+MAX_TOTAL_CLICKS: Optional[int] = None # None = unendlich
+FAILSAFE_ENABLED: bool = True          # Fail-Safe aktivieren
+LOOP_SEQUENCE: bool = True             # Sequenz wiederholen?
 
 # =============================================================================
 # WINDOWS API KONSTANTEN
 # =============================================================================
-# Modifier Keys
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
 MOD_NOREPEAT = 0x4000
 
 # Virtual Key Codes
-VK_A = 0x41  # A statt R (R oft von anderen Programmen belegt)
-VK_U = 0x55
-VK_S = 0x53
-VK_Q = 0x51
+VK_A = 0x41  # Add Point
+VK_U = 0x55  # Undo
+VK_E = 0x45  # Editor
+VK_L = 0x4C  # Load
+VK_P = 0x50  # Print/Show
+VK_S = 0x53  # Start/Stop
+VK_Q = 0x51  # Quit
 
 # Hotkey IDs
 HOTKEY_RECORD = 1
 HOTKEY_UNDO = 2
-HOTKEY_TOGGLE = 3
-HOTKEY_QUIT = 4
+HOTKEY_EDITOR = 3
+HOTKEY_LOAD = 4
+HOTKEY_SHOW = 5
+HOTKEY_TOGGLE = 6
+HOTKEY_QUIT = 7
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -59,8 +76,6 @@ WM_HOTKEY = 0x0312
 INPUT_MOUSE = 0
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
-MOUSEEVENTF_ABSOLUTE = 0x8000
-MOUSEEVENTF_MOVE = 0x0001
 
 # =============================================================================
 # WINDOWS API STRUKTUREN
@@ -109,40 +124,29 @@ class INPUT(ctypes.Structure):
 # =============================================================================
 user32 = ctypes.windll.user32
 
-# GetCursorPos
 user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
 user32.GetCursorPos.restype = wintypes.BOOL
 
-# SetCursorPos
 user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
 user32.SetCursorPos.restype = wintypes.BOOL
 
-# SendInput
 user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
 user32.SendInput.restype = wintypes.UINT
 
-# RegisterHotKey / UnregisterHotKey
 user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
 user32.RegisterHotKey.restype = wintypes.BOOL
 
 user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.UnregisterHotKey.restype = wintypes.BOOL
 
-# GetMessage / PeekMessage
-user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
-user32.GetMessageW.restype = wintypes.BOOL
-
 user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
 user32.PeekMessageW.restype = wintypes.BOOL
 
-# PeekMessage Flags
 PM_REMOVE = 0x0001
 
-# PostThreadMessage (zum Beenden der Message Loop)
 user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.PostThreadMessageW.restype = wintypes.BOOL
 
-# GetCurrentThreadId
 kernel32 = ctypes.windll.kernel32
 kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
@@ -154,24 +158,124 @@ class ClickPoint:
     """Ein Klickpunkt mit x,y Koordinaten."""
     x: int
     y: int
+    name: str = ""  # Optionaler Name für den Punkt
 
     def __str__(self) -> str:
+        if self.name:
+            return f"{self.name} ({self.x}, {self.y})"
         return f"({self.x}, {self.y})"
+
+@dataclass
+class SequenceStep:
+    """Ein Schritt in einer Sequenz: Punkt-Index und Wartezeit danach."""
+    point_index: int      # Index des Punktes in der Punkteliste
+    delay_after: float    # Wartezeit in Sekunden NACH diesem Klick
+
+    def __str__(self) -> str:
+        return f"P{self.point_index + 1} → warte {self.delay_after}s"
+
+@dataclass
+class Sequence:
+    """Eine Klick-Sequenz mit Namen und Schritten."""
+    name: str
+    steps: list[SequenceStep] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({len(self.steps)} Schritte)"
 
 @dataclass
 class AutoClickerState:
     """Zustand des Autoclickers."""
+    # Punkte-Pool (wiederverwendbar)
     points: list[ClickPoint] = field(default_factory=list)
+
+    # Gespeicherte Sequenzen
+    sequences: dict[str, Sequence] = field(default_factory=dict)
+
+    # Aktive Sequenz
+    active_sequence: Optional[Sequence] = None
+
+    # Laufzeit-Status
     is_running: bool = False
     total_clicks: int = 0
-    current_index: int = 0
+    current_step_index: int = 0
+
+    # Editor-Modus
+    editor_mode: bool = False
+    temp_sequence: Optional[Sequence] = None
 
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
     quit_event: threading.Event = field(default_factory=threading.Event)
-
-    # Lock für thread-sichere Zugriffe
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+# =============================================================================
+# PERSISTENZ (Speichern/Laden)
+# =============================================================================
+def ensure_sequences_dir() -> Path:
+    """Stellt sicher, dass der Sequenzen-Ordner existiert."""
+    path = Path(SEQUENCES_DIR)
+    path.mkdir(exist_ok=True)
+    return path
+
+def save_data(state: AutoClickerState) -> None:
+    """Speichert Punkte und Sequenzen in JSON-Dateien."""
+    ensure_sequences_dir()
+
+    # Punkte speichern
+    points_data = [{"x": p.x, "y": p.y, "name": p.name} for p in state.points]
+    with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
+        json.dump(points_data, f, indent=2, ensure_ascii=False)
+
+    # Sequenzen speichern
+    for name, seq in state.sequences.items():
+        seq_data = {
+            "name": seq.name,
+            "steps": [{"point_index": s.point_index, "delay_after": s.delay_after} for s in seq.steps]
+        }
+        filename = f"{name.replace(' ', '_').lower()}.json"
+        with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
+            json.dump(seq_data, f, indent=2, ensure_ascii=False)
+
+    print(f"[SAVE] Daten gespeichert in '{SEQUENCES_DIR}/'")
+
+def load_points(state: AutoClickerState) -> None:
+    """Lädt gespeicherte Punkte."""
+    points_file = Path(SEQUENCES_DIR) / "points.json"
+    if points_file.exists():
+        with open(points_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            state.points = [ClickPoint(p["x"], p["y"], p.get("name", "")) for p in data]
+        print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
+
+def load_sequence_file(filepath: Path) -> Optional[Sequence]:
+    """Lädt eine einzelne Sequenz-Datei."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            steps = [SequenceStep(s["point_index"], s["delay_after"]) for s in data["steps"]]
+            return Sequence(data["name"], steps)
+    except Exception as e:
+        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        return None
+
+def list_available_sequences() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Sequenz-Dateien auf."""
+    seq_dir = Path(SEQUENCES_DIR)
+    if not seq_dir.exists():
+        return []
+
+    sequences = []
+    for f in seq_dir.glob("*.json"):
+        if f.name != "points.json":
+            try:
+                with open(f, "r", encoding="utf-8") as file:
+                    data = json.load(file)
+                    name = data.get("name", f.stem)
+                    sequences.append((name, f))
+            except Exception:
+                pass
+    return sequences
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -188,18 +292,12 @@ def set_cursor_pos(x: int, y: int) -> bool:
 
 def send_click(x: int, y: int) -> None:
     """Führt einen Linksklick an der angegebenen Position aus."""
-    # Maus bewegen
     set_cursor_pos(x, y)
-    time.sleep(0.01)  # Kurze Pause für Stabilität
+    time.sleep(0.01)
 
-    # Linksklick: Down + Up
     inputs = (INPUT * 2)()
-
-    # Mouse down
     inputs[0].type = INPUT_MOUSE
     inputs[0].union.mi.dwFlags = MOUSEEVENTF_LEFTDOWN
-
-    # Mouse up
     inputs[1].type = INPUT_MOUSE
     inputs[1].union.mi.dwFlags = MOUSEEVENTF_LEFTUP
 
@@ -219,54 +317,237 @@ def clear_line() -> None:
 def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
     with state.lock:
-        status = "RUNNING" if state.is_running else "STOPPED"
+        if state.editor_mode:
+            status = "EDITOR"
+        elif state.is_running:
+            status = "RUNNING"
+        else:
+            status = "STOPPED"
+
+        seq_name = state.active_sequence.name if state.active_sequence else "Keine"
         points_str = f"{len(state.points)} Punkt(e)"
-        clicks_str = f"Klicks: {state.total_clicks}"
-        if MAX_TOTAL_CLICKS:
-            clicks_str += f"/{MAX_TOTAL_CLICKS}"
-        index_str = f"Index: {state.current_index}" if state.is_running else ""
 
         clear_line()
-        print(f"[{status}] {points_str} | {clicks_str} {index_str}", flush=True)
+        if state.is_running and state.active_sequence:
+            step_info = f"Schritt {state.current_step_index + 1}/{len(state.active_sequence.steps)}"
+            print(f"[{status}] Sequenz: {seq_name} | {step_info} | Klicks: {state.total_clicks}", flush=True)
+        else:
+            print(f"[{status}] {points_str} | Sequenz: {seq_name}", flush=True)
 
 def print_points(state: AutoClickerState) -> None:
     """Zeigt alle gespeicherten Punkte an."""
+    print("\n" + "=" * 50)
+    print("GESPEICHERTE PUNKTE:")
+    print("=" * 50)
     with state.lock:
         if not state.points:
             print("  Keine Punkte gespeichert.")
+        else:
+            for i, p in enumerate(state.points):
+                print(f"  P{i+1}: {p}")
+
+    print("\n" + "=" * 50)
+    print("VERFÜGBARE SEQUENZEN:")
+    print("=" * 50)
+    sequences = list_available_sequences()
+    if not sequences:
+        print("  Keine Sequenzen gespeichert.")
+    else:
+        for name, path in sequences:
+            seq = load_sequence_file(path)
+            if seq:
+                print(f"  • {seq}")
+                for i, step in enumerate(seq.steps):
+                    print(f"      {i+1}. {step}")
+
+    with state.lock:
+        if state.active_sequence:
+            print(f"\n  [AKTIV] {state.active_sequence.name}")
+    print()
+
+# =============================================================================
+# SEQUENZ-EDITOR (Konsolen-basiert)
+# =============================================================================
+def run_sequence_editor(state: AutoClickerState) -> None:
+    """Interaktiver Sequenz-Editor."""
+    print("\n" + "=" * 60)
+    print("  SEQUENZ-EDITOR")
+    print("=" * 60)
+
+    with state.lock:
+        if not state.points:
+            print("\n[FEHLER] Erst Punkte aufnehmen (CTRL+ALT+A)!")
             return
+
+        print("\nVerfügbare Punkte:")
         for i, p in enumerate(state.points):
             print(f"  P{i+1}: {p}")
+
+    print("\n" + "-" * 60)
+    print("Erstelle eine neue Sequenz.")
+    print("Gib für jeden Schritt ein: <Punkt-Nr> <Wartezeit in Sekunden>")
+    print("Beispiel: '1 30' = Punkt 1 klicken, dann 30s warten")
+    print("Eingabe 'fertig' zum Speichern, 'abbruch' zum Abbrechen")
+    print("-" * 60 + "\n")
+
+    # Sequenz-Name abfragen
+    seq_name = input("Name der Sequenz: ").strip()
+    if not seq_name:
+        seq_name = f"Sequenz_{int(time.time())}"
+
+    steps: list[SequenceStep] = []
+
+    while True:
+        try:
+            user_input = input(f"Schritt {len(steps) + 1} (Punkt Zeit): ").strip().lower()
+
+            if user_input == "fertig":
+                break
+            elif user_input == "abbruch":
+                print("[ABBRUCH] Sequenz nicht gespeichert.")
+                return
+            elif user_input == "":
+                continue
+
+            parts = user_input.split()
+            if len(parts) != 2:
+                print("  → Format: <Punkt-Nr> <Sekunden> (z.B. '1 30')")
+                continue
+
+            point_num = int(parts[0])
+            delay = float(parts[1])
+
+            with state.lock:
+                if point_num < 1 or point_num > len(state.points):
+                    print(f"  → Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
+                    continue
+
+            if delay < 0:
+                print("  → Wartezeit muss >= 0 sein!")
+                continue
+
+            step = SequenceStep(point_index=point_num - 1, delay_after=delay)
+            steps.append(step)
+            print(f"  ✓ Hinzugefügt: {step}")
+
+        except ValueError:
+            print("  → Ungültige Eingabe! Format: <Punkt-Nr> <Sekunden>")
+        except KeyboardInterrupt:
+            print("\n[ABBRUCH] Editor beendet.")
+            return
+
+    if not steps:
+        print("[FEHLER] Keine Schritte hinzugefügt!")
+        return
+
+    # Sequenz erstellen und speichern
+    new_sequence = Sequence(name=seq_name, steps=steps)
+
+    with state.lock:
+        state.sequences[seq_name] = new_sequence
+        state.active_sequence = new_sequence
+
+    # In Datei speichern
+    save_data(state)
+
+    print(f"\n[ERFOLG] Sequenz '{seq_name}' mit {len(steps)} Schritten gespeichert!")
+    print("         Drücke CTRL+ALT+S zum Starten.\n")
+
+# =============================================================================
+# SEQUENZ LADEN
+# =============================================================================
+def run_sequence_loader(state: AutoClickerState) -> None:
+    """Lädt eine gespeicherte Sequenz."""
+    print("\n" + "=" * 60)
+    print("  SEQUENZ LADEN")
+    print("=" * 60)
+
+    sequences = list_available_sequences()
+
+    if not sequences:
+        print("\nKeine Sequenzen gefunden!")
+        print(f"Erstelle zuerst eine Sequenz mit CTRL+ALT+E\n")
+        return
+
+    print("\nVerfügbare Sequenzen:")
+    for i, (name, path) in enumerate(sequences):
+        seq = load_sequence_file(path)
+        if seq:
+            print(f"  {i+1}. {seq}")
+
+    print("\nNummer eingeben (oder 'abbruch'):")
+
+    try:
+        user_input = input("> ").strip().lower()
+
+        if user_input == "abbruch":
+            print("[ABBRUCH] Keine Sequenz geladen.")
+            return
+
+        idx = int(user_input) - 1
+        if idx < 0 or idx >= len(sequences):
+            print("[FEHLER] Ungültige Nummer!")
+            return
+
+        name, path = sequences[idx]
+        seq = load_sequence_file(path)
+
+        if seq:
+            with state.lock:
+                state.active_sequence = seq
+            print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
+            print("         Drücke CTRL+ALT+S zum Starten.\n")
+
+    except ValueError:
+        print("[FEHLER] Bitte eine Nummer eingeben!")
+    except KeyboardInterrupt:
+        print("\n[ABBRUCH]")
 
 # =============================================================================
 # WORKER THREAD
 # =============================================================================
-def clicker_worker(state: AutoClickerState) -> None:
-    """Worker-Thread, der die Klicks ausführt."""
-    print("\n[WORKER] Klicker gestartet.")
+def sequence_worker(state: AutoClickerState) -> None:
+    """Worker-Thread, der die Sequenz ausführt."""
+    print("\n[WORKER] Sequenz gestartet.")
+
+    with state.lock:
+        sequence = state.active_sequence
+        if not sequence or not sequence.steps:
+            print("[FEHLER] Keine gültige Sequenz!")
+            state.is_running = False
+            return
 
     while not state.stop_event.is_set() and not state.quit_event.is_set():
+        with state.lock:
+            if state.current_step_index >= len(sequence.steps):
+                if LOOP_SEQUENCE:
+                    state.current_step_index = 0
+                    print("\n[LOOP] Sequenz startet von vorne...")
+                else:
+                    break
+
+            step = sequence.steps[state.current_step_index]
+
+            if step.point_index >= len(state.points):
+                print(f"\n[FEHLER] Punkt P{step.point_index + 1} existiert nicht!")
+                state.stop_event.set()
+                break
+
+            point = state.points[step.point_index]
+
         # Fail-Safe prüfen
         if check_failsafe():
             print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
             state.stop_event.set()
             break
 
-        # Punkte durchgehen
-        with state.lock:
-            if not state.points:
-                break
-            point = state.points[state.current_index]
-            num_points = len(state.points)
-
-        # Klicks für diesen Punkt
+        # Klick ausführen
         for _ in range(CLICKS_PER_POINT):
-            if state.stop_event.is_set() or state.quit_event.is_set():
+            if state.stop_event.is_set():
                 break
 
-            # Fail-Safe erneut prüfen
             if check_failsafe():
-                print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
+                print("\n[FAILSAFE] Stoppe...")
                 state.stop_event.set()
                 break
 
@@ -274,29 +555,38 @@ def clicker_worker(state: AutoClickerState) -> None:
 
             with state.lock:
                 state.total_clicks += 1
-                total = state.total_clicks
 
-            # Status ausgeben
             print_status(state)
 
-            # Max-Klicks erreicht?
-            if MAX_TOTAL_CLICKS and total >= MAX_TOTAL_CLICKS:
+            if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
                 print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
                 state.stop_event.set()
                 break
 
-            # Warten zwischen Klicks (unterbrechbar)
-            if not state.stop_event.wait(DELAY_SECONDS):
-                pass  # Timeout = weitermachen
+        # Wartezeit nach diesem Schritt (unterbrechbar)
+        if not state.stop_event.is_set() and step.delay_after > 0:
+            # Countdown anzeigen
+            remaining = step.delay_after
+            while remaining > 0 and not state.stop_event.is_set():
+                wait_time = min(1.0, remaining)
+                if state.stop_event.wait(wait_time):
+                    break
+                remaining -= wait_time
+                if remaining > 0:
+                    with state.lock:
+                        step_num = state.current_step_index + 1
+                        total_steps = len(sequence.steps)
+                    clear_line()
+                    print(f"[WARTE] Schritt {step_num}/{total_steps} | Nächster Klick in {remaining:.0f}s...", end="", flush=True)
 
-        # Nächster Punkt
+        # Nächster Schritt
         with state.lock:
-            state.current_index = (state.current_index + 1) % num_points
+            state.current_step_index += 1
 
     with state.lock:
         state.is_running = False
 
-    print("\n[WORKER] Klicker gestoppt.")
+    print("\n[WORKER] Sequenz gestoppt.")
     print_status(state)
 
 # =============================================================================
@@ -305,13 +595,26 @@ def clicker_worker(state: AutoClickerState) -> None:
 def handle_record(state: AutoClickerState) -> None:
     """Nimmt die aktuelle Mausposition auf."""
     x, y = get_cursor_pos()
-    point = ClickPoint(x, y)
+
+    # Optional: Namen vergeben
+    print(f"\nPunkt aufgenommen: ({x}, {y})")
+    print("Name eingeben (oder Enter für keinen Namen):")
+
+    try:
+        name = input("> ").strip()
+    except (KeyboardInterrupt, EOFError):
+        name = ""
+
+    point = ClickPoint(x, y, name)
 
     with state.lock:
         state.points.append(point)
         count = len(state.points)
 
-    print(f"\n[RECORD] Punkt {count} hinzugefügt: {point}")
+    # Auto-speichern
+    save_data(state)
+
+    print(f"[RECORD] Punkt P{count} hinzugefügt: {point}")
     print_status(state)
 
 def handle_undo(state: AutoClickerState) -> None:
@@ -320,40 +623,61 @@ def handle_undo(state: AutoClickerState) -> None:
         if state.points:
             removed = state.points.pop()
             print(f"\n[UNDO] Punkt entfernt: {removed}")
+            save_data(state)
         else:
             print("\n[UNDO] Keine Punkte zum Entfernen.")
     print_status(state)
 
-def handle_toggle(state: AutoClickerState) -> None:
-    """Startet oder stoppt den Klicker."""
+def handle_editor(state: AutoClickerState) -> None:
+    """Öffnet den Sequenz-Editor."""
     with state.lock:
         if state.is_running:
-            # Stoppen
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+    run_sequence_editor(state)
+
+def handle_load(state: AutoClickerState) -> None:
+    """Lädt eine Sequenz."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+    run_sequence_loader(state)
+
+def handle_show(state: AutoClickerState) -> None:
+    """Zeigt alle Punkte und Sequenzen an."""
+    print_points(state)
+
+def handle_toggle(state: AutoClickerState) -> None:
+    """Startet oder stoppt die Sequenz."""
+    with state.lock:
+        if state.is_running:
             state.stop_event.set()
-            print("\n[TOGGLE] Stoppe Klicker...")
+            print("\n[TOGGLE] Stoppe Sequenz...")
         else:
-            # Starten
+            if not state.active_sequence:
+                print("\n[FEHLER] Keine Sequenz geladen!")
+                print("         Erstelle eine mit CTRL+ALT+E oder lade eine mit CTRL+ALT+L")
+                return
+
             if not state.points:
-                print("\n[FEHLER] Keine Punkte gespeichert! Erst Punkte aufnehmen (CTRL+ALT+A).")
+                print("\n[FEHLER] Keine Punkte gespeichert!")
                 return
 
             state.is_running = True
             state.stop_event.clear()
-            state.current_index = 0
+            state.current_step_index = 0
 
-            # Worker-Thread starten
-            worker = threading.Thread(target=clicker_worker, args=(state,), daemon=True)
+            worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
             worker.start()
 
 def handle_quit(state: AutoClickerState, main_thread_id: int) -> None:
     """Beendet das Programm."""
     print("\n[QUIT] Beende Programm...")
 
-    # Alle Threads stoppen
     state.stop_event.set()
     state.quit_event.set()
 
-    # Message Loop beenden
     WM_QUIT = 0x0012
     user32.PostThreadMessageW(main_thread_id, WM_QUIT, 0, 0)
 
@@ -365,8 +689,11 @@ def register_hotkeys() -> bool:
     modifiers = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT
 
     hotkeys = [
-        (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Aufnehmen)"),
+        (HOTKEY_RECORD, VK_A, "CTRL+ALT+A (Punkt hinzufügen)"),
         (HOTKEY_UNDO, VK_U, "CTRL+ALT+U (Rückgängig)"),
+        (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
+        (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
+        (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
@@ -374,16 +701,17 @@ def register_hotkeys() -> bool:
     success = True
     for hk_id, vk, name in hotkeys:
         if not user32.RegisterHotKey(None, hk_id, modifiers, vk):
-            print(f"[FEHLER] Konnte Hotkey nicht registrieren: {name}")
+            print(f"[FEHLER] Hotkey nicht registriert: {name}")
             success = False
         else:
-            print(f"  Hotkey registriert: {name}")
+            print(f"  ✓ {name}")
 
     return success
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
-    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_TOGGLE, HOTKEY_QUIT]:
+    for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_EDITOR, HOTKEY_LOAD,
+                  HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -391,52 +719,62 @@ def unregister_hotkeys() -> None:
 # =============================================================================
 def print_help() -> None:
     """Zeigt die Hilfe an."""
-    print("=" * 60)
-    print("  WINDOWS AUTOCLICKER - Python 3.13")
-    print("=" * 60)
+    print("=" * 65)
+    print("  WINDOWS AUTOCLICKER MIT SEQUENZ-UNTERSTÜTZUNG")
+    print("=" * 65)
     print()
     print("Hotkeys:")
-    print("  CTRL+ALT+A  - Aktuelle Mausposition aufnehmen (Add)")
-    print("  CTRL+ALT+U  - Letzten Punkt entfernen (Undo)")
-    print("  CTRL+ALT+S  - Start/Stop Toggle")
-    print("  CTRL+ALT+Q  - Programm beenden (Quit)")
+    print("  CTRL+ALT+A  - Mausposition als Punkt speichern")
+    print("  CTRL+ALT+U  - Letzten Punkt entfernen")
+    print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
+    print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
+    print("  CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen")
+    print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
+    print("  CTRL+ALT+Q  - Programm beenden")
     print()
-    print("Einstellungen:")
-    print(f"  Verzögerung:      {DELAY_SECONDS} Sekunde(n)")
-    print(f"  Klicks pro Punkt: {CLICKS_PER_POINT}")
-    print(f"  Max. Klicks:      {MAX_TOTAL_CLICKS if MAX_TOTAL_CLICKS else 'Unbegrenzt'}")
-    print(f"  Fail-Safe:        {'Aktiviert' if FAILSAFE_ENABLED else 'Deaktiviert'}")
+    print("So funktioniert's:")
+    print("  1. Punkte aufnehmen (CTRL+ALT+A an verschiedenen Positionen)")
+    print("  2. Sequenz erstellen (CTRL+ALT+E) mit Punkt-Nr und Wartezeit")
+    print("  3. Sequenz starten (CTRL+ALT+S)")
     print()
-    print("Fail-Safe: Maus in obere linke Ecke (x<=2, y<=2) stoppt den Klicker.")
-    print("=" * 60)
+    print("Beispiel-Sequenz:")
+    print("  Schritt 1: Punkt 1, warte 30s")
+    print("  Schritt 2: Punkt 2, warte 30s")
+    print("  Schritt 3: Punkt 3, warte 20s")
+    print("  Schritt 4: Punkt 2, warte 30s  ← Punkt 2 nochmal!")
+    print()
+    print(f"Sequenzen werden in '{SEQUENCES_DIR}/' gespeichert.")
+    print(f"Loop-Modus: {'Aktiviert' if LOOP_SEQUENCE else 'Deaktiviert'}")
+    print("=" * 65)
     print()
 
 def main() -> int:
     """Hauptfunktion."""
-    # Hilfe anzeigen
     print_help()
 
-    # Zustand initialisieren
     state = AutoClickerState()
     main_thread_id = kernel32.GetCurrentThreadId()
+
+    # Ordner erstellen
+    ensure_sequences_dir()
+
+    # Gespeicherte Punkte laden
+    load_points(state)
 
     # Hotkeys registrieren
     print("Registriere Hotkeys...")
     if not register_hotkeys():
-        print("[WARNUNG] Nicht alle Hotkeys konnten registriert werden.")
-        print("          Möglicherweise werden sie von einem anderen Programm verwendet.")
+        print("[WARNUNG] Nicht alle Hotkeys registriert.")
     print()
 
-    print("Bereit! Drücke CTRL+ALT+A um Punkte aufzunehmen.")
+    print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
     print_status(state)
     print()
 
-    # Message Loop (non-blocking mit PeekMessage)
     msg = wintypes.MSG()
 
     try:
         while not state.quit_event.is_set():
-            # Nachrichten prüfen (non-blocking)
             if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                 if msg.message == WM_HOTKEY:
                     hk_id = msg.wParam
@@ -445,13 +783,18 @@ def main() -> int:
                         handle_record(state)
                     elif hk_id == HOTKEY_UNDO:
                         handle_undo(state)
+                    elif hk_id == HOTKEY_EDITOR:
+                        handle_editor(state)
+                    elif hk_id == HOTKEY_LOAD:
+                        handle_load(state)
+                    elif hk_id == HOTKEY_SHOW:
+                        handle_show(state)
                     elif hk_id == HOTKEY_TOGGLE:
                         handle_toggle(state)
                     elif hk_id == HOTKEY_QUIT:
                         handle_quit(state, main_thread_id)
                         break
             else:
-                # Keine Nachricht - kurz warten um CPU zu schonen
                 time.sleep(0.01)
 
     except KeyboardInterrupt:
@@ -460,13 +803,9 @@ def main() -> int:
         state.quit_event.set()
 
     finally:
-        # Aufräumen
         unregister_hotkeys()
         print("\n[INFO] Hotkeys deregistriert.")
-
-        # Kurz warten, damit Worker-Thread beenden kann
         time.sleep(0.2)
-
         print("[INFO] Programm beendet.")
 
     return 0
