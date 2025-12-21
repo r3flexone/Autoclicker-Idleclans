@@ -42,7 +42,6 @@ SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
 CLICKS_PER_POINT: int = 1              # Anzahl Klicks pro Punkt
 MAX_TOTAL_CLICKS: Optional[int] = None # None = unendlich
 FAILSAFE_ENABLED: bool = True          # Fail-Safe aktivieren
-LOOP_SEQUENCE: bool = True             # Sequenz wiederholen?
 
 # =============================================================================
 # WINDOWS API KONSTANTEN
@@ -184,12 +183,18 @@ class SequenceStep:
 
 @dataclass
 class Sequence:
-    """Eine Klick-Sequenz mit Namen und Schritten."""
+    """Eine Klick-Sequenz mit Start-Phase (einmalig) und Loop-Phase (wiederholt)."""
     name: str
-    steps: list[SequenceStep] = field(default_factory=list)
+    start_steps: list[SequenceStep] = field(default_factory=list)  # Einmalig am Anfang
+    loop_steps: list[SequenceStep] = field(default_factory=list)   # Wird wiederholt
 
     def __str__(self) -> str:
-        return f"{self.name} ({len(self.steps)} Schritte)"
+        start_count = len(self.start_steps)
+        loop_count = len(self.loop_steps)
+        return f"{self.name} (Start: {start_count}, Loop: {loop_count})"
+
+    def total_steps(self) -> int:
+        return len(self.start_steps) + len(self.loop_steps)
 
 @dataclass
 class AutoClickerState:
@@ -235,13 +240,17 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         json.dump(points_data, f, indent=2, ensure_ascii=False)
 
-    # Sequenzen speichern (mit eingebetteten Koordinaten)
+    # Sequenzen speichern (mit Start + Loop Phasen)
     for name, seq in state.sequences.items():
         seq_data = {
             "name": seq.name,
-            "steps": [
+            "start_steps": [
                 {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after}
-                for s in seq.steps
+                for s in seq.start_steps
+            ],
+            "loop_steps": [
+                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after}
+                for s in seq.loop_steps
             ]
         }
         filename = f"{name.replace(' ', '_').lower()}.json"
@@ -260,21 +269,35 @@ def load_points(state: AutoClickerState) -> None:
         print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
-    """Lädt eine einzelne Sequenz-Datei (neues Format mit eingebetteten Koordinaten)."""
+    """Lädt eine einzelne Sequenz-Datei (mit Start + Loop Phasen)."""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
-            steps = []
-            for s in data["steps"]:
-                # Neues Format: x, y, name, delay_after direkt gespeichert
-                step = SequenceStep(
-                    x=s["x"],
-                    y=s["y"],
-                    delay_after=s["delay_after"],
-                    name=s.get("name", "")
-                )
-                steps.append(step)
-            return Sequence(data["name"], steps)
+
+            def parse_steps(steps_data: list) -> list[SequenceStep]:
+                steps = []
+                for s in steps_data:
+                    step = SequenceStep(
+                        x=s["x"],
+                        y=s["y"],
+                        delay_after=s["delay_after"],
+                        name=s.get("name", "")
+                    )
+                    steps.append(step)
+                return steps
+
+            # Neues Format mit start_steps und loop_steps
+            if "start_steps" in data or "loop_steps" in data:
+                start_steps = parse_steps(data.get("start_steps", []))
+                loop_steps = parse_steps(data.get("loop_steps", []))
+                return Sequence(data["name"], start_steps, loop_steps)
+            # Altes Format (nur steps) - konvertieren zu loop_steps
+            elif "steps" in data:
+                loop_steps = parse_steps(data["steps"])
+                return Sequence(data["name"], [], loop_steps)
+            else:
+                return Sequence(data["name"], [], [])
+
     except Exception as e:
         print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
         return None
@@ -349,10 +372,13 @@ def print_status(state: AutoClickerState) -> None:
 
         clear_line()
         if state.is_running and state.active_sequence:
-            step_info = f"Schritt {state.current_step_index + 1}/{len(state.active_sequence.steps)}"
-            print(f"[{status}] Sequenz: {seq_name} | {step_info} | Klicks: {state.total_clicks}", flush=True)
+            print(f"[{status}] Sequenz: {seq_name} | Klicks: {state.total_clicks}", flush=True)
         else:
-            print(f"[{status}] {points_str} | Sequenz: {seq_name}", flush=True)
+            if state.active_sequence:
+                seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loop: {len(state.active_sequence.loop_steps)}"
+                print(f"[{status}] {points_str} | Sequenz: {seq_name} ({seq_info})", flush=True)
+            else:
+                print(f"[{status}] {points_str} | Sequenz: {seq_name}", flush=True)
 
 def print_points(state: AutoClickerState) -> None:
     """Zeigt alle gespeicherten Punkte an."""
@@ -377,8 +403,14 @@ def print_points(state: AutoClickerState) -> None:
             seq = load_sequence_file(path)
             if seq:
                 print(f"  • {seq}")
-                for i, step in enumerate(seq.steps):
-                    print(f"      {i+1}. {step}")
+                if seq.start_steps:
+                    print("      START:")
+                    for i, step in enumerate(seq.start_steps):
+                        print(f"        {i+1}. {step}")
+                if seq.loop_steps:
+                    print("      LOOP:")
+                    for i, step in enumerate(seq.loop_steps):
+                        print(f"        {i+1}. {step}")
 
     with state.lock:
         if state.active_sequence:
@@ -410,7 +442,7 @@ def run_sequence_editor(state: AutoClickerState) -> None:
         for i, (name, path) in enumerate(available_sequences):
             seq = load_sequence_file(path)
             if seq:
-                print(f"  [{i+1}] {seq.name} ({len(seq.steps)} Schritte)")
+                print(f"  [{i+1}] {seq}")
 
     print("\nAuswahl (oder 'abbruch'):")
 
@@ -442,22 +474,20 @@ def run_sequence_editor(state: AutoClickerState) -> None:
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
-    """Bearbeitet eine Sequenz (neu oder bestehend)."""
+    """Bearbeitet eine Sequenz (neu oder bestehend) mit Start + Loop Phase."""
 
     if existing:
         print(f"\n--- Bearbeite Sequenz: {existing.name} ---")
         seq_name = existing.name
-        steps = list(existing.steps)  # Kopie der bestehenden Schritte
-
-        print(f"\nAktuelle Schritte ({len(steps)}):")
-        for i, step in enumerate(steps):
-            print(f"  {i+1}. {step}")
+        start_steps = list(existing.start_steps)
+        loop_steps = list(existing.loop_steps)
     else:
         print("\n--- Neue Sequenz erstellen ---")
         seq_name = input("Name der Sequenz: ").strip()
         if not seq_name:
             seq_name = f"Sequenz_{int(time.time())}"
-        steps = []
+        start_steps = []
+        loop_steps = []
 
     # Verfügbare Punkte anzeigen
     with state.lock:
@@ -465,31 +495,70 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         for i, p in enumerate(state.points):
             print(f"  P{i+1}: {p}")
 
+    # Erst START-Phase bearbeiten
+    print("\n" + "=" * 60)
+    print("  PHASE 1: START-SEQUENZ (wird einmal ausgeführt)")
+    print("=" * 60)
+    start_steps = edit_phase(state, start_steps, "START")
+
+    # Dann LOOP-Phase bearbeiten
+    print("\n" + "=" * 60)
+    print("  PHASE 2: LOOP-SEQUENZ (wird wiederholt)")
+    print("=" * 60)
+    loop_steps = edit_phase(state, loop_steps, "LOOP")
+
+    # Prüfen ob mindestens Loop-Steps vorhanden
+    if not loop_steps:
+        print("\n[WARNUNG] Keine Loop-Schritte! Sequenz wird nur einmal ausgeführt.")
+
+    # Sequenz erstellen und speichern
+    new_sequence = Sequence(name=seq_name, start_steps=start_steps, loop_steps=loop_steps)
+
+    with state.lock:
+        state.sequences[seq_name] = new_sequence
+        state.active_sequence = new_sequence
+
+    save_data(state)
+
+    print(f"\n[ERFOLG] Sequenz '{seq_name}' gespeichert!")
+    print(f"         Start: {len(start_steps)} Schritte (einmalig)")
+    print(f"         Loop:  {len(loop_steps)} Schritte (wiederholt)")
+    print("         Drücke CTRL+ALT+S zum Starten.\n")
+
+
+def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> list[SequenceStep]:
+    """Bearbeitet eine Phase (Start oder Loop) der Sequenz."""
+
+    if steps:
+        print(f"\nAktuelle {phase_name}-Schritte ({len(steps)}):")
+        for i, step in enumerate(steps):
+            print(f"  {i+1}. {step}")
+
     print("\n" + "-" * 60)
     print("Befehle:")
     print("  <Nr> <Zeit>  - Schritt hinzufügen (z.B. '1 30')")
     print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
     print("  clear        - Alle Schritte löschen")
     print("  show         - Aktuelle Schritte anzeigen")
-    print("  fertig       - Speichern und beenden")
-    print("  abbruch      - Ohne Speichern beenden")
+    print("  fertig       - Diese Phase abschließen")
+    print("  abbruch      - Gesamten Editor abbrechen")
     print("-" * 60)
 
     while True:
         try:
-            prompt = f"Schritt {len(steps) + 1}" if not steps else f"[{len(steps)} Schritte]"
+            prompt = f"[{phase_name}: {len(steps)}]"
             user_input = input(f"{prompt} > ").strip()
 
             if user_input.lower() == "fertig":
-                break
+                return steps
             elif user_input.lower() == "abbruch":
                 print("[ABBRUCH] Sequenz nicht gespeichert.")
-                return
+                raise KeyboardInterrupt
             elif user_input.lower() == "":
                 continue
             elif user_input.lower() == "show":
                 if steps:
-                    print("\nAktuelle Schritte:")
+                    print(f"\n{phase_name}-Schritte:")
                     for i, step in enumerate(steps):
                         print(f"  {i+1}. {step}")
                 else:
@@ -540,8 +609,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         except ValueError:
             print("  → Ungültige Eingabe!")
         except KeyboardInterrupt:
-            print("\n[ABBRUCH] Editor beendet.")
-            return
+            raise
 
     if not steps:
         print("[FEHLER] Keine Schritte hinzugefügt!")
@@ -613,75 +681,105 @@ def run_sequence_loader(state: AutoClickerState) -> None:
 # =============================================================================
 # WORKER THREAD
 # =============================================================================
+def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen einzelnen Schritt aus. Gibt False zurück wenn abgebrochen."""
+
+    # Fail-Safe prüfen
+    if check_failsafe():
+        print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
+        state.stop_event.set()
+        return False
+
+    # Klick ausführen
+    for _ in range(CLICKS_PER_POINT):
+        if state.stop_event.is_set():
+            return False
+
+        if check_failsafe():
+            print("\n[FAILSAFE] Stoppe...")
+            state.stop_event.set()
+            return False
+
+        send_click(step.x, step.y)
+
+        with state.lock:
+            state.total_clicks += 1
+
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klicks: {state.total_clicks}", end="", flush=True)
+
+        if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
+            print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
+            state.stop_event.set()
+            return False
+
+    # Wartezeit nach diesem Schritt
+    if not state.stop_event.is_set() and step.delay_after > 0:
+        remaining = step.delay_after
+        while remaining > 0 and not state.stop_event.is_set():
+            wait_time = min(1.0, remaining)
+            if state.stop_event.wait(wait_time):
+                return False
+            remaining -= wait_time
+            if remaining > 0:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | Nächster in {remaining:.0f}s...", end="", flush=True)
+
+    return True
+
+
 def sequence_worker(state: AutoClickerState) -> None:
-    """Worker-Thread, der die Sequenz ausführt."""
+    """Worker-Thread, der die Sequenz ausführt (Start + Loop Phasen)."""
     print("\n[WORKER] Sequenz gestartet.")
 
     with state.lock:
         sequence = state.active_sequence
-        if not sequence or not sequence.steps:
+        if not sequence:
             print("[FEHLER] Keine gültige Sequenz!")
             state.is_running = False
             return
 
-    while not state.stop_event.is_set() and not state.quit_event.is_set():
-        with state.lock:
-            if state.current_step_index >= len(sequence.steps):
-                if LOOP_SEQUENCE:
-                    state.current_step_index = 0
-                    print("\n[LOOP] Sequenz startet von vorne...")
-                else:
+        has_start = len(sequence.start_steps) > 0
+        has_loop = len(sequence.loop_steps) > 0
+
+        if not has_start and not has_loop:
+            print("[FEHLER] Sequenz ist leer!")
+            state.is_running = False
+            return
+
+    # === PHASE 1: START-SEQUENZ (einmalig) ===
+    if has_start and not state.stop_event.is_set():
+        print("\n[START] Führe Start-Sequenz aus...")
+        total_start = len(sequence.start_steps)
+
+        for i, step in enumerate(sequence.start_steps):
+            if state.stop_event.is_set() or state.quit_event.is_set():
+                break
+
+            if not execute_step(state, step, i + 1, total_start, "START"):
+                break
+
+        if not state.stop_event.is_set():
+            print("\n[START] Start-Sequenz abgeschlossen.")
+
+    # === PHASE 2: LOOP-SEQUENZ (wiederholt) ===
+    if has_loop and not state.stop_event.is_set():
+        print("\n[LOOP] Starte Loop-Sequenz...")
+        total_loop = len(sequence.loop_steps)
+        loop_count = 0
+
+        while not state.stop_event.is_set() and not state.quit_event.is_set():
+            loop_count += 1
+
+            for i, step in enumerate(sequence.loop_steps):
+                if state.stop_event.is_set() or state.quit_event.is_set():
                     break
 
-            step = sequence.steps[state.current_step_index]
+                if not execute_step(state, step, i + 1, total_loop, f"LOOP #{loop_count}"):
+                    break
 
-        # Fail-Safe prüfen
-        if check_failsafe():
-            print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
-            state.stop_event.set()
-            break
-
-        # Klick ausführen (Koordinaten direkt aus Step)
-        for _ in range(CLICKS_PER_POINT):
             if state.stop_event.is_set():
                 break
-
-            if check_failsafe():
-                print("\n[FAILSAFE] Stoppe...")
-                state.stop_event.set()
-                break
-
-            send_click(step.x, step.y)
-
-            with state.lock:
-                state.total_clicks += 1
-
-            print_status(state)
-
-            if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
-                print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
-                state.stop_event.set()
-                break
-
-        # Wartezeit nach diesem Schritt (unterbrechbar)
-        if not state.stop_event.is_set() and step.delay_after > 0:
-            # Countdown anzeigen
-            remaining = step.delay_after
-            while remaining > 0 and not state.stop_event.is_set():
-                wait_time = min(1.0, remaining)
-                if state.stop_event.wait(wait_time):
-                    break
-                remaining -= wait_time
-                if remaining > 0:
-                    with state.lock:
-                        step_num = state.current_step_index + 1
-                        total_steps = len(sequence.steps)
-                    clear_line()
-                    print(f"[WARTE] Schritt {step_num}/{total_steps} | Nächster Klick in {remaining:.0f}s...", end="", flush=True)
-
-        # Nächster Schritt
-        with state.lock:
-            state.current_step_index += 1
 
     with state.lock:
         state.is_running = False
@@ -945,17 +1043,12 @@ def print_help() -> None:
     print()
     print("So funktioniert's:")
     print("  1. Punkte aufnehmen (CTRL+ALT+A an verschiedenen Positionen)")
-    print("  2. Sequenz erstellen (CTRL+ALT+E) mit Punkt-Nr und Wartezeit")
+    print("  2. Sequenz erstellen (CTRL+ALT+E)")
+    print("     - START-Phase: wird EINMAL ausgeführt")
+    print("     - LOOP-Phase:  wird WIEDERHOLT")
     print("  3. Sequenz starten (CTRL+ALT+S)")
     print()
-    print("Beispiel-Sequenz:")
-    print("  Schritt 1: Punkt 1, warte 30s")
-    print("  Schritt 2: Punkt 2, warte 30s")
-    print("  Schritt 3: Punkt 3, warte 20s")
-    print("  Schritt 4: Punkt 2, warte 30s  ← Punkt 2 nochmal!")
-    print()
     print(f"Sequenzen werden in '{SEQUENCES_DIR}/' gespeichert.")
-    print(f"Loop-Modus: {'Aktiviert' if LOOP_SEQUENCE else 'Deaktiviert'}")
     print("=" * 65)
     print()
 
