@@ -1137,15 +1137,21 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
         return
 
-    # Schritt 2: Item-Profile definieren
-    print("\n" + "=" * 60)
-    print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
-    print("=" * 60)
-    items = edit_item_profiles(items, slots)
+    # Schritt 2: Item-Profile definieren (Loop bis mindestens 1 Item)
+    while True:
+        print("\n" + "=" * 60)
+        print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
+        print("=" * 60)
+        items = edit_item_profiles(items, slots)
 
-    if not items:
-        print("\n[FEHLER] Mindestens 1 Item-Profil erforderlich!")
-        return
+        if items:
+            break
+        else:
+            print("\n[FEHLER] Mindestens 1 Item-Profil erforderlich!")
+            retry = input("Nochmal versuchen? (j/n): ").strip().lower()
+            if retry != "j":
+                print("[ABBRUCH] Item-Scan nicht gespeichert.")
+                return
 
     # Schritt 3: Toleranz
     print("\n" + "=" * 60)
