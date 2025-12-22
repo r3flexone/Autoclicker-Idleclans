@@ -1283,6 +1283,8 @@ def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
             user_input = input(f"{prompt} > ").strip().lower()
 
             if user_input == "fertig":
+                # Entferne Farben die bei allen Items gleich sind (Hintergrund)
+                items = remove_common_colors(items)
                 return items
             elif user_input == "":
                 continue
@@ -1372,36 +1374,68 @@ def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
 
 
 def collect_marker_colors() -> list[tuple]:
-    """Sammelt Marker-Farben für ein Item-Profil."""
-    colors = []
+    """Sammelt Marker-Farben für ein Item-Profil durch Region-Scan."""
+    print("\n  Wähle einen Bereich auf dem Item aus:")
+    print("  (Die 5 häufigsten Farben werden automatisch genommen)")
 
-    print("  Bewege die Maus zu einer Marker-Farbe und drücke Enter.")
-    print("  Tippe 'fertig' wenn alle Farben gesammelt sind.")
+    region = select_region()
+    if not region:
+        return []
 
-    while True:
-        try:
-            user_input = input(f"  [Farben: {len(colors)}] > ").strip().lower()
+    # Screenshot der Region
+    img = take_screenshot(region)
+    if img is None:
+        print("  → Fehler beim Screenshot!")
+        return []
 
-            if user_input == "fertig":
-                return colors
-            elif user_input == "":
-                # Enter gedrückt - Farbe aufnehmen
-                x, y = get_cursor_pos()
-                img = take_screenshot((x, y, x+1, y+1))
-                if img:
-                    color = img.getpixel((0, 0))[:3]
-                    if color not in colors:
-                        colors.append(color)
-                        print(f"    ✓ Farbe RGB{color} hinzugefügt ({len(colors)} gesamt)")
-                    else:
-                        print(f"    → Farbe RGB{color} bereits vorhanden")
-                else:
-                    print("    → Fehler beim Lesen der Farbe")
-            else:
-                print("  → Enter = Farbe aufnehmen, 'fertig' = abschließen")
+    # Farben zählen (mit Rundung für Gruppierung)
+    color_counts = {}
+    pixels = img.load()
+    width, height = img.size
 
-        except (KeyboardInterrupt, EOFError):
-            return colors
+    for x in range(width):
+        for y in range(height):
+            pixel = pixels[x, y][:3]
+            # Runde auf 5er-Schritte für Gruppierung ähnlicher Farben
+            rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
+            color_counts[rounded] = color_counts.get(rounded, 0) + 1
+
+    # Top 5 häufigste Farben
+    sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    colors = [color for color, count in sorted_colors]
+
+    print(f"\n  Top 5 Farben gefunden:")
+    for i, (color, count) in enumerate(sorted_colors):
+        print(f"    {i+1}. RGB{color} ({count} Pixel)")
+
+    return colors
+
+
+def remove_common_colors(items: list) -> list:
+    """Entfernt Farben die bei ALLEN Items vorkommen (= Hintergrund)."""
+    if len(items) < 2:
+        return items
+
+    # Finde Farben die in ALLEN Items vorkommen
+    common_colors = set(items[0].marker_colors)
+    for item in items[1:]:
+        common_colors &= set(item.marker_colors)
+
+    if not common_colors:
+        return items
+
+    print(f"\n  Entferne {len(common_colors)} gemeinsame Hintergrund-Farbe(n):")
+    for color in common_colors:
+        print(f"    → RGB{color}")
+
+    # Entferne gemeinsame Farben von allen Items
+    for item in items:
+        item.marker_colors = [c for c in item.marker_colors if c not in common_colors]
+        # Mindestens 1 Farbe behalten
+        if not item.marker_colors:
+            print(f"  [WARNUNG] {item.name} hat keine eindeutigen Farben mehr!")
+
+    return items
 
 
 # =============================================================================
