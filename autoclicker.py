@@ -49,7 +49,7 @@ except ImportError:
 # =============================================================================
 # KONFIGURATION
 # =============================================================================
-CONFIG_FILE = "autoclicker_config.json"
+CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
 
 # Standard-Konfiguration (wird von config.json überschrieben)
