@@ -11,7 +11,7 @@ Hotkeys:
   CTRL+ALT+A  - Aktuelle Mausposition als Punkt speichern
   CTRL+ALT+U  - Letzten Punkt entfernen
   CTRL+ALT+E  - Sequenz-Editor öffnen (Punkte mit Zeiten verknüpfen)
-  CTRL+ALT+M  - Item-Scan Editor (Items erkennen + vergleichen)
+  CTRL+ALT+N  - Item-Scan Editor (Items erkennen + vergleichen)
   CTRL+ALT+L  - Gespeicherte Sequenz laden
   CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen
   CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)
@@ -67,7 +67,7 @@ VK_U = 0x55  # Undo
 VK_C = 0x43  # Clear all points
 VK_X = 0x58  # Reset all (points + sequences) - X statt R (R oft belegt)
 VK_E = 0x45  # Editor
-VK_M = 0x4D  # Item-Scan Editor (M für Marker)
+VK_N = 0x4E  # Item-Scan Editor (N für New/Scan)
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
 VK_S = 0x53  # Start/Stop
@@ -1810,7 +1810,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print(f"     Verfügbar: {', '.join(available)}")
                         else:
                             print(f"  → Keine Item-Scans vorhanden!")
-                            print(f"     Erstelle einen mit CTRL+ALT+M")
+                            print(f"     Erstelle einen mit CTRL+ALT+N")
                         continue
 
                 # Scan-Schritt erstellen (x, y werden nicht verwendet)
@@ -2356,7 +2356,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (Punkte löschen)"),
         (HOTKEY_RESET, VK_X, "CTRL+ALT+X (FACTORY RESET)"),
         (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
-        (HOTKEY_ITEM_SCAN, VK_M, "CTRL+ALT+M (Item-Scan Editor)"),
+        (HOTKEY_ITEM_SCAN, VK_N, "CTRL+ALT+N (Item-Scan Editor)"),
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
@@ -2396,7 +2396,7 @@ def print_help() -> None:
     print("  CTRL+ALT+C  - Alle Punkte löschen")
     print("  CTRL+ALT+X  - FACTORY RESET (Punkte + Sequenzen)")
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
-    print("  CTRL+ALT+M  - Item-Scan Editor (Items erkennen + vergleichen)")
+    print("  CTRL+ALT+N  - Item-Scan Editor (Items erkennen + vergleichen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
     print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
