@@ -182,23 +182,23 @@ class ClickPoint:
 
 @dataclass
 class SequenceStep:
-    """Ein Schritt in einer Sequenz: Koordinaten und Wartezeit/Farbprüfung danach."""
+    """Ein Schritt in einer Sequenz: Erst warten/prüfen, DANN klicken."""
     x: int                # X-Koordinate (direkt gespeichert)
     y: int                # Y-Koordinate (direkt gespeichert)
-    delay_after: float    # Wartezeit in Sekunden NACH diesem Klick (0 = keine Zeit-Wartezeit)
+    delay_before: float   # Wartezeit in Sekunden VOR diesem Klick (0 = sofort)
     name: str = ""        # Optionaler Name des Punktes
-    # Optional: Warten auf Farbe statt Zeit
+    # Optional: Warten auf Farbe statt Zeit (VOR dem Klick)
     wait_pixel: Optional[tuple] = None   # (x, y) Position zum Prüfen
     wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
 
     def __str__(self) -> str:
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
-            return f"{pos_str} → warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]})"
-        elif self.delay_after > 0:
-            return f"{pos_str} → warte {self.delay_after}s"
+            return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
+        elif self.delay_before > 0:
+            return f"warte {self.delay_before}s → klicke {pos_str}"
         else:
-            return f"{pos_str} → sofort weiter"
+            return f"sofort → klicke {pos_str}"
 
 @dataclass
 class Sequence:
@@ -274,12 +274,12 @@ def save_data(state: AutoClickerState) -> None:
             "name": seq.name,
             "max_loops": seq.max_loops,
             "start_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after,
+                {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
                  "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
                 for s in seq.start_steps
             ],
             "loop_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after,
+                {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
                  "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
                 for s in seq.loop_steps
             ]
@@ -314,10 +314,12 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     wait_color = s.get("wait_color")
                     if wait_color:
                         wait_color = tuple(wait_color)
+                    # Unterstütze beide Formate: delay_before (neu) und delay_after (alt)
+                    delay = s.get("delay_before", s.get("delay_after", 0))
                     step = SequenceStep(
                         x=s["x"],
                         y=s["y"],
-                        delay_after=s["delay_after"],
+                        delay_before=delay,
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
                         wait_color=wait_color
@@ -1014,9 +1016,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             print(f"  {i+1}. {step}")
 
     print("\n" + "-" * 60)
-    print("Befehle:")
-    print("  <Nr> <Zeit>  - Schritt mit Wartezeit (z.B. '1 30' = P1, 30s warten)")
-    print("  <Nr> pixel   - Schritt mit Farbprüfung (z.B. '1 pixel')")
+    print("Befehle (Logik: erst warten, DANN klicken):")
+    print("  <Nr> <Zeit>  - Warte Xs, dann klicke (z.B. '1 30' = 30s warten → P1 klicken)")
+    print("  <Nr> 0       - Sofort klicken ohne Wartezeit (z.B. '1 0')")
+    print("  <Nr> pixel   - Warte auf Farbe, dann klicke (z.B. '1 pixel')")
     print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
     print("  clear        - Alle Schritte löschen")
     print("  show         - Aktuelle Schritte anzeigen")
@@ -1079,10 +1082,11 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             # Prüfen ob Pixel-Wartezeit oder Zeit-Wartezeit
             if parts[1].lower() == "pixel":
-                # Pixel-basierte Wartezeit
+                # Pixel-basierte Wartezeit (warte auf Farbe, dann klicke)
                 print("\n  Farb-Trigger einrichten:")
                 print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
-                print("  und drücke Enter...")
+                print("  (Wenn diese Farbe erscheint, wird geklickt)")
+                print("  Drücke Enter...")
                 input()
                 px, py = get_cursor_pos()
                 print(f"  → Position: ({px}, {py})")
@@ -1093,8 +1097,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     if img:
                         color = img.getpixel((0, 0))[:3]
                         print(f"  → Gespeicherte Farbe: RGB{color}")
+                        print(f"  → Wenn diese Farbe erscheint → klicke auf {point_name}")
                         step = SequenceStep(
-                            x=point_x, y=point_y, delay_after=0, name=point_name,
+                            x=point_x, y=point_y, delay_before=0, name=point_name,
                             wait_pixel=(px, py), wait_color=color
                         )
                         steps.append(step)
@@ -1104,13 +1109,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 else:
                     print("  → Fehler: Pillow nicht installiert! (pip install pillow)")
             else:
-                # Zeit-basierte Wartezeit
+                # Zeit-basierte Wartezeit (warte X Sekunden, dann klicke)
                 delay = float(parts[1])
                 if delay < 0:
                     print("  → Wartezeit muss >= 0 sein!")
                     continue
 
-                step = SequenceStep(x=point_x, y=point_y, delay_after=delay, name=point_name)
+                step = SequenceStep(x=point_x, y=point_y, delay_before=delay, name=point_name)
                 steps.append(step)
                 print(f"  ✓ Hinzugefügt: {step}")
 
@@ -1173,7 +1178,7 @@ def run_sequence_loader(state: AutoClickerState) -> None:
 # WORKER THREAD
 # =============================================================================
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
-    """Führt einen einzelnen Schritt aus. Gibt False zurück wenn abgebrochen."""
+    """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
 
     # Fail-Safe prüfen
     if check_failsafe():
@@ -1181,7 +1186,49 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         state.stop_event.set()
         return False
 
-    # Klick ausführen
+    # === PHASE 1: Warten VOR dem Klick (Zeit oder Farbe) ===
+    if step.wait_pixel and step.wait_color:
+        # Warten auf Farbe an Pixel-Position
+        timeout = 300  # Max 5 Minuten warten
+        start_time = time.time()
+        while not state.stop_event.is_set():
+            # Prüfe Farbe
+            if PILLOW_AVAILABLE:
+                img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
+                                      step.wait_pixel[0]+1, step.wait_pixel[1]+1))
+                if img:
+                    current_color = img.getpixel((0, 0))[:3]
+                    if color_distance(current_color, step.wait_color) <= COLOR_TOLERANCE:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt! Klicke...", end="", flush=True)
+                        break
+
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s")
+                return False
+
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
+
+            if state.stop_event.wait(1.0):
+                return False
+
+    elif step.delay_before > 0:
+        # Zeit-basierte Wartezeit VOR dem Klick
+        remaining = step.delay_before
+        while remaining > 0 and not state.stop_event.is_set():
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klicke in {remaining:.0f}s...", end="", flush=True)
+            wait_time = min(1.0, remaining)
+            if state.stop_event.wait(wait_time):
+                return False
+            remaining -= wait_time
+
+    if state.stop_event.is_set():
+        return False
+
+    # === PHASE 2: Klick ausführen ===
     for _ in range(CLICKS_PER_POINT):
         if state.stop_event.is_set():
             return False
@@ -1197,53 +1244,12 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             state.total_clicks += 1
 
         clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klicks: {state.total_clicks}", end="", flush=True)
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
 
         if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
             print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
             state.stop_event.set()
             return False
-
-    # Warten nach diesem Schritt (Zeit oder Farbe)
-    if not state.stop_event.is_set():
-        if step.wait_pixel and step.wait_color:
-            # Warten auf Farbe an Pixel-Position
-            timeout = 300  # Max 5 Minuten warten
-            start_time = time.time()
-            while not state.stop_event.is_set():
-                # Prüfe Farbe
-                if PILLOW_AVAILABLE:
-                    img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
-                                          step.wait_pixel[0]+1, step.wait_pixel[1]+1))
-                    if img:
-                        current_color = img.getpixel((0, 0))[:3]
-                        if color_distance(current_color, step.wait_color) <= COLOR_TOLERANCE:
-                            clear_line()
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt!", end="", flush=True)
-                            break
-
-                elapsed = time.time() - start_time
-                if elapsed >= timeout:
-                    print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s")
-                    return False
-
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
-
-                if state.stop_event.wait(1.0):
-                    return False
-
-        elif step.delay_after > 0:
-            # Zeit-basierte Wartezeit
-            remaining = step.delay_after
-            while remaining > 0 and not state.stop_event.is_set():
-                wait_time = min(1.0, remaining)
-                if state.stop_event.wait(wait_time):
-                    return False
-                remaining -= wait_time
-                if remaining > 0:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Nächster in {remaining:.0f}s...", end="", flush=True)
 
     return True
 
