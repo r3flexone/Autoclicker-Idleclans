@@ -13,6 +13,7 @@ Hotkeys:
   CTRL+ALT+E  - Sequenz-Editor öffnen (Punkte mit Zeiten verknüpfen)
   CTRL+ALT+L  - Gespeicherte Sequenz laden
   CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen
+  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)
   CTRL+ALT+S  - Start/Stop Toggle (führt aktive Sequenz aus)
   CTRL+ALT+Q  - Programm beenden
 
@@ -32,8 +33,17 @@ import sys
 import json
 import os
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+from typing import Optional, Callable
 from pathlib import Path
+
+# Bilderkennung (optional - nur wenn pillow installiert)
+try:
+    from PIL import Image, ImageGrab
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+    print("[WARNUNG] Pillow nicht installiert. Bilderkennung deaktiviert.")
+    print("          Installieren mit: pip install pillow")
 
 # =============================================================================
 # KONFIGURATION
@@ -59,6 +69,7 @@ VK_E = 0x45  # Editor
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
 VK_S = 0x53  # Start/Stop
+VK_T = 0x54  # Test colors (Farb-Analysator)
 VK_Q = 0x51  # Quit
 
 # Hotkey IDs
@@ -70,7 +81,8 @@ HOTKEY_EDITOR = 5
 HOTKEY_LOAD = 6
 HOTKEY_SHOW = 7
 HOTKEY_TOGGLE = 8
-HOTKEY_QUIT = 9
+HOTKEY_ANALYZE = 9
+HOTKEY_QUIT = 10
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -170,16 +182,23 @@ class ClickPoint:
 
 @dataclass
 class SequenceStep:
-    """Ein Schritt in einer Sequenz: Koordinaten und Wartezeit danach."""
+    """Ein Schritt in einer Sequenz: Koordinaten und Wartezeit/Farbprüfung danach."""
     x: int                # X-Koordinate (direkt gespeichert)
     y: int                # Y-Koordinate (direkt gespeichert)
-    delay_after: float    # Wartezeit in Sekunden NACH diesem Klick
+    delay_after: float    # Wartezeit in Sekunden NACH diesem Klick (0 = keine Zeit-Wartezeit)
     name: str = ""        # Optionaler Name des Punktes
+    # Optional: Warten auf Farbe statt Zeit
+    wait_pixel: Optional[tuple] = None   # (x, y) Position zum Prüfen
+    wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
 
     def __str__(self) -> str:
-        if self.name:
-            return f"{self.name} ({self.x}, {self.y}) → warte {self.delay_after}s"
-        return f"({self.x}, {self.y}) → warte {self.delay_after}s"
+        pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
+        if self.wait_pixel and self.wait_color:
+            return f"{pos_str} → warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]})"
+        elif self.delay_after > 0:
+            return f"{pos_str} → warte {self.delay_after}s"
+        else:
+            return f"{pos_str} → sofort weiter"
 
 @dataclass
 class Sequence:
@@ -197,7 +216,10 @@ class Sequence:
             loop_info += f" x{self.max_loops}"
         else:
             loop_info += " ∞"
-        return f"{self.name} (Start: {start_count}, {loop_info})"
+        # Zähle Schritte mit Farb-Trigger
+        pixel_triggers = sum(1 for s in self.start_steps + self.loop_steps if s.wait_pixel)
+        trigger_str = f" [Farb-Trigger: {pixel_triggers}]" if pixel_triggers > 0 else ""
+        return f"{self.name} (Start: {start_count}, {loop_info}){trigger_str}"
 
     def total_steps(self) -> int:
         return len(self.start_steps) + len(self.loop_steps)
@@ -246,17 +268,19 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         json.dump(points_data, f, indent=2, ensure_ascii=False)
 
-    # Sequenzen speichern (mit Start + Loop Phasen)
+    # Sequenzen speichern (mit Start + Loop Phasen + per-step Trigger)
     for name, seq in state.sequences.items():
         seq_data = {
             "name": seq.name,
             "max_loops": seq.max_loops,
             "start_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after}
+                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after,
+                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
                 for s in seq.start_steps
             ],
             "loop_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after}
+                {"x": s.x, "y": s.y, "name": s.name, "delay_after": s.delay_after,
+                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
                 for s in seq.loop_steps
             ]
         }
@@ -284,11 +308,19 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
             def parse_steps(steps_data: list) -> list[SequenceStep]:
                 steps = []
                 for s in steps_data:
+                    wait_pixel = s.get("wait_pixel")
+                    if wait_pixel:
+                        wait_pixel = tuple(wait_pixel)
+                    wait_color = s.get("wait_color")
+                    if wait_color:
+                        wait_color = tuple(wait_color)
                     step = SequenceStep(
                         x=s["x"],
                         y=s["y"],
                         delay_after=s["delay_after"],
-                        name=s.get("name", "")
+                        name=s.get("name", ""),
+                        wait_pixel=wait_pixel,
+                        wait_color=wait_color
                     )
                     steps.append(step)
                 return steps
@@ -364,6 +396,404 @@ def check_failsafe() -> bool:
 def clear_line() -> None:
     """Löscht die aktuelle Konsolenzeile."""
     print("\r" + " " * 80 + "\r", end="", flush=True)
+
+# =============================================================================
+# BILDERKENNUNG (Screen Detection)
+# =============================================================================
+# Farben für UI-Elemente (RGB) - Mehrere Varianten für bessere Erkennung
+LOBBY_BUTTON_COLORS = [
+    (46, 204, 113),    # Grün (Material Design)
+    (39, 174, 96),     # Dunkleres Grün
+    (88, 214, 141),    # Helleres Grün
+    (46, 139, 87),     # Sea Green
+    (60, 179, 113),    # Medium Sea Green
+    (50, 205, 50),     # Lime Green
+    (34, 139, 34),     # Forest Green
+    (0, 128, 0),       # Pure Green
+    (85, 239, 196),    # Mint/Türkis-Grün
+    (0, 230, 118),     # Leuchtendes Grün
+    (72, 201, 176),    # Medium Aquamarine
+    (32, 178, 170),    # Light Sea Green
+]
+RAID_SCREEN_COLORS = [
+    (38, 166, 154),    # Türkis (Material Teal)
+    (0, 150, 136),     # Dunkleres Teal
+    (77, 182, 172),    # Helleres Teal
+    (0, 188, 212),     # Cyan
+    (0, 172, 193),     # Dark Cyan
+    (128, 203, 196),   # Light Teal
+    (0, 128, 128),     # Pure Teal
+    (32, 178, 170),    # Light Sea Green
+]
+COLOR_TOLERANCE = 40                    # Farbtoleranz für Erkennung (erhöht)
+DEBUG_DETECTION = True                  # Debug-Ausgaben aktivieren
+
+def color_distance(c1: tuple, c2: tuple) -> float:
+    """Berechnet die Distanz zwischen zwei RGB-Farben."""
+    return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2 + (c1[2]-c2[2])**2) ** 0.5
+
+def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
+    """
+    Nimmt einen Screenshot auf. region=(x1, y1, x2, y2) oder None für Vollbild.
+    Unterstützt mehrere Monitore (auch negative Koordinaten für linke Monitore).
+    """
+    if not PILLOW_AVAILABLE:
+        return None
+    try:
+        # all_screens=True ermöglicht Erfassung aller Monitore
+        if region:
+            # Bei Region: Erst alle Screens erfassen, dann zuschneiden
+            full_screenshot = ImageGrab.grab(all_screens=True)
+            # Koordinaten anpassen (all_screens verschiebt den Ursprung)
+            # Hole die tatsächlichen Bildschirmgrenzen
+            import ctypes
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            x_offset = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            y_offset = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+
+            # Region relativ zum virtuellen Desktop anpassen
+            adjusted_region = (
+                region[0] - x_offset,
+                region[1] - y_offset,
+                region[2] - x_offset,
+                region[3] - y_offset
+            )
+            return full_screenshot.crop(adjusted_region)
+        else:
+            return ImageGrab.grab(all_screens=True)
+    except Exception as e:
+        print(f"[FEHLER] Screenshot fehlgeschlagen: {e}")
+        return None
+
+def count_color_pixels(image: 'Image.Image', target_color: tuple, tolerance: int = COLOR_TOLERANCE) -> int:
+    """Zählt Pixel einer bestimmten Farbe im Bild."""
+    if image is None:
+        return 0
+    count = 0
+    pixels = image.load()
+    width, height = image.size
+    for x in range(width):
+        for y in range(height):
+            pixel = pixels[x, y][:3]  # RGB ohne Alpha
+            if color_distance(pixel, target_color) <= tolerance:
+                count += 1
+    return count
+
+def count_multi_color_pixels(image: 'Image.Image', target_colors: list, tolerance: int = COLOR_TOLERANCE) -> int:
+    """Zählt Pixel die einer der Zielfarben entsprechen."""
+    if image is None:
+        return 0
+    count = 0
+    pixels = image.load()
+    width, height = image.size
+    for x in range(width):
+        for y in range(height):
+            pixel = pixels[x, y][:3]  # RGB ohne Alpha
+            for target_color in target_colors:
+                if color_distance(pixel, target_color) <= tolerance:
+                    count += 1
+                    break  # Zähle Pixel nur einmal
+    return count
+
+def analyze_screen_colors(region: tuple = None) -> dict:
+    """
+    Analysiert die häufigsten Farben in einem Screenshot.
+    Nützlich um die richtigen Farben für die Erkennung zu finden.
+    """
+    if not PILLOW_AVAILABLE:
+        print("[FEHLER] Pillow nicht installiert!")
+        return {}
+
+    img = take_screenshot(region)
+    if img is None:
+        return {}
+
+    # Farben zählen (mit Rundung auf 10er-Schritte für Gruppierung)
+    color_counts = {}
+    pixels = img.load()
+    width, height = img.size
+
+    for x in range(0, width, 2):  # Jeden 2. Pixel für Geschwindigkeit
+        for y in range(0, height, 2):
+            pixel = pixels[x, y][:3]
+            # Runde auf 5er-Schritte für Gruppierung
+            rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
+            color_counts[rounded] = color_counts.get(rounded, 0) + 1
+
+    return color_counts
+
+def run_color_analyzer():
+    """Interaktive Farbanalyse für die aktuelle Mausposition oder Region."""
+    print("\n" + "=" * 60)
+    print("  FARB-ANALYSATOR")
+    print("=" * 60)
+
+    if not PILLOW_AVAILABLE:
+        print("\n[FEHLER] Pillow nicht installiert!")
+        print("         Installieren mit: pip install pillow")
+        return
+
+    print("\nWas möchtest du analysieren?")
+    print("  [1] Farbe unter Mauszeiger")
+    print("  [2] Region (Bereich auswählen)")
+    print("  [3] Vollbild")
+    print("\nAuswahl (oder 'abbruch'):")
+
+    try:
+        choice = input("> ").strip()
+
+        if choice == "abbruch":
+            return
+
+        if choice == "1":
+            # Farbe unter Mauszeiger
+            print("\nBewege die Maus zur gewünschten Position und drücke Enter...")
+            input()
+            x, y = get_cursor_pos()
+
+            img = take_screenshot((x, y, x+1, y+1))
+            if img:
+                pixel = img.getpixel((0, 0))[:3]
+                print(f"\n[FARBE] Position ({x}, {y})")
+                print(f"        RGB: {pixel}")
+                print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
+
+                # Prüfen ob ähnlich zu bekannten Farben
+                for lobby_color in LOBBY_BUTTON_COLORS:
+                    dist = color_distance(pixel, lobby_color)
+                    if dist <= COLOR_TOLERANCE:
+                        print(f"        → Ähnlich zu Lobby-Farbe {lobby_color} (Distanz: {dist:.1f})")
+                        break
+                for raid_color in RAID_SCREEN_COLORS:
+                    dist = color_distance(pixel, raid_color)
+                    if dist <= COLOR_TOLERANCE:
+                        print(f"        → Ähnlich zu Raid-Farbe {raid_color} (Distanz: {dist:.1f})")
+                        break
+
+        elif choice == "2":
+            # Region analysieren
+            region = select_region()
+            if region:
+                analyze_and_print_colors(region)
+
+        elif choice == "3":
+            # Vollbild analysieren
+            analyze_and_print_colors(None)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n[ABBRUCH]")
+
+def analyze_and_print_colors(region: tuple = None):
+    """Analysiert und zeigt die häufigsten Farben."""
+    print("\n[ANALYSE] Analysiere Farben...")
+
+    color_counts = analyze_screen_colors(region)
+    if not color_counts:
+        print("[FEHLER] Keine Farben gefunden!")
+        return
+
+    # Top 20 häufigste Farben
+    sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:20]
+
+    print("\nTop 20 häufigste Farben:")
+    print("-" * 50)
+    for i, (color, count) in enumerate(sorted_colors, 1):
+        # Prüfen ob grün/türkis
+        is_green = (color[1] > color[0] and color[1] > color[2] and color[1] > 100)
+        is_teal = (color[1] > 100 and color[2] > 100 and abs(color[1] - color[2]) < 80 and color[0] < 100)
+
+        marker = ""
+        if is_green:
+            marker = " ← GRÜN"
+        elif is_teal:
+            marker = " ← TÜRKIS"
+
+        print(f"  {i:2}. RGB({color[0]:3}, {color[1]:3}, {color[2]:3}) - {count:5} Pixel{marker}")
+
+    print("-" * 50)
+    print("Tipp: Suche nach grünen Farben für Lobby-Button,")
+    print("      türkise Farben für Raid-Screen!")
+
+def detect_lobby_screen(region: tuple = None, min_pixels: int = 500) -> bool:
+    """
+    Erkennt ob die Lobby (Schlachtzug-Auswahl) sichtbar ist.
+    Sucht nach dem grünen "Schlachtzug beginnen" Button.
+    Verwendet mehrere Farbvarianten für bessere Erkennung.
+    """
+    if not PILLOW_AVAILABLE:
+        return False
+
+    img = take_screenshot(region)
+    if img is None:
+        return False
+
+    green_pixels = count_multi_color_pixels(img, LOBBY_BUTTON_COLORS)
+    detected = green_pixels >= min_pixels
+
+    if DEBUG_DETECTION:
+        if detected:
+            print(f"[DETECT] Lobby erkannt! ({green_pixels} grüne Pixel)")
+        else:
+            print(f"[DEBUG] Lobby: {green_pixels} Pixel gefunden (benötigt: {min_pixels})")
+
+    return detected
+
+def detect_raid_screen(region: tuple = None, min_pixels: int = 1000) -> bool:
+    """
+    Erkennt ob der Raid-Bildschirm mit Aktivitäten sichtbar ist.
+    Sucht nach den türkisen Aktivitäts-Icons.
+    Verwendet mehrere Farbvarianten für bessere Erkennung.
+    """
+    if not PILLOW_AVAILABLE:
+        return False
+
+    img = take_screenshot(region)
+    if img is None:
+        return False
+
+    teal_pixels = count_multi_color_pixels(img, RAID_SCREEN_COLORS)
+    detected = teal_pixels >= min_pixels
+
+    if DEBUG_DETECTION:
+        if detected:
+            print(f"[DETECT] Raid-Screen erkannt! ({teal_pixels} türkise Pixel)")
+        else:
+            print(f"[DEBUG] Raid: {teal_pixels} Pixel gefunden (benötigt: {min_pixels})")
+
+    return detected
+
+def detect_pixel_color(pixel_pos: tuple, target_colors: list, trigger_type: str) -> bool:
+    """
+    Prüft ob die Farbe an einer bestimmten Pixel-Position einer Zielfarbe entspricht.
+    pixel_pos: (x, y) - Position auf dem Bildschirm
+    target_colors: Liste von RGB-Farben die als Treffer gelten
+    trigger_type: "lobby" oder "raid" für Debug-Ausgaben
+    """
+    if not PILLOW_AVAILABLE:
+        return False
+
+    x, y = pixel_pos
+    # Screenshot von einem kleinen Bereich um den Pixel (für Toleranz)
+    img = take_screenshot((x-2, y-2, x+3, y+3))
+    if img is None:
+        return False
+
+    # Prüfe den mittleren Pixel und seine Nachbarn
+    pixels = img.load()
+    width, height = img.size
+
+    for px in range(width):
+        for py in range(height):
+            pixel = pixels[px, py][:3]
+            for target_color in target_colors:
+                if color_distance(pixel, target_color) <= COLOR_TOLERANCE:
+                    if DEBUG_DETECTION:
+                        print(f"[DETECT] {trigger_type.upper()} erkannt! Pixel ({x},{y}) = RGB{pixel}")
+                    return True
+
+    if DEBUG_DETECTION:
+        # Zeige die tatsächliche Farbe am Mittelpunkt
+        center_pixel = pixels[width//2, height//2][:3]
+        print(f"[DEBUG] {trigger_type}: Pixel ({x},{y}) = RGB{center_pixel} - nicht erkannt")
+
+    return False
+
+def select_pixel_position() -> Optional[tuple]:
+    """
+    Lässt den Benutzer eine Pixel-Position per Maus auswählen.
+    Returns (x, y) oder None bei Abbruch.
+    """
+    print("\n  Bewege die Maus zur gewünschten Position")
+    print("  (z.B. auf den grünen Button) und drücke Enter...")
+    try:
+        input()
+        x, y = get_cursor_pos()
+        print(f"  → Position: ({x}, {y})")
+
+        # Zeige die Farbe an dieser Position
+        img = take_screenshot((x, y, x+1, y+1))
+        if img and PILLOW_AVAILABLE:
+            pixel = img.getpixel((0, 0))[:3]
+            print(f"  → Farbe: RGB{pixel}")
+
+            # Prüfen ob es eine bekannte Farbe ist
+            for lobby_color in LOBBY_BUTTON_COLORS:
+                if color_distance(pixel, lobby_color) <= COLOR_TOLERANCE:
+                    print(f"  → Erkannt als: LOBBY-Farbe (grün)")
+                    break
+            for raid_color in RAID_SCREEN_COLORS:
+                if color_distance(pixel, raid_color) <= COLOR_TOLERANCE:
+                    print(f"  → Erkannt als: RAID-Farbe (türkis)")
+                    break
+
+        return (x, y)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n  [ABBRUCH] Keine Position ausgewählt.")
+        return None
+
+def select_region() -> Optional[tuple]:
+    """
+    Lässt den Benutzer eine Region per Maus auswählen.
+    Returns (x1, y1, x2, y2) oder None bei Abbruch.
+    """
+    print("\n  Bewege die Maus zur OBEREN LINKEN Ecke des Bereichs")
+    print("  und drücke Enter...")
+    try:
+        input()
+        x1, y1 = get_cursor_pos()
+        print(f"  → Obere linke Ecke: ({x1}, {y1})")
+
+        print("\n  Bewege die Maus zur UNTEREN RECHTEN Ecke des Bereichs")
+        print("  und drücke Enter...")
+        input()
+        x2, y2 = get_cursor_pos()
+        print(f"  → Untere rechte Ecke: ({x2}, {y2})")
+
+        # Koordinaten sortieren (falls falsche Reihenfolge)
+        if x1 > x2:
+            x1, x2 = x2, x1
+        if y1 > y2:
+            y1, y2 = y2, y1
+
+        width = x2 - x1
+        height = y2 - y1
+        print(f"\n  Region: {width}x{height} Pixel ({x1},{y1}) → ({x2},{y2})")
+
+        return (x1, y1, x2, y2)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n  [ABBRUCH] Keine Region ausgewählt.")
+        return None
+
+def wait_for_screen(detect_func: Callable, timeout: float = 60, check_interval: float = 1.0,
+                    stop_event: threading.Event = None) -> bool:
+    """
+    Wartet bis ein bestimmter Screen erkannt wird.
+    Returns True wenn erkannt, False bei Timeout oder Stop.
+    """
+    start_time = time.time()
+
+    while True:
+        if stop_event and stop_event.is_set():
+            return False
+
+        if detect_func():
+            return True
+
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
+            print(f"[TIMEOUT] Screen nicht erkannt nach {timeout}s")
+            return False
+
+        clear_line()
+        print(f"[WARTE] Suche Screen... ({elapsed:.0f}s/{timeout}s)", end="", flush=True)
+
+        if stop_event:
+            stop_event.wait(check_interval)
+        else:
+            time.sleep(check_interval)
 
 def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
@@ -540,8 +970,20 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
             print("Ungültige Eingabe, setze auf 0 (unendlich).")
             max_loops = 0
 
+    # Hinweis auf Pixel-Trigger in Schritten
+    if PILLOW_AVAILABLE:
+        print("\n" + "-" * 60)
+        print("Tipp: Mit '<Nr> pixel' kannst du bei einem Schritt auf eine")
+        print("      bestimmte Farbe warten statt auf Zeit!")
+        print("-" * 60)
+
     # Sequenz erstellen und speichern
-    new_sequence = Sequence(name=seq_name, start_steps=start_steps, loop_steps=loop_steps, max_loops=max_loops)
+    new_sequence = Sequence(
+        name=seq_name,
+        start_steps=start_steps,
+        loop_steps=loop_steps,
+        max_loops=max_loops
+    )
 
     with state.lock:
         state.sequences[seq_name] = new_sequence
@@ -549,12 +991,17 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
 
     save_data(state)
 
+    # Zähle Pixel-Trigger in Schritten
+    pixel_triggers = sum(1 for s in start_steps + loop_steps if s.wait_pixel)
+
     print(f"\n[ERFOLG] Sequenz '{seq_name}' gespeichert!")
     print(f"         Start: {len(start_steps)} Schritte (einmalig)")
     if max_loops > 0:
         print(f"         Loop:  {len(loop_steps)} Schritte (x{max_loops}, dann zurück zu START)")
     else:
         print(f"         Loop:  {len(loop_steps)} Schritte (unendlich)")
+    if pixel_triggers > 0:
+        print(f"         Farb-Trigger: {pixel_triggers} Schritt(e) mit Farbprüfung")
     print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 
@@ -568,7 +1015,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  <Nr> <Zeit>  - Schritt hinzufügen (z.B. '1 30')")
+    print("  <Nr> <Zeit>  - Schritt mit Wartezeit (z.B. '1 30' = P1, 30s warten)")
+    print("  <Nr> pixel   - Schritt mit Farbprüfung (z.B. '1 pixel')")
     print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
     print("  clear        - Alle Schritte löschen")
     print("  show         - Aktuelle Schritte anzeigen")
@@ -615,11 +1063,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             # Neuen Schritt hinzufügen
             parts = user_input.split()
             if len(parts) != 2:
-                print("  → Format: <Punkt-Nr> <Sekunden> (z.B. '1 30')")
+                print("  → Format: <Punkt-Nr> <Sekunden> oder <Punkt-Nr> pixel")
                 continue
 
             point_num = int(parts[0])
-            delay = float(parts[1])
 
             with state.lock:
                 if point_num < 1 or point_num > len(state.points):
@@ -630,35 +1077,47 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 point_y = point.y
                 point_name = point.name
 
-            if delay < 0:
-                print("  → Wartezeit muss >= 0 sein!")
-                continue
+            # Prüfen ob Pixel-Wartezeit oder Zeit-Wartezeit
+            if parts[1].lower() == "pixel":
+                # Pixel-basierte Wartezeit
+                print("\n  Farb-Trigger einrichten:")
+                print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
+                print("  und drücke Enter...")
+                input()
+                px, py = get_cursor_pos()
+                print(f"  → Position: ({px}, {py})")
 
-            step = SequenceStep(x=point_x, y=point_y, delay_after=delay, name=point_name)
-            steps.append(step)
-            print(f"  ✓ Hinzugefügt: {step}")
+                # Farbe an dieser Position lesen
+                if PILLOW_AVAILABLE:
+                    img = take_screenshot((px, py, px+1, py+1))
+                    if img:
+                        color = img.getpixel((0, 0))[:3]
+                        print(f"  → Gespeicherte Farbe: RGB{color}")
+                        step = SequenceStep(
+                            x=point_x, y=point_y, delay_after=0, name=point_name,
+                            wait_pixel=(px, py), wait_color=color
+                        )
+                        steps.append(step)
+                        print(f"  ✓ Hinzugefügt: {step}")
+                    else:
+                        print("  → Fehler: Konnte Farbe nicht lesen!")
+                else:
+                    print("  → Fehler: Pillow nicht installiert! (pip install pillow)")
+            else:
+                # Zeit-basierte Wartezeit
+                delay = float(parts[1])
+                if delay < 0:
+                    print("  → Wartezeit muss >= 0 sein!")
+                    continue
+
+                step = SequenceStep(x=point_x, y=point_y, delay_after=delay, name=point_name)
+                steps.append(step)
+                print(f"  ✓ Hinzugefügt: {step}")
 
         except ValueError:
             print("  → Ungültige Eingabe!")
         except KeyboardInterrupt:
             raise
-
-    if not steps:
-        print("[FEHLER] Keine Schritte hinzugefügt!")
-        return
-
-    # Sequenz erstellen und speichern
-    new_sequence = Sequence(name=seq_name, steps=steps)
-
-    with state.lock:
-        state.sequences[seq_name] = new_sequence
-        state.active_sequence = new_sequence
-
-    # In Datei speichern
-    save_data(state)
-
-    print(f"\n[ERFOLG] Sequenz '{seq_name}' mit {len(steps)} Schritten gespeichert!")
-    print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 # =============================================================================
 # SEQUENZ LADEN
@@ -745,17 +1204,46 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             state.stop_event.set()
             return False
 
-    # Wartezeit nach diesem Schritt
-    if not state.stop_event.is_set() and step.delay_after > 0:
-        remaining = step.delay_after
-        while remaining > 0 and not state.stop_event.is_set():
-            wait_time = min(1.0, remaining)
-            if state.stop_event.wait(wait_time):
-                return False
-            remaining -= wait_time
-            if remaining > 0:
+    # Warten nach diesem Schritt (Zeit oder Farbe)
+    if not state.stop_event.is_set():
+        if step.wait_pixel and step.wait_color:
+            # Warten auf Farbe an Pixel-Position
+            timeout = 300  # Max 5 Minuten warten
+            start_time = time.time()
+            while not state.stop_event.is_set():
+                # Prüfe Farbe
+                if PILLOW_AVAILABLE:
+                    img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
+                                          step.wait_pixel[0]+1, step.wait_pixel[1]+1))
+                    if img:
+                        current_color = img.getpixel((0, 0))[:3]
+                        if color_distance(current_color, step.wait_color) <= COLOR_TOLERANCE:
+                            clear_line()
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt!", end="", flush=True)
+                            break
+
+                elapsed = time.time() - start_time
+                if elapsed >= timeout:
+                    print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s")
+                    return False
+
                 clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | Nächster in {remaining:.0f}s...", end="", flush=True)
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
+
+                if state.stop_event.wait(1.0):
+                    return False
+
+        elif step.delay_after > 0:
+            # Zeit-basierte Wartezeit
+            remaining = step.delay_after
+            while remaining > 0 and not state.stop_event.is_set():
+                wait_time = min(1.0, remaining)
+                if state.stop_event.wait(wait_time):
+                    return False
+                remaining -= wait_time
+                if remaining > 0:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Nächster in {remaining:.0f}s...", end="", flush=True)
 
     return True
 
@@ -788,6 +1276,9 @@ def sequence_worker(state: AutoClickerState) -> None:
 
         # === PHASE 1: START-SEQUENZ ===
         if has_start and not state.stop_event.is_set():
+            if state.stop_event.is_set():
+                break
+
             if cycle_count == 1:
                 print("\n[START] Führe Start-Sequenz aus...")
             else:
@@ -806,6 +1297,9 @@ def sequence_worker(state: AutoClickerState) -> None:
 
         # === PHASE 2: LOOP-SEQUENZ ===
         if has_loop and not state.stop_event.is_set():
+            if state.stop_event.is_set():
+                break
+
             total_loop = len(sequence.loop_steps)
             loop_count = 0
 
@@ -1035,6 +1529,14 @@ def handle_toggle(state: AutoClickerState) -> None:
             worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
             worker.start()
 
+def handle_analyze(state: AutoClickerState) -> None:
+    """Startet den Farb-Analysator."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+    run_color_analyzer()
+
 def handle_quit(state: AutoClickerState, main_thread_id: int) -> None:
     """Beendet das Programm."""
     print("\n[QUIT] Beende Programm...")
@@ -1061,6 +1563,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
+        (HOTKEY_ANALYZE, VK_T, "CTRL+ALT+T (Farb-Analysator)"),
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
 
@@ -1077,7 +1580,7 @@ def register_hotkeys() -> bool:
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
     for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
-                  HOTKEY_EDITOR, HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_QUIT]:
+                  HOTKEY_EDITOR, HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_ANALYZE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -1097,6 +1600,7 @@ def print_help() -> None:
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
+    print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
     print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
     print("  CTRL+ALT+Q  - Programm beenden")
     print()
@@ -1105,7 +1609,12 @@ def print_help() -> None:
     print("  2. Sequenz erstellen (CTRL+ALT+E)")
     print("     - START-Phase: wird EINMAL ausgeführt")
     print("     - LOOP-Phase:  wird WIEDERHOLT")
+    print("     - Trigger: Optional auf Screen warten (Bilderkennung)")
     print("  3. Sequenz starten (CTRL+ALT+S)")
+    print()
+    print("Bilderkennung:")
+    print("  - Nutze CTRL+ALT+T um Farben im Spiel zu analysieren")
+    print("  - Erfordert Pillow: pip install pillow")
     print()
     print(f"Sequenzen werden in '{SEQUENCES_DIR}/' gespeichert.")
     print("=" * 65)
@@ -1158,6 +1667,8 @@ def main() -> int:
                         handle_show(state)
                     elif hk_id == HOTKEY_TOGGLE:
                         handle_toggle(state)
+                    elif hk_id == HOTKEY_ANALYZE:
+                        handle_analyze(state)
                     elif hk_id == HOTKEY_QUIT:
                         handle_quit(state, main_thread_id)
                         break
