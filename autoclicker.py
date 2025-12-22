@@ -1229,6 +1229,23 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                     print("  → Abbruch")
                     continue
 
+                # Sofort Farben in dieser Region anzeigen
+                print("\n  Analysiere Farben in diesem Bereich...")
+                img = take_screenshot(region)
+                if img:
+                    color_counts = {}
+                    pixels = img.load()
+                    width, height = img.size
+                    for x in range(width):
+                        for y in range(height):
+                            pixel = pixels[x, y][:3]
+                            rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
+                            color_counts[rounded] = color_counts.get(rounded, 0) + 1
+                    sorted_colors = sorted(color_counts.items(), key=lambda c: c[1], reverse=True)[:5]
+                    print(f"  Top 5 Farben in {slot_name}:")
+                    for i, (color, count) in enumerate(sorted_colors):
+                        print(f"    {i+1}. RGB{color} ({count} Pixel)")
+
                 # Klick-Position
                 print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
                 print("  Bewege die Maus zur Klick-Position und drücke Enter...")
