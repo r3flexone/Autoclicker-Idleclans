@@ -49,10 +49,58 @@ except ImportError:
 # =============================================================================
 # KONFIGURATION
 # =============================================================================
+CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
-CLICKS_PER_POINT: int = 1              # Anzahl Klicks pro Punkt
-MAX_TOTAL_CLICKS: Optional[int] = None # None = unendlich
-FAILSAFE_ENABLED: bool = True          # Fail-Safe aktivieren
+
+# Standard-Konfiguration (wird von config.json überschrieben)
+DEFAULT_CONFIG = {
+    "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
+    "max_total_clicks": None,           # None = unendlich
+    "failsafe_enabled": True,           # Fail-Safe aktivieren
+    "color_tolerance": 40,              # Farbtoleranz für Item-Scan (größer = toleranter)
+    "pixel_wait_tolerance": 15,         # Toleranz für Pixel-Trigger (kleiner = genauer)
+    "pixel_wait_timeout": 60,           # Timeout in Sekunden für Pixel-Trigger
+    "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
+}
+
+def load_config() -> dict:
+    """Lädt Konfiguration aus config.json oder erstellt Standard-Config."""
+    config_path = Path(CONFIG_FILE)
+
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                # Merge mit Default-Config (falls neue Optionen hinzugefügt wurden)
+                config = DEFAULT_CONFIG.copy()
+                config.update(loaded)
+                print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
+                return config
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[WARNUNG] Config konnte nicht geladen werden: {e}")
+            print("[CONFIG] Verwende Standard-Konfiguration")
+    else:
+        # Erstelle Standard-Config-Datei
+        save_config(DEFAULT_CONFIG)
+        print(f"[CONFIG] Standard-Konfiguration erstellt: {CONFIG_FILE}")
+
+    return DEFAULT_CONFIG.copy()
+
+def save_config(config: dict) -> None:
+    """Speichert Konfiguration in config.json."""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except IOError as e:
+        print(f"[FEHLER] Config konnte nicht gespeichert werden: {e}")
+
+# Konfiguration laden
+CONFIG = load_config()
+
+# Konfig-Werte als Variablen (für einfacheren Zugriff)
+CLICKS_PER_POINT: int = CONFIG["clicks_per_point"]
+MAX_TOTAL_CLICKS: Optional[int] = CONFIG["max_total_clicks"]
+FAILSAFE_ENABLED: bool = CONFIG["failsafe_enabled"]
 
 # =============================================================================
 # WINDOWS API KONSTANTEN
@@ -641,9 +689,11 @@ RAID_SCREEN_COLORS = [
     (0, 128, 128),     # Pure Teal
     (32, 178, 170),    # Light Sea Green
 ]
-COLOR_TOLERANCE = 40                    # Farbtoleranz für Item-Scan Erkennung
-PIXEL_WAIT_TOLERANCE = 15               # Toleranz für Pixel-Trigger (kleiner = genauer)
-DEBUG_DETECTION = True                  # Debug-Ausgaben aktivieren
+# Toleranzen aus Config laden
+COLOR_TOLERANCE = CONFIG["color_tolerance"]
+PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
+PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
+DEBUG_DETECTION = CONFIG["debug_detection"]
 
 def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
@@ -2201,7 +2251,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 remaining -= wait_time
 
         # Warten auf Farbe an Pixel-Position
-        timeout = 300  # Max 5 Minuten warten
+        timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
         start_time = time.time()
         while not state.stop_event.is_set():
             # Prüfe Farbe
