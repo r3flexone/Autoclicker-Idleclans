@@ -381,10 +381,10 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                 for s in steps_data:
                     wait_pixel = s.get("wait_pixel")
                     if wait_pixel:
-                        wait_pixel = tuple(wait_pixel)
+                        wait_pixel = tuple(int(v) for v in wait_pixel)
                     wait_color = s.get("wait_color")
                     if wait_color:
-                        wait_color = tuple(wait_color)
+                        wait_color = tuple(int(v) for v in wait_color)
                     # Unterstütze beide Formate: delay_before (neu) und delay_after (alt)
                     delay = s.get("delay_before", s.get("delay_after", 0))
                     step = SequenceStep(
@@ -625,7 +625,8 @@ RAID_SCREEN_COLORS = [
     (0, 128, 128),     # Pure Teal
     (32, 178, 170),    # Light Sea Green
 ]
-COLOR_TOLERANCE = 40                    # Farbtoleranz für Erkennung (erhöht)
+COLOR_TOLERANCE = 40                    # Farbtoleranz für Item-Scan Erkennung
+PIXEL_WAIT_TOLERANCE = 15               # Toleranz für Pixel-Trigger (kleiner = genauer)
 DEBUG_DETECTION = True                  # Debug-Ausgaben aktivieren
 
 def color_distance(c1: tuple, c2: tuple) -> float:
@@ -2118,14 +2119,15 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                                       step.wait_pixel[0]+1, step.wait_pixel[1]+1))
                 if img:
                     current_color = img.getpixel((0, 0))[:3]
-                    if color_distance(current_color, step.wait_color) <= COLOR_TOLERANCE:
+                    if color_distance(current_color, step.wait_color) <= PIXEL_WAIT_TOLERANCE:
                         clear_line()
                         print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt! Klicke...", end="", flush=True)
                         break
 
             elapsed = time.time() - start_time
             if elapsed >= timeout:
-                print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s")
+                print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
+                state.stop_event.set()  # Stoppt die ganze Sequenz
                 return False
 
             clear_line()
