@@ -274,10 +274,12 @@ class ItemSlot:
     name: str
     scan_region: tuple  # (x1, y1, x2, y2) Bereich zum Scannen
     click_pos: tuple    # (x, y) Wo geklickt werden soll
+    slot_color: Optional[tuple] = None  # RGB-Farbe des leeren Slots (wird bei Items ausgeschlossen)
 
     def __str__(self) -> str:
         r = self.scan_region
-        return f"{self.name}: Scan ({r[0]},{r[1]})-({r[2]},{r[3]}), Klick ({self.click_pos[0]},{self.click_pos[1]})"
+        color_str = f", Hintergrund: RGB{self.slot_color}" if self.slot_color else ""
+        return f"{self.name}: Scan ({r[0]},{r[1]})-({r[2]},{r[3]}){color_str}"
 
 @dataclass
 class ItemScanConfig:
@@ -481,7 +483,8 @@ def save_item_scan(config: ItemScanConfig) -> None:
             {
                 "name": slot.name,
                 "scan_region": list(slot.scan_region),
-                "click_pos": list(slot.click_pos)
+                "click_pos": list(slot.click_pos),
+                "slot_color": list(slot.slot_color) if slot.slot_color else None
             }
             for slot in config.slots
         ],
@@ -509,10 +512,14 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             slots = []
             for s in data.get("slots", []):
+                slot_color = s.get("slot_color")
+                if slot_color:
+                    slot_color = tuple(slot_color)
                 slot = ItemSlot(
                     name=s["name"],
                     scan_region=tuple(s["scan_region"]),
-                    click_pos=tuple(s["click_pos"])
+                    click_pos=tuple(s["click_pos"]),
+                    slot_color=slot_color
                 )
                 slots.append(slot)
 
@@ -1186,21 +1193,19 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
         return
 
-    # Schritt 2: Item-Profile definieren (Loop bis mindestens 1 Item)
-    while True:
-        print("\n" + "=" * 60)
-        print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
-        print("=" * 60)
-        items = edit_item_profiles(items, slots)
+    # Schritt 2: Item-Profile definieren (optional)
+    print("\n" + "=" * 60)
+    print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
+    print("=" * 60)
+    print("  (Optional - du kannst Items auch später hinzufügen)")
+    items = edit_item_profiles(items, slots)
 
-        if items:
-            break
-        else:
-            print("\n[FEHLER] Mindestens 1 Item-Profil erforderlich!")
-            retry = input("Nochmal versuchen? (j/n): ").strip().lower()
-            if retry != "j":
-                print("[ABBRUCH] Item-Scan nicht gespeichert.")
-                return
+    if not items:
+        print("\n[INFO] Keine Item-Profile definiert.")
+        save_anyway = input("Trotzdem speichern? (j/n): ").strip().lower()
+        if save_anyway != "j":
+            print("[ABBRUCH] Item-Scan nicht gespeichert.")
+            return
 
     # Schritt 3: Toleranz
     print("\n" + "=" * 60)
@@ -1299,7 +1304,28 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                     sorted_colors = sorted(color_counts.items(), key=lambda c: c[1], reverse=True)[:5]
                     print(f"  Top 5 Farben in {slot_name}:")
                     for i, (color, count) in enumerate(sorted_colors):
-                        print(f"    {i+1}. RGB{color} ({count} Pixel)")
+                        color_name = get_color_name(color)
+                        print(f"    {i+1}. RGB{color} - {color_name} ({count} Pixel)")
+
+                # Slot-Hintergrundfarbe (wird bei Items ausgeschlossen)
+                slot_color = None
+                print("\n  Hintergrundfarbe des leeren Slots markieren:")
+                print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
+                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder Enter = überspringen)...")
+                bg_input = input().strip()
+                if bg_input == "":
+                    # User hat Enter gedrückt - prüfe Mausposition
+                    px, py = get_cursor_pos()
+                    # Prüfe ob Maus im Scan-Bereich ist
+                    if region[0] <= px <= region[2] and region[1] <= py <= region[3]:
+                        bg_img = take_screenshot((px, py, px+1, py+1))
+                        if bg_img:
+                            slot_color = bg_img.getpixel((0, 0))[:3]
+                            slot_color = (slot_color[0] // 5 * 5, slot_color[1] // 5 * 5, slot_color[2] // 5 * 5)
+                            color_name = get_color_name(slot_color)
+                            print(f"  → Hintergrundfarbe: RGB{slot_color} ({color_name})")
+                    else:
+                        print("  → Übersprungen (Maus war außerhalb des Bereichs)")
 
                 # Klick-Position
                 print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
@@ -1308,7 +1334,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 click_x, click_y = get_cursor_pos()
                 print(f"  → Klick-Position: ({click_x}, {click_y})")
 
-                slot = ItemSlot(slot_name, region, (click_x, click_y))
+                slot = ItemSlot(slot_name, region, (click_x, click_y), slot_color)
                 slots.append(slot)
                 print(f"  ✓ {slot_name} hinzugefügt")
                 continue
@@ -1399,7 +1425,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                             print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)}")
                             continue
                         selected_slot = slots[slot_num - 1]
-                        marker_colors = collect_marker_colors(selected_slot.scan_region)
+                        marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
                     except ValueError:
                         print("  → Bitte eine Nummer eingeben!")
                         continue
@@ -1439,7 +1465,8 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 try:
                                     slot_num = int(input("  Slot-Nr: ").strip())
                                     if 1 <= slot_num <= len(slots):
-                                        new_colors = collect_marker_colors(slots[slot_num - 1].scan_region)
+                                        sel_slot = slots[slot_num - 1]
+                                        new_colors = collect_marker_colors(sel_slot.scan_region, sel_slot.slot_color)
                                     else:
                                         new_colors = collect_marker_colors()  # Fallback
                                 except ValueError:
@@ -1475,7 +1502,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
             raise
 
 
-def collect_marker_colors(region: tuple = None) -> list[tuple]:
+def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> list[tuple]:
     """Sammelt Marker-Farben für ein Item-Profil durch Region-Scan."""
 
     # Wenn keine Region übergeben, manuell auswählen
@@ -1505,13 +1532,20 @@ def collect_marker_colors(region: tuple = None) -> list[tuple]:
             rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
             color_counts[rounded] = color_counts.get(rounded, 0) + 1
 
+    # Slot-Hintergrundfarbe ausschließen (falls vorhanden)
+    if exclude_color and exclude_color in color_counts:
+        excluded_count = color_counts.pop(exclude_color)
+        color_name = get_color_name(exclude_color)
+        print(f"  → Slot-Hintergrund RGB{exclude_color} ({color_name}) ausgeschlossen ({excluded_count} Pixel)")
+
     # Top 5 häufigste Farben
     sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     colors = [color for color, count in sorted_colors]
 
     print(f"\n  Top 5 Farben gefunden:")
     for i, (color, count) in enumerate(sorted_colors):
-        print(f"    {i+1}. RGB{color} ({count} Pixel)")
+        color_name = get_color_name(color)
+        print(f"    {i+1}. RGB{color} - {color_name} ({count} Pixel)")
 
     return colors
 
@@ -1529,17 +1563,31 @@ def remove_common_colors(items: list) -> list:
     if not common_colors:
         return items
 
-    print(f"\n  Entferne {len(common_colors)} gemeinsame Hintergrund-Farbe(n):")
-    for color in common_colors:
-        print(f"    → RGB{color}")
+    print(f"\n  {len(common_colors)} gemeinsame Farbe(n) gefunden (bei allen Items gleich):")
 
-    # Entferne gemeinsame Farben von allen Items
+    # Für jede gemeinsame Farbe nachfragen
+    colors_to_remove = []
+    for color in common_colors:
+        color_name = get_color_name(color)
+        answer = input(f"    RGB{color} ({color_name}) entfernen? (j/n): ").strip().lower()
+        if answer == "j":
+            colors_to_remove.append(color)
+            print(f"      → wird entfernt")
+        else:
+            print(f"      → behalten")
+
+    if not colors_to_remove:
+        print("  Keine Farben entfernt.")
+        return items
+
+    # Entferne bestätigte Farben von allen Items
     for item in items:
-        item.marker_colors = [c for c in item.marker_colors if c not in common_colors]
+        item.marker_colors = [c for c in item.marker_colors if c not in colors_to_remove]
         # Mindestens 1 Farbe behalten
         if not item.marker_colors:
             print(f"  [WARNUNG] {item.name} hat keine eindeutigen Farben mehr!")
 
+    print(f"  ✓ {len(colors_to_remove)} Farbe(n) entfernt")
     return items
 
 
