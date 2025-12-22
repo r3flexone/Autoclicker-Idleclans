@@ -195,10 +195,12 @@ class SequenceStep:
     wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
+    item_scan_mode: str = "best"         # "best" = nur bestes Item, "all" = alle Items
 
     def __str__(self) -> str:
         if self.item_scan:
-            return f"SCAN '{self.item_scan}' → klicke bestes Item"
+            mode_str = "ALLE Items" if self.item_scan_mode == "all" else "bestes Item"
+            return f"SCAN '{self.item_scan}' → klicke {mode_str}"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
             return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
@@ -337,7 +339,7 @@ def save_data(state: AutoClickerState) -> None:
     def step_to_dict(s: SequenceStep) -> dict:
         return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
-                "item_scan": s.item_scan}
+                "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -392,7 +394,8 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
                         wait_color=wait_color,
-                        item_scan=s.get("item_scan")
+                        item_scan=s.get("item_scan"),
+                        item_scan_mode=s.get("item_scan_mode", "best")
                     )
                     steps.append(step)
                 return steps
@@ -1404,26 +1407,28 @@ def collect_marker_colors() -> list[tuple]:
 # =============================================================================
 # ITEM-SCAN AUSFÜHRUNG
 # =============================================================================
-def execute_item_scan(state: AutoClickerState, scan_name: str) -> Optional[tuple]:
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best") -> list[tuple]:
     """
-    Führt einen Item-Scan aus und gibt die Klick-Position des besten Items zurück.
-    Returns (x, y) oder None wenn kein Item gefunden.
+    Führt einen Item-Scan aus.
+    mode="best": Gibt nur die Klick-Position des besten Items zurück
+    mode="all": Gibt alle Klick-Positionen mit erkannten Items zurück
+    Returns Liste von (x, y) Positionen (leer wenn nichts gefunden)
     """
     with state.lock:
         if scan_name not in state.item_scans:
             print(f"\n[FEHLER] Item-Scan '{scan_name}' nicht gefunden!")
-            return None
+            return []
         config = state.item_scans[scan_name]
 
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert für Item-Scan!")
-        return None
+        return []
 
-    best_item = None
-    best_priority = 999
-    best_slot = None
+    # Sammle alle erkannten Items
+    found_items = []  # Liste von (slot, item, priority)
 
-    print(f"\n[SCAN] Scanne {len(config.slots)} Slots für '{scan_name}'...")
+    mode_str = "ALLE" if mode == "all" else "BESTES"
+    print(f"\n[SCAN] Scanne {len(config.slots)} Slots für '{scan_name}' (Modus: {mode_str})...")
 
     for slot in config.slots:
         # Screenshot der Scan-Region
@@ -1431,16 +1436,16 @@ def execute_item_scan(state: AutoClickerState, scan_name: str) -> Optional[tuple
         if img is None:
             continue
 
-        # Prüfe alle Item-Profile
-        for item in config.items:
-            if item.priority >= best_priority:
-                # Bereits ein besseres Item gefunden
-                continue
+        pixels = img.load()
+        width, height = img.size
 
-            # Prüfe ob alle Marker-Farben vorhanden sind
+        # Prüfe alle Item-Profile für diesen Slot
+        slot_best_item = None
+        slot_best_priority = 999
+
+        for item in config.items:
+            # Prüfe ob Marker-Farben vorhanden sind
             markers_found = 0
-            pixels = img.load()
-            width, height = img.size
 
             for marker_color in item.marker_colors:
                 color_found = False
@@ -1458,20 +1463,30 @@ def execute_item_scan(state: AutoClickerState, scan_name: str) -> Optional[tuple
                     markers_found += 1
 
             # Item erkannt wenn mindestens 1 Marker-Farbe gefunden
-            # (oder alle für strengere Erkennung - kann angepasst werden)
             if markers_found >= 1:
-                print(f"  → {slot.name}: {item.name} erkannt (Priorität {item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
-                if item.priority < best_priority:
-                    best_priority = item.priority
-                    best_item = item
-                    best_slot = slot
+                print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
+                if item.priority < slot_best_priority:
+                    slot_best_priority = item.priority
+                    slot_best_item = item
 
-    if best_item and best_slot:
-        print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (Priorität {best_priority})")
-        return best_slot.click_pos
-    else:
+        # Merke das beste Item für diesen Slot
+        if slot_best_item:
+            found_items.append((slot, slot_best_item, slot_best_priority))
+
+    if not found_items:
         print("[SCAN] Kein Item erkannt.")
-        return None
+        return []
+
+    if mode == "all":
+        # Alle gefundenen Slots zurückgeben
+        print(f"[SCAN] {len(found_items)} Items gefunden - klicke alle!")
+        return [slot.click_pos for slot, item, priority in found_items]
+    else:
+        # Nur das beste Item zurückgeben
+        found_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
+        best_slot, best_item, best_priority = found_items[0]
+        print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (P{best_priority})")
+        return [best_slot.click_pos]
 
 
 # =============================================================================
@@ -1728,7 +1743,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  <Nr> <Zeit>  - Warte Xs, dann klicke (z.B. '1 30' = 30s warten → P1 klicken)")
     print("  <Nr> 0       - Sofort klicken ohne Wartezeit (z.B. '1 0')")
     print("  <Nr> pixel   - Warte auf Farbe, dann klicke (z.B. '1 pixel')")
-    print("  scan <Name>  - Item-Scan ausführen (z.B. 'scan loot_check')")
+    print("  scan <Name>       - Item-Scan: klicke BESTES Item")
+    print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
     print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
     print("  clear        - Alle Schritte löschen")
     print("  show         - Aktuelle Schritte anzeigen")
@@ -1774,10 +1790,16 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
-                scan_name = user_input[5:].strip()
-                if not scan_name:
-                    print("  → Format: scan <Name>")
+                # Format: "scan <Name>" oder "scan <Name> all"
+                scan_parts = user_input[5:].strip().split()
+                if not scan_parts:
+                    print("  → Format: scan <Name> [all]")
                     continue
+
+                scan_name = scan_parts[0]
+                scan_mode = "best"  # Standard: nur bestes Item
+                if len(scan_parts) > 1 and scan_parts[1].lower() == "all":
+                    scan_mode = "all"
 
                 # Prüfen ob Item-Scan existiert
                 with state.lock:
@@ -1792,7 +1814,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         continue
 
                 # Scan-Schritt erstellen (x, y werden nicht verwendet)
-                step = SequenceStep(x=0, y=0, delay_before=0, name=f"Scan:{scan_name}", item_scan=scan_name)
+                mode_str = "alle" if scan_mode == "all" else "bestes"
+                step = SequenceStep(x=0, y=0, delay_before=0, name=f"Scan:{scan_name}",
+                                   item_scan=scan_name, item_scan_mode=scan_mode)
                 steps.append(step)
                 print(f"  ✓ Hinzugefügt: {step}")
                 continue
@@ -1922,17 +1946,25 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
     # === SONDERFALL: Item-Scan Schritt ===
     if step.item_scan:
+        mode = step.item_scan_mode
+        mode_str = "alle" if mode == "all" else "bestes"
         clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Item-Scan '{step.item_scan}'...", end="", flush=True)
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
-        click_pos = execute_item_scan(state, step.item_scan)
-        if click_pos:
-            # Klick auf das beste Item
-            send_click(click_pos[0], click_pos[1])
-            with state.lock:
-                state.total_clicks += 1
+        click_positions = execute_item_scan(state, step.item_scan, mode)
+        if click_positions:
+            # Klicke alle gefundenen Positionen
+            for i, pos in enumerate(click_positions):
+                if state.stop_event.is_set():
+                    return False
+                send_click(pos[0], pos[1])
+                with state.lock:
+                    state.total_clicks += 1
+                # Kurze Pause zwischen Klicks
+                if i < len(click_positions) - 1:
+                    time.sleep(0.2)
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan-Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(click_positions)} Scan-Klick(s)! (Gesamt: {state.total_clicks})", end="", flush=True)
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
