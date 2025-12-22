@@ -369,10 +369,17 @@ def load_points(state: AutoClickerState) -> None:
     """Lädt gespeicherte Punkte."""
     points_file = Path(SEQUENCES_DIR) / "points.json"
     if points_file.exists():
-        with open(points_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            state.points = [ClickPoint(p["x"], p["y"], p.get("name", "")) for p in data]
-        print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
+        try:
+            with open(points_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                state.points = [ClickPoint(p["x"], p["y"], p.get("name", "")) for p in data]
+            print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"[WARNUNG] points.json konnte nicht geladen werden: {e}")
+            print("[INFO] Starte mit leerer Punktliste.")
+            state.points = []
+    else:
+        print("[INFO] Keine gespeicherten Punkte gefunden.")
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
     """Lädt eine einzelne Sequenz-Datei (mit Start + mehreren Loop-Phasen)."""
@@ -1140,29 +1147,33 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
 
     print("\nAuswahl (oder 'abbruch'):")
 
-    try:
-        choice = input("> ").strip().lower()
+    while True:
+        try:
+            choice = input("> ").strip().lower()
 
-        if choice == "abbruch":
-            print("[ABBRUCH] Editor beendet.")
+            if choice == "abbruch":
+                print("[ABBRUCH] Editor beendet.")
+                return
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                edit_item_scan(state, None)
+                return
+            elif 1 <= choice_num <= len(available_scans):
+                name, path = available_scans[choice_num - 1]
+                existing = load_item_scan_file(path)
+                if existing:
+                    edit_item_scan(state, existing)
+                return
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
             return
-
-        choice_num = int(choice)
-
-        if choice_num == 0:
-            edit_item_scan(state, None)
-        elif 1 <= choice_num <= len(available_scans):
-            name, path = available_scans[choice_num - 1]
-            existing = load_item_scan_file(path)
-            if existing:
-                edit_item_scan(state, existing)
-        else:
-            print("[FEHLER] Ungültige Auswahl!")
-
-    except ValueError:
-        print("[FEHLER] Bitte eine Nummer eingeben!")
-    except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH] Editor beendet.")
 
 
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
@@ -1705,31 +1716,35 @@ def run_sequence_editor(state: AutoClickerState) -> None:
 
     print("\nAuswahl (oder 'abbruch'):")
 
-    try:
-        choice = input("> ").strip().lower()
+    while True:
+        try:
+            choice = input("> ").strip().lower()
 
-        if choice == "abbruch":
-            print("[ABBRUCH] Editor beendet.")
+            if choice == "abbruch":
+                print("[ABBRUCH] Editor beendet.")
+                return
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                # Neue Sequenz erstellen
+                edit_sequence(state, None)
+                return
+            elif 1 <= choice_num <= len(available_sequences):
+                # Bestehende Sequenz bearbeiten
+                name, path = available_sequences[choice_num - 1]
+                existing_seq = load_sequence_file(path)
+                if existing_seq:
+                    edit_sequence(state, existing_seq)
+                return
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
             return
-
-        choice_num = int(choice)
-
-        if choice_num == 0:
-            # Neue Sequenz erstellen
-            edit_sequence(state, None)
-        elif 1 <= choice_num <= len(available_sequences):
-            # Bestehende Sequenz bearbeiten
-            name, path = available_sequences[choice_num - 1]
-            existing_seq = load_sequence_file(path)
-            if existing_seq:
-                edit_sequence(state, existing_seq)
-        else:
-            print("[FEHLER] Ungültige Auswahl!")
-
-    except ValueError:
-        print("[FEHLER] Bitte eine Nummer eingeben!")
-    except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH] Editor beendet.")
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
@@ -2105,31 +2120,34 @@ def run_sequence_loader(state: AutoClickerState) -> None:
 
     print("\nNummer eingeben (oder 'abbruch'):")
 
-    try:
-        user_input = input("> ").strip().lower()
+    while True:
+        try:
+            user_input = input("> ").strip().lower()
 
-        if user_input == "abbruch":
-            print("[ABBRUCH] Keine Sequenz geladen.")
+            if user_input == "abbruch":
+                print("[ABBRUCH] Keine Sequenz geladen.")
+                return
+
+            idx = int(user_input) - 1
+            if idx < 0 or idx >= len(sequences):
+                print("[FEHLER] Ungültige Nummer! Nochmal versuchen...")
+                continue
+
+            name, path = sequences[idx]
+            seq = load_sequence_file(path)
+
+            if seq:
+                with state.lock:
+                    state.active_sequence = seq
+                print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
+                print("         Drücke CTRL+ALT+S zum Starten.\n")
             return
 
-        idx = int(user_input) - 1
-        if idx < 0 or idx >= len(sequences):
-            print("[FEHLER] Ungültige Nummer!")
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH]")
             return
-
-        name, path = sequences[idx]
-        seq = load_sequence_file(path)
-
-        if seq:
-            with state.lock:
-                state.active_sequence = seq
-            print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
-            print("         Drücke CTRL+ALT+S zum Starten.\n")
-
-    except ValueError:
-        print("[FEHLER] Bitte eine Nummer eingeben!")
-    except KeyboardInterrupt:
-        print("\n[ABBRUCH]")
 
 # =============================================================================
 # WORKER THREAD
