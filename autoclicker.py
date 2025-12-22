@@ -632,6 +632,52 @@ def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
     return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2 + (c1[2]-c2[2])**2) ** 0.5
 
+def get_color_name(rgb: tuple) -> str:
+    """Gibt einen ungefähren Farbnamen für RGB zurück."""
+    r, g, b = rgb
+
+    # Graustufen
+    if abs(r - g) < 30 and abs(g - b) < 30 and abs(r - b) < 30:
+        if r < 50:
+            return "Schwarz"
+        elif r < 120:
+            return "Dunkelgrau"
+        elif r < 200:
+            return "Grau"
+        else:
+            return "Weiß"
+
+    # Dominante Farbe bestimmen
+    if r > g and r > b:
+        if g > b + 50:
+            return "Orange" if r > 200 else "Braun"
+        elif b > g + 30:
+            return "Pink/Magenta"
+        else:
+            return "Rot"
+    elif g > r and g > b:
+        if r > b + 30:
+            return "Gelb/Lime"
+        elif b > r + 30:
+            return "Türkis/Cyan"
+        else:
+            return "Grün"
+    elif b > r and b > g:
+        if r > g + 30:
+            return "Lila/Violett"
+        elif g > r + 30:
+            return "Türkis/Cyan"
+        else:
+            return "Blau"
+    elif r > 200 and g > 200 and b < 100:
+        return "Gelb"
+    elif r > 200 and g < 100 and b > 200:
+        return "Magenta"
+    elif r < 100 and g > 200 and b > 200:
+        return "Cyan"
+    else:
+        return "Gemischt"
+
 def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
     """
     Nimmt einen Screenshot auf. region=(x1, y1, x2, y2) oder None für Vollbild.
