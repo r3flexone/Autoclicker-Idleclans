@@ -11,6 +11,7 @@ Hotkeys:
   CTRL+ALT+A  - Aktuelle Mausposition als Punkt speichern
   CTRL+ALT+U  - Letzten Punkt entfernen
   CTRL+ALT+E  - Sequenz-Editor öffnen (Punkte mit Zeiten verknüpfen)
+  CTRL+ALT+I  - Item-Scan Editor (Items erkennen + vergleichen)
   CTRL+ALT+L  - Gespeicherte Sequenz laden
   CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen
   CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)
@@ -66,6 +67,7 @@ VK_U = 0x55  # Undo
 VK_C = 0x43  # Clear all points
 VK_X = 0x58  # Reset all (points + sequences) - X statt R (R oft belegt)
 VK_E = 0x45  # Editor
+VK_I = 0x49  # Item-Scan Editor
 VK_L = 0x4C  # Load
 VK_P = 0x50  # Print/Show
 VK_S = 0x53  # Start/Stop
@@ -78,11 +80,12 @@ HOTKEY_UNDO = 2
 HOTKEY_CLEAR = 3
 HOTKEY_RESET = 4
 HOTKEY_EDITOR = 5
-HOTKEY_LOAD = 6
-HOTKEY_SHOW = 7
-HOTKEY_TOGGLE = 8
-HOTKEY_ANALYZE = 9
-HOTKEY_QUIT = 10
+HOTKEY_ITEM_SCAN = 6
+HOTKEY_LOAD = 7
+HOTKEY_SHOW = 8
+HOTKEY_TOGGLE = 9
+HOTKEY_ANALYZE = 10
+HOTKEY_QUIT = 11
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -190,8 +193,12 @@ class SequenceStep:
     # Optional: Warten auf Farbe statt Zeit (VOR dem Klick)
     wait_pixel: Optional[tuple] = None   # (x, y) Position zum Prüfen
     wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
+    # Optional: Item-Scan ausführen statt direktem Klick
+    item_scan: Optional[str] = None      # Name des Item-Scans
 
     def __str__(self) -> str:
+        if self.item_scan:
+            return f"SCAN '{self.item_scan}' → klicke bestes Item"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
             return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
@@ -239,6 +246,46 @@ class Sequence:
     def total_steps(self) -> int:
         return len(self.start_steps) + sum(len(lp.steps) for lp in self.loop_phases)
 
+# =============================================================================
+# ITEM-SCAN SYSTEM (für Item-Erkennung und Vergleich)
+# =============================================================================
+ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
+
+@dataclass
+class ItemProfile:
+    """Ein Item-Typ mit Marker-Farben und Priorität."""
+    name: str
+    marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
+    priority: int = 99  # 1 = beste, höher = schlechter
+
+    def __str__(self) -> str:
+        colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
+        if len(self.marker_colors) > 3:
+            colors_str += f" (+{len(self.marker_colors)-3})"
+        return f"[P{self.priority}] {self.name}: {colors_str}"
+
+@dataclass
+class ItemSlot:
+    """Ein Slot wo Items erscheinen können."""
+    name: str
+    scan_region: tuple  # (x1, y1, x2, y2) Bereich zum Scannen
+    click_pos: tuple    # (x, y) Wo geklickt werden soll
+
+    def __str__(self) -> str:
+        r = self.scan_region
+        return f"{self.name}: Scan ({r[0]},{r[1]})-({r[2]},{r[3]}), Klick ({self.click_pos[0]},{self.click_pos[1]})"
+
+@dataclass
+class ItemScanConfig:
+    """Konfiguration für Item-Erkennung und -Vergleich."""
+    name: str
+    slots: list[ItemSlot] = field(default_factory=list)      # Wo gescannt wird (max 20)
+    items: list[ItemProfile] = field(default_factory=list)   # Welche Items erkannt werden
+    color_tolerance: int = 40  # Farbtoleranz für Erkennung
+
+    def __str__(self) -> str:
+        return f"{self.name} ({len(self.slots)} Slots, {len(self.items)} Items)"
+
 @dataclass
 class AutoClickerState:
     """Zustand des Autoclickers."""
@@ -247,6 +294,9 @@ class AutoClickerState:
 
     # Gespeicherte Sequenzen
     sequences: dict[str, Sequence] = field(default_factory=dict)
+
+    # Item-Scan Konfigurationen
+    item_scans: dict[str, ItemScanConfig] = field(default_factory=dict)
 
     # Aktive Sequenz
     active_sequence: Optional[Sequence] = None
@@ -286,7 +336,8 @@ def save_data(state: AutoClickerState) -> None:
     # Sequenzen speichern (mit Start + mehreren Loop-Phasen)
     def step_to_dict(s: SequenceStep) -> dict:
         return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-                "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
+                "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
+                "item_scan": s.item_scan}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -335,12 +386,13 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     # Unterstütze beide Formate: delay_before (neu) und delay_after (alt)
                     delay = s.get("delay_before", s.get("delay_after", 0))
                     step = SequenceStep(
-                        x=s["x"],
-                        y=s["y"],
+                        x=s.get("x", 0),
+                        y=s.get("y", 0),
                         delay_before=delay,
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
-                        wait_color=wait_color
+                        wait_color=wait_color,
+                        item_scan=s.get("item_scan")
                     )
                     steps.append(step)
                 return steps
@@ -403,6 +455,107 @@ def list_available_sequences() -> list[tuple[str, Path]]:
             except Exception:
                 pass
     return sequences
+
+# =============================================================================
+# ITEM-SCAN PERSISTENZ
+# =============================================================================
+def ensure_item_scans_dir() -> Path:
+    """Stellt sicher, dass der Item-Scans-Ordner existiert."""
+    path = Path(ITEM_SCANS_DIR)
+    path.mkdir(exist_ok=True)
+    return path
+
+def save_item_scan(config: ItemScanConfig) -> None:
+    """Speichert eine Item-Scan Konfiguration."""
+    ensure_item_scans_dir()
+
+    data = {
+        "name": config.name,
+        "color_tolerance": config.color_tolerance,
+        "slots": [
+            {
+                "name": slot.name,
+                "scan_region": list(slot.scan_region),
+                "click_pos": list(slot.click_pos)
+            }
+            for slot in config.slots
+        ],
+        "items": [
+            {
+                "name": item.name,
+                "marker_colors": [list(c) for c in item.marker_colors],
+                "priority": item.priority
+            }
+            for item in config.items
+        ]
+    }
+
+    filename = f"{config.name.replace(' ', '_').lower()}.json"
+    with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"[SAVE] Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'")
+
+def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
+    """Lädt eine Item-Scan Konfiguration."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+            slots = []
+            for s in data.get("slots", []):
+                slot = ItemSlot(
+                    name=s["name"],
+                    scan_region=tuple(s["scan_region"]),
+                    click_pos=tuple(s["click_pos"])
+                )
+                slots.append(slot)
+
+            items = []
+            for i in data.get("items", []):
+                item = ItemProfile(
+                    name=i["name"],
+                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                    priority=i.get("priority", 99)
+                )
+                items.append(item)
+
+            return ItemScanConfig(
+                name=data["name"],
+                slots=slots,
+                items=items,
+                color_tolerance=data.get("color_tolerance", 40)
+            )
+
+    except Exception as e:
+        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        return None
+
+def list_available_item_scans() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Item-Scan Konfigurationen auf."""
+    scan_dir = Path(ITEM_SCANS_DIR)
+    if not scan_dir.exists():
+        return []
+
+    scans = []
+    for f in scan_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = data.get("name", f.stem)
+                scans.append((name, f))
+        except Exception:
+            pass
+    return scans
+
+def load_all_item_scans(state: AutoClickerState) -> None:
+    """Lädt alle Item-Scan Konfigurationen."""
+    for name, path in list_available_item_scans():
+        config = load_item_scan_file(path)
+        if config:
+            state.item_scans[config.name] = config
+    if state.item_scans:
+        print(f"[LOAD] {len(state.item_scans)} Item-Scan(s) geladen")
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -900,6 +1053,428 @@ def print_points(state: AutoClickerState) -> None:
     print()
 
 # =============================================================================
+# ITEM-SCAN EDITOR
+# =============================================================================
+def run_item_scan_editor(state: AutoClickerState) -> None:
+    """Interaktiver Editor für Item-Scan Konfigurationen."""
+    print("\n" + "=" * 60)
+    print("  ITEM-SCAN EDITOR")
+    print("=" * 60)
+
+    if not PILLOW_AVAILABLE:
+        print("\n[FEHLER] Pillow nicht installiert!")
+        print("         Installieren mit: pip install pillow")
+        return
+
+    # Bestehende Item-Scans anzeigen
+    available_scans = list_available_item_scans()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neuen Item-Scan erstellen")
+
+    if available_scans:
+        print("\nBestehende Item-Scans bearbeiten:")
+        for i, (name, path) in enumerate(available_scans):
+            config = load_item_scan_file(path)
+            if config:
+                print(f"  [{i+1}] {config}")
+
+    print("\nAuswahl (oder 'abbruch'):")
+
+    try:
+        choice = input("> ").strip().lower()
+
+        if choice == "abbruch":
+            print("[ABBRUCH] Editor beendet.")
+            return
+
+        choice_num = int(choice)
+
+        if choice_num == 0:
+            edit_item_scan(state, None)
+        elif 1 <= choice_num <= len(available_scans):
+            name, path = available_scans[choice_num - 1]
+            existing = load_item_scan_file(path)
+            if existing:
+                edit_item_scan(state, existing)
+        else:
+            print("[FEHLER] Ungültige Auswahl!")
+
+    except ValueError:
+        print("[FEHLER] Bitte eine Nummer eingeben!")
+    except (KeyboardInterrupt, EOFError):
+        print("\n[ABBRUCH] Editor beendet.")
+
+
+def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
+    """Bearbeitet eine Item-Scan Konfiguration."""
+
+    if existing:
+        print(f"\n--- Bearbeite Item-Scan: {existing.name} ---")
+        scan_name = existing.name
+        slots = list(existing.slots)
+        items = list(existing.items)
+        tolerance = existing.color_tolerance
+    else:
+        print("\n--- Neuen Item-Scan erstellen ---")
+        scan_name = input("Name des Item-Scans: ").strip()
+        if not scan_name:
+            scan_name = f"ItemScan_{int(time.time())}"
+        slots = []
+        items = []
+        tolerance = 40
+
+    # Schritt 1: Slots definieren
+    print("\n" + "=" * 60)
+    print("  SCHRITT 1: SLOTS DEFINIEREN (wo Items erscheinen)")
+    print("=" * 60)
+    slots = edit_item_slots(slots)
+
+    if not slots:
+        print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
+        return
+
+    # Schritt 2: Item-Profile definieren
+    print("\n" + "=" * 60)
+    print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
+    print("=" * 60)
+    items = edit_item_profiles(items)
+
+    if not items:
+        print("\n[FEHLER] Mindestens 1 Item-Profil erforderlich!")
+        return
+
+    # Schritt 3: Toleranz
+    print("\n" + "=" * 60)
+    print("  SCHRITT 3: FARBTOLERANZ")
+    print("=" * 60)
+    print(f"\nAktuelle Toleranz: {tolerance}")
+    print("(Höher = mehr Farben werden als 'gleich' erkannt)")
+    try:
+        tol_input = input(f"Neue Toleranz (Enter = {tolerance}): ").strip()
+        if tol_input:
+            tolerance = max(1, min(100, int(tol_input)))
+    except ValueError:
+        pass
+
+    # Speichern
+    config = ItemScanConfig(
+        name=scan_name,
+        slots=slots,
+        items=items,
+        color_tolerance=tolerance
+    )
+
+    with state.lock:
+        state.item_scans[scan_name] = config
+
+    save_item_scan(config)
+
+    print(f"\n[ERFOLG] Item-Scan '{scan_name}' gespeichert!")
+    print(f"         {len(slots)} Slots, {len(items)} Item-Profile")
+    print(f"         Nutze im Sequenz-Editor: '<Nr> scan {scan_name}'")
+
+
+def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
+    """Bearbeitet die Slot-Liste für einen Item-Scan."""
+
+    if slots:
+        print(f"\nAktuelle Slots ({len(slots)}):")
+        for i, slot in enumerate(slots):
+            print(f"  {i+1}. {slot}")
+
+    print("\n" + "-" * 60)
+    print("Befehle:")
+    print("  add      - Neuen Slot hinzufügen (Region + Klickpunkt)")
+    print("  del <Nr> - Slot löschen")
+    print("  show     - Alle Slots anzeigen")
+    print("  fertig   - Slots abschließen")
+    print("-" * 60)
+
+    while True:
+        try:
+            prompt = f"[SLOTS: {len(slots)}/20]"
+            user_input = input(f"{prompt} > ").strip().lower()
+
+            if user_input == "fertig":
+                return slots
+            elif user_input == "":
+                continue
+            elif user_input == "show":
+                if slots:
+                    print("\nSlots:")
+                    for i, slot in enumerate(slots):
+                        print(f"  {i+1}. {slot}")
+                else:
+                    print("  (Keine Slots)")
+                continue
+
+            elif user_input == "add":
+                if len(slots) >= 20:
+                    print("  → Maximum 20 Slots erreicht!")
+                    continue
+
+                slot_num = len(slots) + 1
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}'): ").strip()
+                if not slot_name:
+                    slot_name = f"Slot {slot_num}"
+
+                # Scan-Region auswählen
+                print("\n  Scan-Region definieren (Bereich wo das Item angezeigt wird):")
+                region = select_region()
+                if not region:
+                    print("  → Abbruch")
+                    continue
+
+                # Klick-Position
+                print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
+                print("  Bewege die Maus zur Klick-Position und drücke Enter...")
+                input()
+                click_x, click_y = get_cursor_pos()
+                print(f"  → Klick-Position: ({click_x}, {click_y})")
+
+                slot = ItemSlot(slot_name, region, (click_x, click_y))
+                slots.append(slot)
+                print(f"  ✓ {slot_name} hinzugefügt")
+                continue
+
+            elif user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    if 1 <= del_num <= len(slots):
+                        removed = slots.pop(del_num - 1)
+                        print(f"  ✓ {removed.name} gelöscht")
+                    else:
+                        print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
+                continue
+
+            else:
+                print("  → Unbekannter Befehl")
+
+        except (KeyboardInterrupt, EOFError):
+            raise
+
+
+def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
+    """Bearbeitet die Item-Profile für einen Item-Scan."""
+
+    if items:
+        print(f"\nAktuelle Item-Profile ({len(items)}):")
+        for i, item in enumerate(items):
+            print(f"  {i+1}. {item}")
+
+    print("\n" + "-" * 60)
+    print("Befehle:")
+    print("  add       - Neues Item-Profil erstellen")
+    print("  edit <Nr> - Item-Profil bearbeiten")
+    print("  del <Nr>  - Item-Profil löschen")
+    print("  show      - Alle Profile anzeigen")
+    print("  fertig    - Profile abschließen")
+    print("-" * 60)
+
+    while True:
+        try:
+            prompt = f"[ITEMS: {len(items)}]"
+            user_input = input(f"{prompt} > ").strip().lower()
+
+            if user_input == "fertig":
+                return items
+            elif user_input == "":
+                continue
+            elif user_input == "show":
+                if items:
+                    print("\nItem-Profile (sortiert nach Priorität):")
+                    for item in sorted(items, key=lambda x: x.priority):
+                        print(f"  {item}")
+                else:
+                    print("  (Keine Item-Profile)")
+                continue
+
+            elif user_input == "add":
+                item_name = input("  Item-Name (z.B. 'Legendary', 'Epic'): ").strip()
+                if not item_name:
+                    print("  → Name erforderlich!")
+                    continue
+
+                # Priorität
+                priority = len(items) + 1
+                try:
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    if prio_input:
+                        priority = max(1, int(prio_input))
+                except ValueError:
+                    pass
+
+                # Marker-Farben sammeln
+                print("\n  Marker-Farben für dieses Item sammeln:")
+                print("  (Diese Farben identifizieren das Item eindeutig)")
+                marker_colors = collect_marker_colors()
+
+                if not marker_colors:
+                    print("  → Mindestens 1 Farbe erforderlich!")
+                    continue
+
+                item = ItemProfile(item_name, marker_colors, priority)
+                items.append(item)
+                print(f"  ✓ {item_name} hinzugefügt mit {len(marker_colors)} Marker-Farben")
+                continue
+
+            elif user_input.startswith("edit "):
+                try:
+                    edit_num = int(user_input[5:])
+                    if 1 <= edit_num <= len(items):
+                        item = items[edit_num - 1]
+                        print(f"\n  Bearbeite {item.name}:")
+
+                        # Neue Priorität?
+                        try:
+                            prio_input = input(f"  Priorität (aktuell {item.priority}, Enter=behalten): ").strip()
+                            if prio_input:
+                                item.priority = max(1, int(prio_input))
+                        except ValueError:
+                            pass
+
+                        # Farben neu sammeln?
+                        if input("  Marker-Farben neu sammeln? (j/n): ").strip().lower() == "j":
+                            new_colors = collect_marker_colors()
+                            if new_colors:
+                                item.marker_colors = new_colors
+
+                        print(f"  ✓ {item.name} aktualisiert")
+                    else:
+                        print(f"  → Ungültiges Item! Verfügbar: 1-{len(items)}")
+                except ValueError:
+                    print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    if 1 <= del_num <= len(items):
+                        removed = items.pop(del_num - 1)
+                        print(f"  ✓ {removed.name} gelöscht")
+                    else:
+                        print(f"  → Ungültiges Item! Verfügbar: 1-{len(items)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
+                continue
+
+            else:
+                print("  → Unbekannter Befehl")
+
+        except (KeyboardInterrupt, EOFError):
+            raise
+
+
+def collect_marker_colors() -> list[tuple]:
+    """Sammelt Marker-Farben für ein Item-Profil."""
+    colors = []
+
+    print("  Bewege die Maus zu einer Marker-Farbe und drücke Enter.")
+    print("  Tippe 'fertig' wenn alle Farben gesammelt sind.")
+
+    while True:
+        try:
+            user_input = input(f"  [Farben: {len(colors)}] > ").strip().lower()
+
+            if user_input == "fertig":
+                return colors
+            elif user_input == "":
+                # Enter gedrückt - Farbe aufnehmen
+                x, y = get_cursor_pos()
+                img = take_screenshot((x, y, x+1, y+1))
+                if img:
+                    color = img.getpixel((0, 0))[:3]
+                    if color not in colors:
+                        colors.append(color)
+                        print(f"    ✓ Farbe RGB{color} hinzugefügt ({len(colors)} gesamt)")
+                    else:
+                        print(f"    → Farbe RGB{color} bereits vorhanden")
+                else:
+                    print("    → Fehler beim Lesen der Farbe")
+            else:
+                print("  → Enter = Farbe aufnehmen, 'fertig' = abschließen")
+
+        except (KeyboardInterrupt, EOFError):
+            return colors
+
+
+# =============================================================================
+# ITEM-SCAN AUSFÜHRUNG
+# =============================================================================
+def execute_item_scan(state: AutoClickerState, scan_name: str) -> Optional[tuple]:
+    """
+    Führt einen Item-Scan aus und gibt die Klick-Position des besten Items zurück.
+    Returns (x, y) oder None wenn kein Item gefunden.
+    """
+    with state.lock:
+        if scan_name not in state.item_scans:
+            print(f"\n[FEHLER] Item-Scan '{scan_name}' nicht gefunden!")
+            return None
+        config = state.item_scans[scan_name]
+
+    if not PILLOW_AVAILABLE:
+        print("\n[FEHLER] Pillow nicht installiert für Item-Scan!")
+        return None
+
+    best_item = None
+    best_priority = 999
+    best_slot = None
+
+    print(f"\n[SCAN] Scanne {len(config.slots)} Slots für '{scan_name}'...")
+
+    for slot in config.slots:
+        # Screenshot der Scan-Region
+        img = take_screenshot(slot.scan_region)
+        if img is None:
+            continue
+
+        # Prüfe alle Item-Profile
+        for item in config.items:
+            if item.priority >= best_priority:
+                # Bereits ein besseres Item gefunden
+                continue
+
+            # Prüfe ob alle Marker-Farben vorhanden sind
+            markers_found = 0
+            pixels = img.load()
+            width, height = img.size
+
+            for marker_color in item.marker_colors:
+                color_found = False
+                # Suche nach dieser Marker-Farbe im Bild
+                for x in range(0, width, 2):  # Jeden 2. Pixel für Geschwindigkeit
+                    if color_found:
+                        break
+                    for y in range(0, height, 2):
+                        pixel = pixels[x, y][:3]
+                        if color_distance(pixel, marker_color) <= config.color_tolerance:
+                            color_found = True
+                            break
+
+                if color_found:
+                    markers_found += 1
+
+            # Item erkannt wenn mindestens 1 Marker-Farbe gefunden
+            # (oder alle für strengere Erkennung - kann angepasst werden)
+            if markers_found >= 1:
+                print(f"  → {slot.name}: {item.name} erkannt (Priorität {item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
+                if item.priority < best_priority:
+                    best_priority = item.priority
+                    best_item = item
+                    best_slot = slot
+
+    if best_item and best_slot:
+        print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (Priorität {best_priority})")
+        return best_slot.click_pos
+    else:
+        print("[SCAN] Kein Item erkannt.")
+        return None
+
+
+# =============================================================================
 # SEQUENZ-EDITOR (Konsolen-basiert)
 # =============================================================================
 def run_sequence_editor(state: AutoClickerState) -> None:
@@ -1153,6 +1728,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  <Nr> <Zeit>  - Warte Xs, dann klicke (z.B. '1 30' = 30s warten → P1 klicken)")
     print("  <Nr> 0       - Sofort klicken ohne Wartezeit (z.B. '1 0')")
     print("  <Nr> pixel   - Warte auf Farbe, dann klicke (z.B. '1 pixel')")
+    print("  scan <Name>  - Item-Scan ausführen (z.B. 'scan loot_check')")
     print("  del <Nr>     - Schritt löschen (z.B. 'del 2')")
     print("  clear        - Alle Schritte löschen")
     print("  show         - Aktuelle Schritte anzeigen")
@@ -1196,10 +1772,35 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  → Format: del <Nr>")
                 continue
 
-            # Neuen Schritt hinzufügen
+            elif user_input.lower().startswith("scan "):
+                # Item-Scan Schritt hinzufügen
+                scan_name = user_input[5:].strip()
+                if not scan_name:
+                    print("  → Format: scan <Name>")
+                    continue
+
+                # Prüfen ob Item-Scan existiert
+                with state.lock:
+                    if scan_name not in state.item_scans:
+                        available = list(state.item_scans.keys())
+                        if available:
+                            print(f"  → Item-Scan '{scan_name}' nicht gefunden!")
+                            print(f"     Verfügbar: {', '.join(available)}")
+                        else:
+                            print(f"  → Keine Item-Scans vorhanden!")
+                            print(f"     Erstelle einen mit CTRL+ALT+I")
+                        continue
+
+                # Scan-Schritt erstellen (x, y werden nicht verwendet)
+                step = SequenceStep(x=0, y=0, delay_before=0, name=f"Scan:{scan_name}", item_scan=scan_name)
+                steps.append(step)
+                print(f"  ✓ Hinzugefügt: {step}")
+                continue
+
+            # Neuen Schritt hinzufügen (Punkt + Zeit oder Pixel)
             parts = user_input.split()
             if len(parts) != 2:
-                print("  → Format: <Punkt-Nr> <Sekunden> oder <Punkt-Nr> pixel")
+                print("  → Format: <Punkt-Nr> <Sekunden> oder <Punkt-Nr> pixel oder scan <Name>")
                 continue
 
             point_num = int(parts[0])
@@ -1318,6 +1919,24 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
         state.stop_event.set()
         return False
+
+    # === SONDERFALL: Item-Scan Schritt ===
+    if step.item_scan:
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Item-Scan '{step.item_scan}'...", end="", flush=True)
+
+        click_pos = execute_item_scan(state, step.item_scan)
+        if click_pos:
+            # Klick auf das beste Item
+            send_click(click_pos[0], click_pos[1])
+            with state.lock:
+                state.total_clicks += 1
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan-Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
+        return True
 
     # === PHASE 1: Warten VOR dem Klick (Zeit oder Farbe) ===
     if step.wait_pixel and step.wait_color:
@@ -1575,6 +2194,14 @@ def handle_editor(state: AutoClickerState) -> None:
             return
     run_sequence_editor(state)
 
+def handle_item_scan_editor(state: AutoClickerState) -> None:
+    """Öffnet den Item-Scan Editor."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+    run_item_scan_editor(state)
+
 def handle_load(state: AutoClickerState) -> None:
     """Lädt eine Sequenz."""
     with state.lock:
@@ -1697,6 +2324,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_CLEAR, VK_C, "CTRL+ALT+C (Punkte löschen)"),
         (HOTKEY_RESET, VK_X, "CTRL+ALT+X (FACTORY RESET)"),
         (HOTKEY_EDITOR, VK_E, "CTRL+ALT+E (Sequenz-Editor)"),
+        (HOTKEY_ITEM_SCAN, VK_I, "CTRL+ALT+I (Item-Scan Editor)"),
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
@@ -1717,7 +2345,8 @@ def register_hotkeys() -> bool:
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
     for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
-                  HOTKEY_EDITOR, HOTKEY_LOAD, HOTKEY_SHOW, HOTKEY_TOGGLE, HOTKEY_ANALYZE, HOTKEY_QUIT]:
+                  HOTKEY_EDITOR, HOTKEY_ITEM_SCAN, HOTKEY_LOAD, HOTKEY_SHOW,
+                  HOTKEY_TOGGLE, HOTKEY_ANALYZE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -1735,6 +2364,7 @@ def print_help() -> None:
     print("  CTRL+ALT+C  - Alle Punkte löschen")
     print("  CTRL+ALT+X  - FACTORY RESET (Punkte + Sequenzen)")
     print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
+    print("  CTRL+ALT+I  - Item-Scan Editor (Items erkennen + vergleichen)")
     print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
     print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
@@ -1766,9 +2396,11 @@ def main() -> int:
 
     # Ordner erstellen
     ensure_sequences_dir()
+    ensure_item_scans_dir()
 
-    # Gespeicherte Punkte laden
+    # Gespeicherte Punkte und Item-Scans laden
     load_points(state)
+    load_all_item_scans(state)
 
     # Hotkeys registrieren
     print("Registriere Hotkeys...")
@@ -1798,6 +2430,8 @@ def main() -> int:
                         handle_reset(state)
                     elif hk_id == HOTKEY_EDITOR:
                         handle_editor(state)
+                    elif hk_id == HOTKEY_ITEM_SCAN:
+                        handle_item_scan_editor(state)
                     elif hk_id == HOTKEY_LOAD:
                         handle_load(state)
                     elif hk_id == HOTKEY_SHOW:
