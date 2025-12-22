@@ -1141,7 +1141,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     print("\n" + "=" * 60)
     print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
     print("=" * 60)
-    items = edit_item_profiles(items)
+    items = edit_item_profiles(items, slots)
 
     if not items:
         print("\n[FEHLER] Mindestens 1 Item-Profil erforderlich!")
@@ -1260,13 +1260,18 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
             raise
 
 
-def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
+def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -> list[ItemProfile]:
     """Bearbeitet die Item-Profile für einen Item-Scan."""
 
     if items:
         print(f"\nAktuelle Item-Profile ({len(items)}):")
         for i, item in enumerate(items):
             print(f"  {i+1}. {item}")
+
+    if slots:
+        print(f"\nVerfügbare Slots für Farb-Scan:")
+        for i, slot in enumerate(slots):
+            print(f"  {i+1}. {slot.name}")
 
     print("\n" + "-" * 60)
     print("Befehle:")
@@ -1312,13 +1317,27 @@ def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
                 except ValueError:
                     pass
 
-                # Marker-Farben sammeln
-                print("\n  Marker-Farben für dieses Item sammeln:")
-                print("  (Diese Farben identifizieren das Item eindeutig)")
-                marker_colors = collect_marker_colors()
+                # Marker-Farben aus Slot scannen
+                if slots:
+                    print(f"\n  Lege das Item in einen Slot und gib die Slot-Nr ein (1-{len(slots)}):")
+                    try:
+                        slot_input = input("  Slot-Nr: ").strip()
+                        slot_num = int(slot_input)
+                        if slot_num < 1 or slot_num > len(slots):
+                            print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)}")
+                            continue
+                        selected_slot = slots[slot_num - 1]
+                        marker_colors = collect_marker_colors(selected_slot.scan_region)
+                    except ValueError:
+                        print("  → Bitte eine Nummer eingeben!")
+                        continue
+                else:
+                    # Fallback: Manuell Region auswählen
+                    print("\n  Marker-Farben für dieses Item sammeln:")
+                    marker_colors = collect_marker_colors()
 
                 if not marker_colors:
-                    print("  → Mindestens 1 Farbe erforderlich!")
+                    print("  → Keine Farben gefunden!")
                     continue
 
                 item = ItemProfile(item_name, marker_colors, priority)
@@ -1343,7 +1362,18 @@ def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
 
                         # Farben neu sammeln?
                         if input("  Marker-Farben neu sammeln? (j/n): ").strip().lower() == "j":
-                            new_colors = collect_marker_colors()
+                            if slots:
+                                print(f"  In welchem Slot liegt das Item? (1-{len(slots)}):")
+                                try:
+                                    slot_num = int(input("  Slot-Nr: ").strip())
+                                    if 1 <= slot_num <= len(slots):
+                                        new_colors = collect_marker_colors(slots[slot_num - 1].scan_region)
+                                    else:
+                                        new_colors = collect_marker_colors()  # Fallback
+                                except ValueError:
+                                    new_colors = collect_marker_colors()  # Fallback
+                            else:
+                                new_colors = collect_marker_colors()
                             if new_colors:
                                 item.marker_colors = new_colors
 
@@ -1373,16 +1403,19 @@ def edit_item_profiles(items: list[ItemProfile]) -> list[ItemProfile]:
             raise
 
 
-def collect_marker_colors() -> list[tuple]:
+def collect_marker_colors(region: tuple = None) -> list[tuple]:
     """Sammelt Marker-Farben für ein Item-Profil durch Region-Scan."""
-    print("\n  Wähle einen Bereich auf dem Item aus:")
-    print("  (Die 5 häufigsten Farben werden automatisch genommen)")
 
-    region = select_region()
+    # Wenn keine Region übergeben, manuell auswählen
     if not region:
-        return []
+        print("\n  Wähle einen Bereich auf dem Item aus:")
+        print("  (Die 5 häufigsten Farben werden automatisch genommen)")
+        region = select_region()
+        if not region:
+            return []
 
     # Screenshot der Region
+    print(f"\n  Scanne Region ({region[0]},{region[1]}) - ({region[2]},{region[3]})...")
     img = take_screenshot(region)
     if img is None:
         print("  → Fehler beim Screenshot!")
