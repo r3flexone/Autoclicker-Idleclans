@@ -201,28 +201,43 @@ class SequenceStep:
             return f"sofort → klicke {pos_str}"
 
 @dataclass
+class LoopPhase:
+    """Eine Loop-Phase mit eigenen Schritten und Wiederholungen."""
+    name: str
+    steps: list[SequenceStep] = field(default_factory=list)
+    repeat: int = 1  # Wie oft diese Phase wiederholt wird
+
+    def __str__(self) -> str:
+        step_count = len(self.steps)
+        pixel_triggers = sum(1 for s in self.steps if s.wait_pixel)
+        trigger_str = f" [Farb: {pixel_triggers}]" if pixel_triggers > 0 else ""
+        return f"{self.name}: {step_count} Schritte x{self.repeat}{trigger_str}"
+
+@dataclass
 class Sequence:
-    """Eine Klick-Sequenz mit Start-Phase (einmalig) und Loop-Phase (wiederholt)."""
+    """Eine Klick-Sequenz mit Start-Phase und mehreren Loop-Phasen."""
     name: str
     start_steps: list[SequenceStep] = field(default_factory=list)  # Einmalig am Anfang
-    loop_steps: list[SequenceStep] = field(default_factory=list)   # Wird wiederholt
-    max_loops: int = 0  # 0 = unendlich, >0 = Anzahl Durchläufe dann zurück zu Start
+    loop_phases: list[LoopPhase] = field(default_factory=list)     # Mehrere Loop-Phasen
+    total_cycles: int = 1  # 0 = unendlich, >0 = wie oft alle Loops durchlaufen werden
 
     def __str__(self) -> str:
         start_count = len(self.start_steps)
-        loop_count = len(self.loop_steps)
-        loop_info = f"Loop: {loop_count}"
-        if self.max_loops > 0:
-            loop_info += f" x{self.max_loops}"
-        else:
+        loop_info = f"{len(self.loop_phases)} Loop(s)"
+        if self.total_cycles == 0:
             loop_info += " ∞"
-        # Zähle Schritte mit Farb-Trigger
-        pixel_triggers = sum(1 for s in self.start_steps + self.loop_steps if s.wait_pixel)
+        elif self.total_cycles == 1:
+            loop_info += " (1x)"
+        else:
+            loop_info += f" (x{self.total_cycles})"
+        # Zähle alle Schritte mit Farb-Trigger
+        all_steps = self.start_steps + [s for lp in self.loop_phases for s in lp.steps]
+        pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
         trigger_str = f" [Farb-Trigger: {pixel_triggers}]" if pixel_triggers > 0 else ""
         return f"{self.name} (Start: {start_count}, {loop_info}){trigger_str}"
 
     def total_steps(self) -> int:
-        return len(self.start_steps) + len(self.loop_steps)
+        return len(self.start_steps) + sum(len(lp.steps) for lp in self.loop_phases)
 
 @dataclass
 class AutoClickerState:
@@ -268,20 +283,23 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         json.dump(points_data, f, indent=2, ensure_ascii=False)
 
-    # Sequenzen speichern (mit Start + Loop Phasen + per-step Trigger)
+    # Sequenzen speichern (mit Start + mehreren Loop-Phasen)
+    def step_to_dict(s: SequenceStep) -> dict:
+        return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
+                "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
+
     for name, seq in state.sequences.items():
         seq_data = {
             "name": seq.name,
-            "max_loops": seq.max_loops,
-            "start_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
-                for s in seq.start_steps
-            ],
-            "loop_steps": [
-                {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color}
-                for s in seq.loop_steps
+            "total_cycles": seq.total_cycles,
+            "start_steps": [step_to_dict(s) for s in seq.start_steps],
+            "loop_phases": [
+                {
+                    "name": lp.name,
+                    "repeat": lp.repeat,
+                    "steps": [step_to_dict(s) for s in lp.steps]
+                }
+                for lp in seq.loop_phases
             ]
         }
         filename = f"{name.replace(' ', '_').lower()}.json"
@@ -300,7 +318,7 @@ def load_points(state: AutoClickerState) -> None:
         print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
-    """Lädt eine einzelne Sequenz-Datei (mit Start + Loop Phasen)."""
+    """Lädt eine einzelne Sequenz-Datei (mit Start + mehreren Loop-Phasen)."""
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -327,18 +345,42 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     steps.append(step)
                 return steps
 
-            # Neues Format mit start_steps und loop_steps
-            if "start_steps" in data or "loop_steps" in data:
-                start_steps = parse_steps(data.get("start_steps", []))
+            start_steps = parse_steps(data.get("start_steps", []))
+
+            # Neues Format mit loop_phases (mehrere Loop-Phasen)
+            if "loop_phases" in data:
+                loop_phases = []
+                for lp_data in data["loop_phases"]:
+                    lp = LoopPhase(
+                        name=lp_data.get("name", "Loop"),
+                        steps=parse_steps(lp_data.get("steps", [])),
+                        repeat=lp_data.get("repeat", 1)
+                    )
+                    loop_phases.append(lp)
+                total_cycles = data.get("total_cycles", 1)
+                return Sequence(data["name"], start_steps, loop_phases, total_cycles)
+
+            # Altes Format mit loop_steps (eine Loop-Phase) - konvertieren
+            elif "loop_steps" in data:
                 loop_steps = parse_steps(data.get("loop_steps", []))
                 max_loops = data.get("max_loops", 0)
-                return Sequence(data["name"], start_steps, loop_steps, max_loops)
-            # Altes Format (nur steps) - konvertieren zu loop_steps
+                # Konvertiere zu neuem Format: eine LoopPhase
+                if loop_steps:
+                    loop_phases = [LoopPhase("Loop 1", loop_steps, max_loops if max_loops > 0 else 1)]
+                    total_cycles = 0 if max_loops == 0 else 1  # 0 = unendlich
+                else:
+                    loop_phases = []
+                    total_cycles = 1
+                return Sequence(data["name"], start_steps, loop_phases, total_cycles)
+
+            # Uraltes Format (nur steps) - konvertieren
             elif "steps" in data:
                 loop_steps = parse_steps(data["steps"])
-                return Sequence(data["name"], [], loop_steps)
+                loop_phases = [LoopPhase("Loop 1", loop_steps, 1)] if loop_steps else []
+                return Sequence(data["name"], [], loop_phases, 0)
+
             else:
-                return Sequence(data["name"], [], [])
+                return Sequence(data["name"], [], [], 1)
 
     except Exception as e:
         print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
@@ -815,7 +857,7 @@ def print_status(state: AutoClickerState) -> None:
             print(f"[{status}] Sequenz: {seq_name} | Klicks: {state.total_clicks}", flush=True)
         else:
             if state.active_sequence:
-                seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loop: {len(state.active_sequence.loop_steps)}"
+                seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loops: {len(state.active_sequence.loop_phases)}"
                 print(f"[{status}] {points_str} | Sequenz: {seq_name} ({seq_info})", flush=True)
             else:
                 print(f"[{status}] {points_str} | Sequenz: {seq_name}", flush=True)
@@ -847,9 +889,9 @@ def print_points(state: AutoClickerState) -> None:
                     print("      START:")
                     for i, step in enumerate(seq.start_steps):
                         print(f"        {i+1}. {step}")
-                if seq.loop_steps:
-                    print("      LOOP:")
-                    for i, step in enumerate(seq.loop_steps):
+                for lp in seq.loop_phases:
+                    print(f"      {lp.name} (x{lp.repeat}):")
+                    for i, step in enumerate(lp.steps):
                         print(f"        {i+1}. {step}")
 
     with state.lock:
@@ -914,20 +956,22 @@ def run_sequence_editor(state: AutoClickerState) -> None:
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
-    """Bearbeitet eine Sequenz (neu oder bestehend) mit Start + Loop Phase."""
+    """Bearbeitet eine Sequenz (neu oder bestehend) mit Start + mehreren Loop-Phasen."""
 
     if existing:
         print(f"\n--- Bearbeite Sequenz: {existing.name} ---")
         seq_name = existing.name
         start_steps = list(existing.start_steps)
-        loop_steps = list(existing.loop_steps)
+        loop_phases = [LoopPhase(lp.name, list(lp.steps), lp.repeat) for lp in existing.loop_phases]
+        total_cycles = existing.total_cycles
     else:
         print("\n--- Neue Sequenz erstellen ---")
         seq_name = input("Name der Sequenz: ").strip()
         if not seq_name:
             seq_name = f"Sequenz_{int(time.time())}"
         start_steps = []
-        loop_steps = []
+        loop_phases = []
+        total_cycles = 1
 
     # Verfügbare Punkte anzeigen
     with state.lock:
@@ -937,54 +981,41 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
 
     # Erst START-Phase bearbeiten
     print("\n" + "=" * 60)
-    print("  PHASE 1: START-SEQUENZ (wird einmal ausgeführt)")
+    print("  PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)")
     print("=" * 60)
     start_steps = edit_phase(state, start_steps, "START")
 
-    # Dann LOOP-Phase bearbeiten
+    # Dann LOOP-Phasen bearbeiten (mehrere möglich)
     print("\n" + "=" * 60)
-    print("  PHASE 2: LOOP-SEQUENZ (wird wiederholt)")
+    print("  PHASE 2: LOOP-PHASEN (können mehrere sein)")
     print("=" * 60)
-    loop_steps = edit_phase(state, loop_steps, "LOOP")
+    loop_phases = edit_loop_phases(state, loop_phases)
 
-    # Prüfen ob mindestens Loop-Steps vorhanden
-    if not loop_steps:
-        print("\n[WARNUNG] Keine Loop-Schritte! Sequenz wird nur einmal ausgeführt.")
-
-    # Max Loops abfragen
-    max_loops = 0
-    if loop_steps:
+    # Gesamt-Zyklen abfragen
+    if loop_phases:
         print("\n" + "=" * 60)
-        print("  LOOP-EINSTELLUNGEN")
+        print("  GESAMT-WIEDERHOLUNGEN")
         print("=" * 60)
-        if existing and existing.max_loops > 0:
-            print(f"Aktuell: {existing.max_loops} Durchläufe")
-        print("\nWie oft soll der Loop wiederholt werden?")
+        print("\nAblauf: START → Loop1 → Loop2 → ... → (wieder von vorne?)")
+        print("\nWie oft soll der GESAMTE Ablauf wiederholt werden?")
         print("  0 = Unendlich (manuell stoppen)")
-        print("  >0 = Anzahl Durchläufe, dann zurück zu START")
+        print("  1 = Einmal durchlaufen und stoppen")
+        print("  >1 = X-mal wiederholen (START → alle Loops → START → ...)")
         try:
-            loops_input = input("\nAnzahl Loops (Enter = 0/unendlich): ").strip()
-            if loops_input:
-                max_loops = int(loops_input)
-                if max_loops < 0:
-                    max_loops = 0
+            cycles_input = input(f"\nAnzahl Zyklen (Enter = {total_cycles}): ").strip()
+            if cycles_input:
+                total_cycles = int(cycles_input)
+                if total_cycles < 0:
+                    total_cycles = 0
         except ValueError:
-            print("Ungültige Eingabe, setze auf 0 (unendlich).")
-            max_loops = 0
-
-    # Hinweis auf Pixel-Trigger in Schritten
-    if PILLOW_AVAILABLE:
-        print("\n" + "-" * 60)
-        print("Tipp: Mit '<Nr> pixel' kannst du bei einem Schritt auf eine")
-        print("      bestimmte Farbe warten statt auf Zeit!")
-        print("-" * 60)
+            print(f"Ungültige Eingabe, behalte {total_cycles}.")
 
     # Sequenz erstellen und speichern
     new_sequence = Sequence(
         name=seq_name,
         start_steps=start_steps,
-        loop_steps=loop_steps,
-        max_loops=max_loops
+        loop_phases=loop_phases,
+        total_cycles=total_cycles
     )
 
     with state.lock:
@@ -993,18 +1024,120 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
 
     save_data(state)
 
-    # Zähle Pixel-Trigger in Schritten
-    pixel_triggers = sum(1 for s in start_steps + loop_steps if s.wait_pixel)
+    # Zusammenfassung
+    all_steps = start_steps + [s for lp in loop_phases for s in lp.steps]
+    pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
 
     print(f"\n[ERFOLG] Sequenz '{seq_name}' gespeichert!")
-    print(f"         Start: {len(start_steps)} Schritte (einmalig)")
-    if max_loops > 0:
-        print(f"         Loop:  {len(loop_steps)} Schritte (x{max_loops}, dann zurück zu START)")
+    print(f"         Start: {len(start_steps)} Schritte (einmal pro Zyklus)")
+    for i, lp in enumerate(loop_phases):
+        print(f"         {lp.name}: {len(lp.steps)} Schritte x{lp.repeat}")
+    if total_cycles == 0:
+        print(f"         Gesamt: Unendlich wiederholen")
+    elif total_cycles == 1:
+        print(f"         Gesamt: Einmal durchlaufen")
     else:
-        print(f"         Loop:  {len(loop_steps)} Schritte (unendlich)")
+        print(f"         Gesamt: {total_cycles}x wiederholen")
     if pixel_triggers > 0:
-        print(f"         Farb-Trigger: {pixel_triggers} Schritt(e) mit Farbprüfung")
+        print(f"         Farb-Trigger: {pixel_triggers} Schritt(e)")
     print("         Drücke CTRL+ALT+S zum Starten.\n")
+
+
+def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> list[LoopPhase]:
+    """Bearbeitet mehrere Loop-Phasen."""
+
+    if loop_phases:
+        print(f"\nAktuelle Loop-Phasen ({len(loop_phases)}):")
+        for i, lp in enumerate(loop_phases):
+            print(f"  {i+1}. {lp}")
+
+    print("\n" + "-" * 60)
+    print("Befehle:")
+    print("  add        - Neue Loop-Phase hinzufügen")
+    print("  edit <Nr>  - Loop-Phase bearbeiten (z.B. 'edit 1')")
+    print("  del <Nr>   - Loop-Phase löschen")
+    print("  show       - Alle Loop-Phasen anzeigen")
+    print("  fertig     - Loop-Phasen abschließen")
+    print("-" * 60)
+
+    while True:
+        try:
+            prompt = f"[LOOPS: {len(loop_phases)}]"
+            user_input = input(f"{prompt} > ").strip().lower()
+
+            if user_input == "fertig":
+                return loop_phases
+            elif user_input == "":
+                continue
+            elif user_input == "show":
+                if loop_phases:
+                    print(f"\nLoop-Phasen:")
+                    for i, lp in enumerate(loop_phases):
+                        print(f"  {i+1}. {lp}")
+                        for j, step in enumerate(lp.steps):
+                            print(f"       {j+1}. {step}")
+                else:
+                    print("  (Keine Loop-Phasen)")
+                continue
+            elif user_input == "add":
+                # Neue Loop-Phase
+                loop_num = len(loop_phases) + 1
+                loop_name = input(f"  Name der Loop-Phase (Enter = 'Loop {loop_num}'): ").strip()
+                if not loop_name:
+                    loop_name = f"Loop {loop_num}"
+
+                print(f"\n  Schritte für {loop_name} hinzufügen:")
+                steps = edit_phase(state, [], loop_name)
+
+                repeat = 1
+                try:
+                    repeat_input = input(f"  Wie oft soll {loop_name} wiederholt werden? (Enter = 1): ").strip()
+                    if repeat_input:
+                        repeat = max(1, int(repeat_input))
+                except ValueError:
+                    repeat = 1
+
+                loop_phases.append(LoopPhase(loop_name, steps, repeat))
+                print(f"  ✓ {loop_name} hinzugefügt ({len(steps)} Schritte x{repeat})")
+                continue
+
+            elif user_input.startswith("edit "):
+                try:
+                    edit_num = int(user_input[5:])
+                    if 1 <= edit_num <= len(loop_phases):
+                        lp = loop_phases[edit_num - 1]
+                        print(f"\n  Bearbeite {lp.name}:")
+                        lp.steps = edit_phase(state, lp.steps, lp.name)
+                        try:
+                            repeat_input = input(f"  Wiederholungen (aktuell {lp.repeat}, Enter = behalten): ").strip()
+                            if repeat_input:
+                                lp.repeat = max(1, int(repeat_input))
+                        except ValueError:
+                            pass
+                        print(f"  ✓ {lp.name} aktualisiert")
+                    else:
+                        print(f"  → Ungültige Nr! Verfügbar: 1-{len(loop_phases)}")
+                except ValueError:
+                    print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    if 1 <= del_num <= len(loop_phases):
+                        removed = loop_phases.pop(del_num - 1)
+                        print(f"  ✓ {removed.name} gelöscht")
+                    else:
+                        print(f"  → Ungültige Nr! Verfügbar: 1-{len(loop_phases)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
+                continue
+
+            else:
+                print("  → Unbekannter Befehl. Nutze: add, edit <Nr>, del <Nr>, show, fertig")
+
+        except (KeyboardInterrupt, EOFError):
+            raise
 
 
 def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> list[SequenceStep]:
@@ -1255,7 +1388,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
 
 def sequence_worker(state: AutoClickerState) -> None:
-    """Worker-Thread, der die Sequenz ausführt (Start + Loop Phasen mit Cycling)."""
+    """Worker-Thread, der die Sequenz ausführt (Start + mehrere Loop-Phasen mit Zyklen)."""
     print("\n[WORKER] Sequenz gestartet.")
 
     with state.lock:
@@ -1266,78 +1399,76 @@ def sequence_worker(state: AutoClickerState) -> None:
             return
 
         has_start = len(sequence.start_steps) > 0
-        has_loop = len(sequence.loop_steps) > 0
-        max_loops = sequence.max_loops
+        has_loops = len(sequence.loop_phases) > 0
+        total_cycles = sequence.total_cycles
 
-        if not has_start and not has_loop:
+        if not has_start and not has_loops:
             print("[FEHLER] Sequenz ist leer!")
             state.is_running = False
             return
 
     cycle_count = 0
 
-    # Äußere Schleife für Cycling (START → LOOP x mal → START → LOOP x mal → ...)
+    # Äußere Schleife für Zyklen (START → alle Loops → START → alle Loops → ...)
     while not state.stop_event.is_set() and not state.quit_event.is_set():
         cycle_count += 1
 
+        # Prüfen ob max Zyklen erreicht (0 = unendlich)
+        if total_cycles > 0 and cycle_count > total_cycles:
+            print(f"\n[FERTIG] Alle {total_cycles} Zyklen abgeschlossen!")
+            break
+
         # === PHASE 1: START-SEQUENZ ===
         if has_start and not state.stop_event.is_set():
-            if state.stop_event.is_set():
-                break
-
             if cycle_count == 1:
                 print("\n[START] Führe Start-Sequenz aus...")
             else:
-                print(f"\n[CYCLE #{cycle_count}] Starte erneut mit START-Sequenz...")
+                print(f"\n[ZYKLUS #{cycle_count}] Starte erneut...")
             total_start = len(sequence.start_steps)
 
             for i, step in enumerate(sequence.start_steps):
                 if state.stop_event.is_set() or state.quit_event.is_set():
                     break
-
                 if not execute_step(state, step, i + 1, total_start, "START"):
                     break
 
-            if not state.stop_event.is_set():
-                print("\n[START] Start-Sequenz abgeschlossen.")
-
-        # === PHASE 2: LOOP-SEQUENZ ===
-        if has_loop and not state.stop_event.is_set():
             if state.stop_event.is_set():
                 break
 
-            total_loop = len(sequence.loop_steps)
-            loop_count = 0
+        # === PHASE 2: ALLE LOOP-PHASEN ===
+        if has_loops and not state.stop_event.is_set():
+            for loop_phase in sequence.loop_phases:
+                if state.stop_event.is_set() or state.quit_event.is_set():
+                    break
 
-            if max_loops > 0:
-                print(f"\n[LOOP] Starte Loop-Sequenz ({max_loops}x)...")
-            else:
-                print("\n[LOOP] Starte Loop-Sequenz (unendlich)...")
+                total_steps = len(loop_phase.steps)
+                if total_steps == 0:
+                    continue
 
-            while not state.stop_event.is_set() and not state.quit_event.is_set():
-                loop_count += 1
+                print(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x)...")
 
-                for i, step in enumerate(sequence.loop_steps):
+                # Diese Loop-Phase X-mal wiederholen
+                for repeat_num in range(1, loop_phase.repeat + 1):
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
 
-                    if not execute_step(state, step, i + 1, total_loop, f"LOOP #{loop_count}"):
-                        break
+                    for i, step in enumerate(loop_phase.steps):
+                        if state.stop_event.is_set() or state.quit_event.is_set():
+                            break
 
-                if state.stop_event.is_set():
-                    break
+                        phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
+                        if not execute_step(state, step, i + 1, total_steps, phase_label):
+                            break
 
-                # Prüfen ob max_loops erreicht
-                if max_loops > 0 and loop_count >= max_loops:
-                    print(f"\n[LOOP] {max_loops} Durchläufe abgeschlossen!")
-                    break  # Innere Loop-Schleife verlassen, zurück zu START
+                if not state.stop_event.is_set():
+                    print(f"\n[{loop_phase.name}] Abgeschlossen.")
 
-            # Wenn max_loops == 0 (unendlich), dann auch äußere Schleife verlassen
-            if max_loops == 0:
+            if state.stop_event.is_set():
                 break
 
-        else:
-            # Kein Loop vorhanden → einmal START und fertig
+        # Wenn keine Loops oder total_cycles==1 → nach einem Durchlauf fertig
+        if not has_loops or total_cycles == 1:
+            print("\n[FERTIG] Sequenz einmal durchgelaufen.")
             break
 
     with state.lock:
