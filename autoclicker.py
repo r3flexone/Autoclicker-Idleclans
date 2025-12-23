@@ -1138,10 +1138,6 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 continue
 
             elif user_input == "add":
-                if len(slots) >= 20:
-                    print("  → Maximum 20 Slots erreicht!")
-                    continue
-
                 slot_num = len(slots) + 1
                 slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}'): ").strip()
                 if not slot_name:
