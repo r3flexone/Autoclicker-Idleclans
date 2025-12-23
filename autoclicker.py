@@ -33,8 +33,8 @@ import time
 import sys
 import json
 import os
-from dataclasses import dataclass, field, asdict
-from typing import Optional, Callable
+from dataclasses import dataclass, field
+from typing import Optional
 from pathlib import Path
 
 # Bilderkennung (optional - nur wenn pillow installiert)
@@ -673,31 +673,6 @@ def clear_line() -> None:
 # =============================================================================
 # BILDERKENNUNG (Screen Detection)
 # =============================================================================
-# Farben für UI-Elemente (RGB) - Mehrere Varianten für bessere Erkennung
-LOBBY_BUTTON_COLORS = [
-    (46, 204, 113),    # Grün (Material Design)
-    (39, 174, 96),     # Dunkleres Grün
-    (88, 214, 141),    # Helleres Grün
-    (46, 139, 87),     # Sea Green
-    (60, 179, 113),    # Medium Sea Green
-    (50, 205, 50),     # Lime Green
-    (34, 139, 34),     # Forest Green
-    (0, 128, 0),       # Pure Green
-    (85, 239, 196),    # Mint/Türkis-Grün
-    (0, 230, 118),     # Leuchtendes Grün
-    (72, 201, 176),    # Medium Aquamarine
-    (32, 178, 170),    # Light Sea Green
-]
-RAID_SCREEN_COLORS = [
-    (38, 166, 154),    # Türkis (Material Teal)
-    (0, 150, 136),     # Dunkleres Teal
-    (77, 182, 172),    # Helleres Teal
-    (0, 188, 212),     # Cyan
-    (0, 172, 193),     # Dark Cyan
-    (128, 203, 196),   # Light Teal
-    (0, 128, 128),     # Pure Teal
-    (32, 178, 170),    # Light Sea Green
-]
 # Toleranzen aus Config laden
 COLOR_TOLERANCE = CONFIG["color_tolerance"]
 PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
@@ -789,36 +764,6 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
         print(f"[FEHLER] Screenshot fehlgeschlagen: {e}")
         return None
 
-def count_color_pixels(image: 'Image.Image', target_color: tuple, tolerance: int = COLOR_TOLERANCE) -> int:
-    """Zählt Pixel einer bestimmten Farbe im Bild."""
-    if image is None:
-        return 0
-    count = 0
-    pixels = image.load()
-    width, height = image.size
-    for x in range(width):
-        for y in range(height):
-            pixel = pixels[x, y][:3]  # RGB ohne Alpha
-            if color_distance(pixel, target_color) <= tolerance:
-                count += 1
-    return count
-
-def count_multi_color_pixels(image: 'Image.Image', target_colors: list, tolerance: int = COLOR_TOLERANCE) -> int:
-    """Zählt Pixel die einer der Zielfarben entsprechen."""
-    if image is None:
-        return 0
-    count = 0
-    pixels = image.load()
-    width, height = image.size
-    for x in range(width):
-        for y in range(height):
-            pixel = pixels[x, y][:3]  # RGB ohne Alpha
-            for target_color in target_colors:
-                if color_distance(pixel, target_color) <= tolerance:
-                    count += 1
-                    break  # Zähle Pixel nur einmal
-    return count
-
 def analyze_screen_colors(region: tuple = None) -> dict:
     """
     Analysiert die häufigsten Farben in einem Screenshot.
@@ -878,21 +823,11 @@ def run_color_analyzer():
             img = take_screenshot((x, y, x+1, y+1))
             if img:
                 pixel = img.getpixel((0, 0))[:3]
+                color_name = get_color_name(pixel)
                 print(f"\n[FARBE] Position ({x}, {y})")
                 print(f"        RGB: {pixel}")
                 print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
-
-                # Prüfen ob ähnlich zu bekannten Farben
-                for lobby_color in LOBBY_BUTTON_COLORS:
-                    dist = color_distance(pixel, lobby_color)
-                    if dist <= COLOR_TOLERANCE:
-                        print(f"        → Ähnlich zu Lobby-Farbe {lobby_color} (Distanz: {dist:.1f})")
-                        break
-                for raid_color in RAID_SCREEN_COLORS:
-                    dist = color_distance(pixel, raid_color)
-                    if dist <= COLOR_TOLERANCE:
-                        print(f"        → Ähnlich zu Raid-Farbe {raid_color} (Distanz: {dist:.1f})")
-                        break
+                print(f"        Name: {color_name}")
 
         elif choice == "2":
             # Region analysieren
@@ -935,126 +870,6 @@ def analyze_and_print_colors(region: tuple = None):
         print(f"  {i:2}. RGB({color[0]:3}, {color[1]:3}, {color[2]:3}) - {count:5} Pixel{marker}")
 
     print("-" * 50)
-    print("Tipp: Suche nach grünen Farben für Lobby-Button,")
-    print("      türkise Farben für Raid-Screen!")
-
-def detect_lobby_screen(region: tuple = None, min_pixels: int = 500) -> bool:
-    """
-    Erkennt ob die Lobby (Schlachtzug-Auswahl) sichtbar ist.
-    Sucht nach dem grünen "Schlachtzug beginnen" Button.
-    Verwendet mehrere Farbvarianten für bessere Erkennung.
-    """
-    if not PILLOW_AVAILABLE:
-        return False
-
-    img = take_screenshot(region)
-    if img is None:
-        return False
-
-    green_pixels = count_multi_color_pixels(img, LOBBY_BUTTON_COLORS)
-    detected = green_pixels >= min_pixels
-
-    if DEBUG_DETECTION:
-        if detected:
-            print(f"[DETECT] Lobby erkannt! ({green_pixels} grüne Pixel)")
-        else:
-            print(f"[DEBUG] Lobby: {green_pixels} Pixel gefunden (benötigt: {min_pixels})")
-
-    return detected
-
-def detect_raid_screen(region: tuple = None, min_pixels: int = 1000) -> bool:
-    """
-    Erkennt ob der Raid-Bildschirm mit Aktivitäten sichtbar ist.
-    Sucht nach den türkisen Aktivitäts-Icons.
-    Verwendet mehrere Farbvarianten für bessere Erkennung.
-    """
-    if not PILLOW_AVAILABLE:
-        return False
-
-    img = take_screenshot(region)
-    if img is None:
-        return False
-
-    teal_pixels = count_multi_color_pixels(img, RAID_SCREEN_COLORS)
-    detected = teal_pixels >= min_pixels
-
-    if DEBUG_DETECTION:
-        if detected:
-            print(f"[DETECT] Raid-Screen erkannt! ({teal_pixels} türkise Pixel)")
-        else:
-            print(f"[DEBUG] Raid: {teal_pixels} Pixel gefunden (benötigt: {min_pixels})")
-
-    return detected
-
-def detect_pixel_color(pixel_pos: tuple, target_colors: list, trigger_type: str) -> bool:
-    """
-    Prüft ob die Farbe an einer bestimmten Pixel-Position einer Zielfarbe entspricht.
-    pixel_pos: (x, y) - Position auf dem Bildschirm
-    target_colors: Liste von RGB-Farben die als Treffer gelten
-    trigger_type: "lobby" oder "raid" für Debug-Ausgaben
-    """
-    if not PILLOW_AVAILABLE:
-        return False
-
-    x, y = pixel_pos
-    # Screenshot von einem kleinen Bereich um den Pixel (für Toleranz)
-    img = take_screenshot((x-2, y-2, x+3, y+3))
-    if img is None:
-        return False
-
-    # Prüfe den mittleren Pixel und seine Nachbarn
-    pixels = img.load()
-    width, height = img.size
-
-    for px in range(width):
-        for py in range(height):
-            pixel = pixels[px, py][:3]
-            for target_color in target_colors:
-                if color_distance(pixel, target_color) <= COLOR_TOLERANCE:
-                    if DEBUG_DETECTION:
-                        print(f"[DETECT] {trigger_type.upper()} erkannt! Pixel ({x},{y}) = RGB{pixel}")
-                    return True
-
-    if DEBUG_DETECTION:
-        # Zeige die tatsächliche Farbe am Mittelpunkt
-        center_pixel = pixels[width//2, height//2][:3]
-        print(f"[DEBUG] {trigger_type}: Pixel ({x},{y}) = RGB{center_pixel} - nicht erkannt")
-
-    return False
-
-def select_pixel_position() -> Optional[tuple]:
-    """
-    Lässt den Benutzer eine Pixel-Position per Maus auswählen.
-    Returns (x, y) oder None bei Abbruch.
-    """
-    print("\n  Bewege die Maus zur gewünschten Position")
-    print("  (z.B. auf den grünen Button) und drücke Enter...")
-    try:
-        input()
-        x, y = get_cursor_pos()
-        print(f"  → Position: ({x}, {y})")
-
-        # Zeige die Farbe an dieser Position
-        img = take_screenshot((x, y, x+1, y+1))
-        if img and PILLOW_AVAILABLE:
-            pixel = img.getpixel((0, 0))[:3]
-            print(f"  → Farbe: RGB{pixel}")
-
-            # Prüfen ob es eine bekannte Farbe ist
-            for lobby_color in LOBBY_BUTTON_COLORS:
-                if color_distance(pixel, lobby_color) <= COLOR_TOLERANCE:
-                    print(f"  → Erkannt als: LOBBY-Farbe (grün)")
-                    break
-            for raid_color in RAID_SCREEN_COLORS:
-                if color_distance(pixel, raid_color) <= COLOR_TOLERANCE:
-                    print(f"  → Erkannt als: RAID-Farbe (türkis)")
-                    break
-
-        return (x, y)
-
-    except (KeyboardInterrupt, EOFError):
-        print("\n  [ABBRUCH] Keine Position ausgewählt.")
-        return None
 
 def select_region() -> Optional[tuple]:
     """
@@ -1089,34 +904,6 @@ def select_region() -> Optional[tuple]:
     except (KeyboardInterrupt, EOFError):
         print("\n  [ABBRUCH] Keine Region ausgewählt.")
         return None
-
-def wait_for_screen(detect_func: Callable, timeout: float = 60, check_interval: float = 1.0,
-                    stop_event: threading.Event = None) -> bool:
-    """
-    Wartet bis ein bestimmter Screen erkannt wird.
-    Returns True wenn erkannt, False bei Timeout oder Stop.
-    """
-    start_time = time.time()
-
-    while True:
-        if stop_event and stop_event.is_set():
-            return False
-
-        if detect_func():
-            return True
-
-        elapsed = time.time() - start_time
-        if elapsed >= timeout:
-            print(f"[TIMEOUT] Screen nicht erkannt nach {timeout}s")
-            return False
-
-        clear_line()
-        print(f"[WARTE] Suche Screen... ({elapsed:.0f}s/{timeout}s)", end="", flush=True)
-
-        if stop_event:
-            stop_event.wait(check_interval)
-        else:
-            time.sleep(check_interval)
 
 def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
@@ -2806,35 +2593,31 @@ def main() -> int:
 
     msg = wintypes.MSG()
 
+    # Hotkey-Handler Zuordnung (ID → Funktion)
+    hotkey_handlers = {
+        HOTKEY_RECORD: handle_record,
+        HOTKEY_UNDO: handle_undo,
+        HOTKEY_CLEAR: handle_clear,
+        HOTKEY_RESET: handle_reset,
+        HOTKEY_EDITOR: handle_editor,
+        HOTKEY_ITEM_SCAN: handle_item_scan_editor,
+        HOTKEY_LOAD: handle_load,
+        HOTKEY_SHOW: handle_show,
+        HOTKEY_TOGGLE: handle_toggle,
+        HOTKEY_ANALYZE: handle_analyze,
+    }
+
     try:
         while not state.quit_event.is_set():
             if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
                 if msg.message == WM_HOTKEY:
                     hk_id = msg.wParam
 
-                    if hk_id == HOTKEY_RECORD:
-                        handle_record(state)
-                    elif hk_id == HOTKEY_UNDO:
-                        handle_undo(state)
-                    elif hk_id == HOTKEY_CLEAR:
-                        handle_clear(state)
-                    elif hk_id == HOTKEY_RESET:
-                        handle_reset(state)
-                    elif hk_id == HOTKEY_EDITOR:
-                        handle_editor(state)
-                    elif hk_id == HOTKEY_ITEM_SCAN:
-                        handle_item_scan_editor(state)
-                    elif hk_id == HOTKEY_LOAD:
-                        handle_load(state)
-                    elif hk_id == HOTKEY_SHOW:
-                        handle_show(state)
-                    elif hk_id == HOTKEY_TOGGLE:
-                        handle_toggle(state)
-                    elif hk_id == HOTKEY_ANALYZE:
-                        handle_analyze(state)
-                    elif hk_id == HOTKEY_QUIT:
+                    if hk_id == HOTKEY_QUIT:
                         handle_quit(state, main_thread_id)
                         break
+                    elif hk_id in hotkey_handlers:
+                        hotkey_handlers[hk_id](state)
             else:
                 time.sleep(0.01)
 
