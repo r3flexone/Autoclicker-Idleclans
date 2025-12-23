@@ -1398,10 +1398,10 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 continue
 
             elif user_input == "add":
-                item_name = input("  Item-Name (z.B. 'Legendary', 'Epic'): ").strip()
+                item_num = len(items) + 1
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
                 if not item_name:
-                    print("  → Name erforderlich!")
-                    continue
+                    item_name = f"Item {item_num}"
 
                 # Priorität
                 priority = len(items) + 1
