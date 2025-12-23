@@ -430,7 +430,7 @@ class ItemSlot:
 class ItemScanConfig:
     """Konfiguration für Item-Erkennung und -Vergleich."""
     name: str
-    slots: list[ItemSlot] = field(default_factory=list)      # Wo gescannt wird (max 20)
+    slots: list[ItemSlot] = field(default_factory=list)      # Wo gescannt wird
     items: list[ItemProfile] = field(default_factory=list)   # Welche Items erkannt werden
     color_tolerance: int = 40  # Farbtoleranz für Erkennung
 
@@ -1257,7 +1257,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
     while True:
         try:
-            prompt = f"[SLOTS: {len(slots)}/20]"
+            prompt = f"[SLOTS: {len(slots)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
             if user_input == "fertig":
