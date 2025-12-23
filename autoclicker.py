@@ -1275,15 +1275,19 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
             elif user_input == "add":
                 slot_num = len(slots) + 1
-                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}'): ").strip()
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
+                if slot_name.lower() == "abbruch":
+                    print("  → Slot-Erstellung abgebrochen")
+                    continue
                 if not slot_name:
                     slot_name = f"Slot {slot_num}"
 
                 # Scan-Region auswählen
                 print("\n  Scan-Region definieren (Bereich wo das Item angezeigt wird):")
+                print("  ('abbruch' in Konsole = abbrechen)")
                 region = select_region()
                 if not region:
-                    print("  → Abbruch")
+                    print("  → Slot-Erstellung abgebrochen")
                     continue
 
                 # Sofort Farben in dieser Region anzeigen
@@ -1308,8 +1312,11 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 slot_color = None
                 print("\n  Hintergrundfarbe des leeren Slots markieren:")
                 print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
-                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder Enter = überspringen)...")
+                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'abbruch')...")
                 bg_input = input().strip()
+                if bg_input.lower() == "abbruch":
+                    print("  → Slot-Erstellung abgebrochen")
+                    continue
                 if bg_input == "":
                     # User hat Enter gedrückt - prüfe Mausposition
                     px, py = get_cursor_pos()
@@ -1326,8 +1333,11 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
                 # Klick-Position
                 print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
-                print("  Bewege die Maus zur Klick-Position und drücke Enter...")
-                input()
+                print("  Bewege die Maus zur Klick-Position und drücke Enter (oder 'abbruch')...")
+                click_input = input().strip()
+                if click_input.lower() == "abbruch":
+                    print("  → Slot-Erstellung abgebrochen")
+                    continue
                 click_x, click_y = get_cursor_pos()
                 print(f"  → Klick-Position: ({click_x}, {click_y})")
 
@@ -1399,14 +1409,20 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
             elif user_input == "add":
                 item_num = len(items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
+                if item_name.lower() == "abbruch":
+                    print("  → Item-Erstellung abgebrochen")
+                    continue
                 if not item_name:
                     item_name = f"Item {item_num}"
 
                 # Priorität
                 priority = len(items) + 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
+                    if prio_input.lower() == "abbruch":
+                        print("  → Item-Erstellung abgebrochen")
+                        continue
                     if prio_input:
                         priority = max(1, int(prio_input))
                 except ValueError:
@@ -1414,9 +1430,12 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                 # Marker-Farben aus Slot scannen
                 if slots:
-                    print(f"\n  Lege das Item in einen Slot und gib die Slot-Nr ein (1-{len(slots)}):")
+                    print(f"\n  Lege das Item in einen Slot und gib die Slot-Nr ein (1-{len(slots)}, 'abbruch' = abbrechen):")
                     try:
                         slot_input = input("  Slot-Nr: ").strip()
+                        if slot_input.lower() == "abbruch":
+                            print("  → Item-Erstellung abgebrochen")
+                            continue
                         slot_num = int(slot_input)
                         if slot_num < 1 or slot_num > len(slots):
                             print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)}")
@@ -1432,7 +1451,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     marker_colors = collect_marker_colors()
 
                 if not marker_colors:
-                    print("  → Keine Farben gefunden!")
+                    print("  → Keine Farben gefunden, Item-Erstellung abgebrochen")
                     continue
 
                 item = ItemProfile(item_name, marker_colors, priority)
