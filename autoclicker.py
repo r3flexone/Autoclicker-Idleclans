@@ -2312,6 +2312,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         # Warten auf Farbe an Pixel-Position
         timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
         start_time = time.time()
+        expected_name = get_color_name(step.wait_color)
         while not state.stop_event.is_set():
             # Prüfe Farbe
             if PILLOW_AVAILABLE:
@@ -2319,13 +2320,25 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                                       step.wait_pixel[0]+1, step.wait_pixel[1]+1))
                 if img:
                     current_color = img.getpixel((0, 0))[:3]
-                    if color_distance(current_color, step.wait_color) <= PIXEL_WAIT_TOLERANCE:
+                    dist = color_distance(current_color, step.wait_color)
+
+                    if dist <= PIXEL_WAIT_TOLERANCE:
                         clear_line()
                         if step.wait_only:
                             print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt!", end="", flush=True)
                         else:
                             print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt! Klicke...", end="", flush=True)
                         break
+
+                    # Debug-Ausgabe wenn aktiviert
+                    if DEBUG_DETECTION:
+                        current_name = get_color_name(current_color)
+                        elapsed = time.time() - start_time
+                        clear_line()
+                        print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.1f}s)", end="", flush=True)
+                        if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
+                            return False
+                        continue
 
             elapsed = time.time() - start_time
             if elapsed >= timeout:
