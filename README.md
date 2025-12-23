@@ -10,9 +10,14 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, Farberkennung und Item-Scan 
   - **START**: Wird einmal pro Zyklus ausgeführt
   - **LOOP-Phasen**: Mehrere Loops möglich, jeweils mit eigenen Wiederholungen
 - **Farb-Trigger**: Warte bis eine bestimmte Farbe erscheint, dann klicke
+- **Zufällige Verzögerung**: `1 30-45` = warte 30-45 Sekunden zufällig
+- **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
 - **Item-Scan System**: Items anhand von Marker-Farben erkennen und priorisieren
+- **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
+- **Skip**: Aktuelle Wartezeit überspringen
+- **Statistiken**: Laufzeit, Klicks, Items gefunden
+- **Quick-Switch**: Schnell zwischen Sequenzen wechseln
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
-- **Persistenz**: Alle Daten werden als JSON gespeichert
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
 
 ## Voraussetzungen
@@ -44,6 +49,9 @@ python autoclicker.py
 | `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
 | `CTRL+ALT+T` | Farb-Analysator |
 | `CTRL+ALT+S` | Start/Stop der aktiven Sequenz |
+| `CTRL+ALT+R` | Pause/Resume (während Sequenz läuft) |
+| `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
+| `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
 | `CTRL+ALT+Q` | Programm beenden |
 
 ## Sequenz-Editor (`CTRL+ALT+E`)
@@ -53,11 +61,16 @@ python autoclicker.py
 | Befehl | Beschreibung |
 |--------|--------------|
 | `<Nr> <Zeit>` | Warte X Sekunden, dann klicke Punkt (z.B. `1 30`) |
+| `<Nr> <Min>-<Max>` | Zufällige Wartezeit (z.B. `1 30-45`) |
 | `<Nr> 0` | Sofort klicken ohne Wartezeit |
 | `<Nr> pixel` | Warte auf Farbe, dann klicke |
 | `<Nr> <Zeit> pixel` | Warte X Sek, dann auf Farbe warten, dann klicke |
 | `wait <Zeit>` | Nur warten, KEIN Klick |
+| `wait <Min>-<Max>` | Zufällig warten, KEIN Klick (z.B. `wait 30-45`) |
 | `wait pixel` | Auf Farbe warten, KEIN Klick |
+| `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
+| `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
+| `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
 | `scan <Name>` | Item-Scan ausführen, bestes Item klicken |
 | `scan <Name> all` | Item-Scan ausführen, ALLE Items klicken |
 | `del <Nr>` | Schritt löschen |
@@ -66,17 +79,46 @@ python autoclicker.py
 | `fertig` | Phase abschließen |
 | `abbruch` | Editor abbrechen |
 
+### Verfügbare Tasten
+
+`enter`, `space`, `tab`, `escape`, `backspace`, `delete`,
+`left`, `up`, `right`, `down`,
+`f1`-`f12`,
+`0`-`9`, `a`-`z`
+
 ### Beispiel-Sequenz
 
 ```
 [START: 0] > 1 5           # Punkt 1 klicken, 5s warten
 [START: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
-[START: 2] > fertig
+[START: 2] > key enter     # Enter-Taste drücken
+[START: 3] > fertig
 
-[Loop 1: 0] > 3 30         # Punkt 3 klicken, 30s warten
+[Loop 1: 0] > 3 30-45      # Punkt 3 klicken, 30-45s zufällig warten
 [Loop 1: 1] > scan items   # Item-Scan "items" ausführen
-[Loop 1: 2] > wait 10      # 10s warten ohne Klick
-[Loop 1: 3] > fertig
+[Loop 1: 2] > wait 10-15   # 10-15s zufällig warten ohne Klick
+[Loop 1: 3] > key 5 space  # 5s warten, dann Space drücken
+[Loop 1: 4] > fertig
+```
+
+## Laufzeit-Steuerung
+
+Während eine Sequenz läuft:
+
+- **CTRL+ALT+S** - Stoppt die Sequenz komplett
+- **CTRL+ALT+R** - Pausiert/Setzt fort (Fortschritt bleibt erhalten)
+- **CTRL+ALT+K** - Überspringt die aktuelle Wartezeit
+
+### Statistiken
+
+Nach Sequenz-Ende werden Statistiken angezeigt:
+```
+STATISTIKEN:
+  Laufzeit:     1h 23m 45s
+  Zyklen:       5
+  Klicks:       1234
+  Items:        56
+  Tasten:       12
 ```
 
 ## Item-Scan System (`CTRL+ALT+N`)
@@ -136,7 +178,7 @@ Autoclicker-Idleclans/
 - Windows API via `ctypes` (keine externen Abhängigkeiten für Basis-Funktionen)
 - Pillow für Screenshot und Farberkennung (optional)
 - Globale Hotkeys über `RegisterHotKey`
-- Mausklicks über `SendInput`
+- Mausklicks und Tastatureingaben über `SendInput`
 - Thread-basierte Ausführung
 - JSON-Persistenz
 

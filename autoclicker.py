@@ -40,6 +40,7 @@ import time
 import sys
 import json
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Optional
 from pathlib import Path
@@ -129,6 +130,9 @@ VK_P = 0x50  # Print/Show
 VK_S = 0x53  # Start/Stop
 VK_T = 0x54  # Test colors (Farb-Analysator)
 VK_Q = 0x51  # Quit
+VK_R = 0x52  # Pause/Resume
+VK_K = 0x4B  # Skip current wait
+VK_W = 0x57  # Quick-Switch (Wechseln)
 
 # Hotkey IDs
 HOTKEY_RECORD = 1
@@ -142,6 +146,9 @@ HOTKEY_SHOW = 8
 HOTKEY_TOGGLE = 9
 HOTKEY_ANALYZE = 10
 HOTKEY_QUIT = 11
+HOTKEY_PAUSE = 12
+HOTKEY_SKIP = 13
+HOTKEY_SWITCH = 14
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -150,6 +157,31 @@ WM_HOTKEY = 0x0312
 INPUT_MOUSE = 0
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
+
+# Keyboard Input
+INPUT_KEYBOARD = 1
+KEYEVENTF_KEYUP = 0x0002
+
+# Häufige Virtual Key Codes für Tastatureingaben
+VK_CODES = {
+    "enter": 0x0D, "return": 0x0D,
+    "tab": 0x09,
+    "space": 0x20, "leertaste": 0x20,
+    "escape": 0x1B, "esc": 0x1B,
+    "backspace": 0x08,
+    "delete": 0x2E, "del": 0x2E,
+    "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28,
+    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74,
+    "f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79,
+    "f11": 0x7A, "f12": 0x7B,
+    "0": 0x30, "1": 0x31, "2": 0x32, "3": 0x33, "4": 0x34,
+    "5": 0x35, "6": 0x36, "7": 0x37, "8": 0x38, "9": 0x39,
+    "a": 0x41, "b": 0x42, "c": 0x43, "d": 0x44, "e": 0x45,
+    "f": 0x46, "g": 0x47, "h": 0x48, "i": 0x49, "j": 0x4A,
+    "k": 0x4B, "l": 0x4C, "m": 0x4D, "n": 0x4E, "o": 0x4F,
+    "p": 0x50, "q": 0x51, "r": 0x52, "s": 0x53, "t": 0x54,
+    "u": 0x55, "v": 0x56, "w": 0x57, "x": 0x58, "y": 0x59, "z": 0x5A,
+}
 
 # =============================================================================
 # WINDOWS API STRUKTUREN
@@ -254,24 +286,44 @@ class SequenceStep:
     item_scan_mode: str = "best"         # "best" = nur bestes Item, "all" = alle Items
     # Optional: Nur warten, nicht klicken
     wait_only: bool = False              # True = nur warten, kein Klick
+    # Optional: Zufällige Verzögerung (delay_before bis delay_max)
+    delay_max: Optional[float] = None    # None = feste Zeit, sonst Bereich
+    # Optional: Tastendruck statt Mausklick
+    key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
 
     def __str__(self) -> str:
+        if self.key_press:
+            delay_str = self._delay_str()
+            return f"{delay_str} → drücke Taste '{self.key_press}'"
         if self.item_scan:
             mode_str = "ALLE Items" if self.item_scan_mode == "all" else "bestes Item"
             return f"SCAN '{self.item_scan}' → klicke {mode_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
                 return f"WARTE auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick)"
-            return f"WARTE {self.delay_before}s (kein Klick)"
+            return f"WARTE {self._delay_str()} (kein Klick)"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
+            delay_str = self._delay_str()
             if self.delay_before > 0:
-                return f"warte {self.delay_before}s, dann auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
+                return f"warte {delay_str}, dann auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
             return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
         elif self.delay_before > 0:
-            return f"warte {self.delay_before}s → klicke {pos_str}"
+            return f"warte {self._delay_str()} → klicke {pos_str}"
         else:
             return f"sofort → klicke {pos_str}"
+
+    def _delay_str(self) -> str:
+        """Hilfsfunktion für Delay-Anzeige (fest oder Bereich)."""
+        if self.delay_max and self.delay_max > self.delay_before:
+            return f"{self.delay_before:.0f}-{self.delay_max:.0f}s"
+        return f"{self.delay_before:.0f}s"
+
+    def get_actual_delay(self) -> float:
+        """Gibt die tatsächliche Verzögerung zurück (bei Bereich: zufällig)."""
+        if self.delay_max and self.delay_max > self.delay_before:
+            return random.uniform(self.delay_before, self.delay_max)
+        return self.delay_before
 
 @dataclass
 class LoopPhase:
@@ -371,8 +423,18 @@ class AutoClickerState:
 
     # Laufzeit-Status
     is_running: bool = False
+    is_paused: bool = False
     total_clicks: int = 0
     current_step_index: int = 0
+
+    # Statistiken
+    items_found: int = 0
+    key_presses: int = 0
+    start_time: Optional[float] = None
+    current_cycle: int = 0
+    current_loop_name: str = ""
+    current_loop_repeat: int = 0
+    total_loop_repeats: int = 0
 
     # Editor-Modus
     editor_mode: bool = False
@@ -381,6 +443,8 @@ class AutoClickerState:
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
     quit_event: threading.Event = field(default_factory=threading.Event)
+    pause_event: threading.Event = field(default_factory=threading.Event)
+    skip_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 # =============================================================================
@@ -406,7 +470,8 @@ def save_data(state: AutoClickerState) -> None:
         return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
                 "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
-                "wait_only": s.wait_only}
+                "wait_only": s.wait_only, "delay_max": s.delay_max,
+                "key_press": s.key_press}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -470,7 +535,9 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         wait_color=wait_color,
                         item_scan=s.get("item_scan"),
                         item_scan_mode=s.get("item_scan_mode", "best"),
-                        wait_only=s.get("wait_only", False)
+                        wait_only=s.get("wait_only", False),
+                        delay_max=s.get("delay_max"),
+                        key_press=s.get("key_press")
                     )
                     steps.append(step)
                 return steps
@@ -665,6 +732,29 @@ def send_click(x: int, y: int) -> None:
     inputs[1].union.mi.dwFlags = MOUSEEVENTF_LEFTUP
 
     user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+
+def send_key(key_name: str) -> bool:
+    """Führt einen Tastendruck aus. Gibt True zurück wenn erfolgreich."""
+    key_lower = key_name.lower()
+    if key_lower not in VK_CODES:
+        print(f"[FEHLER] Unbekannte Taste: '{key_name}'")
+        print(f"         Verfügbar: {', '.join(sorted(VK_CODES.keys()))}")
+        return False
+
+    vk_code = VK_CODES[key_lower]
+
+    inputs = (INPUT * 2)()
+    # Key down
+    inputs[0].type = INPUT_KEYBOARD
+    inputs[0].union.ki.wVk = vk_code
+    inputs[0].union.ki.dwFlags = 0
+    # Key up
+    inputs[1].type = INPUT_KEYBOARD
+    inputs[1].union.ki.wVk = vk_code
+    inputs[1].union.ki.dwFlags = KEYEVENTF_KEYUP
+
+    user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+    return True
 
 def check_failsafe() -> bool:
     """Prüft, ob die Maus in der Fail-Safe-Ecke ist."""
@@ -1793,11 +1883,15 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("\n" + "-" * 60)
     print("Befehle (Logik: erst warten, DANN klicken):")
     print("  <Nr> <Zeit>       - Warte Xs, dann klicke (z.B. '1 30')")
+    print("  <Nr> <Min>-<Max>  - Zufällig warten (z.B. '1 30-45')")
     print("  <Nr> 0            - Sofort klicken")
     print("  <Nr> pixel        - Warte auf Farbe, dann klicke")
-    print("  <Nr> <Zeit> pixel - Erst Xs warten, dann auf Farbe (z.B. '1 30 pixel')")
+    print("  <Nr> <Zeit> pixel - Erst Xs warten, dann auf Farbe")
     print("  wait <Zeit>       - Nur warten, KEIN Klick (z.B. 'wait 10')")
+    print("  wait <Min>-<Max>  - Zufällig warten (z.B. 'wait 30-45')")
     print("  wait pixel        - Auf Farbe warten, KEIN Klick")
+    print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
+    print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
     print("  scan <Name>       - Item-Scan: klicke BESTES Item")
     print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
     print("  del <Nr>          - Schritt löschen")
@@ -1873,12 +1967,62 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 print(f"  ✓ Hinzugefügt: {step}")
                 continue
 
+            elif user_input.lower().startswith("key "):
+                # Tastendruck
+                # Format: "key <Taste>" oder "key <Zeit> <Taste>" oder "key <Min>-<Max> <Taste>"
+                key_parts = user_input[4:].strip().split()
+                if not key_parts:
+                    print("  → Format: key <Taste> | key <Zeit> <Taste>")
+                    continue
+
+                delay_min = 0.0
+                delay_max = None
+                key_name = ""
+
+                if len(key_parts) == 1:
+                    # key enter
+                    key_name = key_parts[0]
+                elif len(key_parts) == 2:
+                    # key 5 enter oder key 30-45 enter
+                    time_str = key_parts[0]
+                    key_name = key_parts[1]
+                    if "-" in time_str:
+                        try:
+                            parts_range = time_str.split("-")
+                            delay_min = float(parts_range[0])
+                            delay_max = float(parts_range[1])
+                        except (ValueError, IndexError):
+                            print("  → Format: key <Min>-<Max> <Taste>")
+                            continue
+                    else:
+                        try:
+                            delay_min = float(time_str)
+                        except ValueError:
+                            print("  → Format: key <Zeit> <Taste>")
+                            continue
+                else:
+                    print("  → Format: key <Taste> | key <Zeit> <Taste>")
+                    continue
+
+                # Prüfen ob Taste bekannt ist
+                if key_name.lower() not in VK_CODES:
+                    print(f"  → Unbekannte Taste: '{key_name}'")
+                    available_keys = sorted(VK_CODES.keys())
+                    print(f"     Verfügbar: {', '.join(available_keys[:15])}...")
+                    continue
+
+                step = SequenceStep(x=0, y=0, delay_before=delay_min, name=f"Key:{key_name}",
+                                   key_press=key_name, delay_max=delay_max)
+                steps.append(step)
+                print(f"  ✓ Hinzugefügt: {step}")
+                continue
+
             elif user_input.lower().startswith("wait "):
                 # Nur warten, kein Klick
-                # Format: "wait <Zeit>" oder "wait pixel"
+                # Format: "wait <Zeit>" oder "wait <Min>-<Max>" oder "wait pixel"
                 wait_parts = user_input[5:].strip().split()
                 if not wait_parts:
-                    print("  → Format: wait <Sekunden> | wait pixel")
+                    print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel")
                     continue
 
                 if wait_parts[0].lower() == "pixel":
@@ -1906,6 +2050,21 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print("  → Fehler: Konnte Farbe nicht lesen!")
                     else:
                         print("  → Fehler: Pillow nicht installiert!")
+                elif "-" in wait_parts[0]:
+                    # Zufällige Wartezeit: wait 30-45
+                    try:
+                        parts_range = wait_parts[0].split("-")
+                        wait_min = float(parts_range[0])
+                        wait_max = float(parts_range[1])
+                        if wait_min < 0 or wait_max < 0 or wait_max < wait_min:
+                            print("  → Wartezeit muss >= 0 und Max >= Min sein!")
+                            continue
+                        step = SequenceStep(x=0, y=0, delay_before=wait_min, name="Wait",
+                                           wait_only=True, delay_max=wait_max)
+                        steps.append(step)
+                        print(f"  ✓ Hinzugefügt: {step}")
+                    except (ValueError, IndexError):
+                        print("  → Format: wait <Min>-<Max>")
                 else:
                     # Zeit warten ohne Klick
                     try:
@@ -1917,7 +2076,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         steps.append(step)
                         print(f"  ✓ Hinzugefügt: {step}")
                     except ValueError:
-                        print("  → Format: wait <Sekunden> | wait pixel")
+                        print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel")
                 continue
 
             # Neuen Schritt hinzufügen (Punkt + Zeit oder Pixel)
@@ -1981,12 +2140,31 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  → Fehler: Pillow nicht installiert! (pip install pillow)")
             else:
                 # Zeit-basierte Wartezeit (warte X Sekunden, dann klicke)
-                delay = float(parts[1])
-                if delay < 0:
-                    print("  → Wartezeit muss >= 0 sein!")
-                    continue
+                # Unterstützt: "1 30" oder "1 30-45" (zufällige Verzögerung)
+                time_str = parts[1]
+                delay_min = 0.0
+                delay_max = None
 
-                step = SequenceStep(x=point_x, y=point_y, delay_before=delay, name=point_name)
+                if "-" in time_str:
+                    # Zufällige Verzögerung: 1 30-45
+                    try:
+                        range_parts = time_str.split("-")
+                        delay_min = float(range_parts[0])
+                        delay_max = float(range_parts[1])
+                        if delay_min < 0 or delay_max < 0 or delay_max < delay_min:
+                            print("  → Wartezeit muss >= 0 und Max >= Min sein!")
+                            continue
+                    except (ValueError, IndexError):
+                        print("  → Format: <Nr> <Min>-<Max>")
+                        continue
+                else:
+                    delay_min = float(time_str)
+                    if delay_min < 0:
+                        print("  → Wartezeit muss >= 0 sein!")
+                        continue
+
+                step = SequenceStep(x=point_x, y=point_y, delay_before=delay_min,
+                                   name=point_name, delay_max=delay_max)
                 steps.append(step)
                 print(f"  ✓ Hinzugefügt: {step}")
 
@@ -2051,6 +2229,41 @@ def run_sequence_loader(state: AutoClickerState) -> None:
 # =============================================================================
 # WORKER THREAD
 # =============================================================================
+def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, step_num: int,
+                         total_steps: int, message: str) -> bool:
+    """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
+    remaining = seconds
+    while remaining > 0:
+        # Check stop
+        if state.stop_event.is_set():
+            return False
+
+        # Check skip
+        if state.skip_event.is_set():
+            state.skip_event.clear()
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            return True
+
+        # Check pause
+        while state.pause_event.is_set() and not state.stop_event.is_set():
+            clear_line()
+            print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+R", end="", flush=True)
+            time.sleep(0.5)
+
+        if state.stop_event.is_set():
+            return False
+
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+
+        wait_time = min(1.0, remaining)
+        if state.stop_event.wait(wait_time):
+            return False
+        remaining -= wait_time
+
+    return True
+
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
 
@@ -2076,34 +2289,64 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 send_click(pos[0], pos[1])
                 with state.lock:
                     state.total_clicks += 1
+                    state.items_found += 1
                 # Kurze Pause zwischen Klicks
                 if i < len(click_positions) - 1:
                     time.sleep(0.2)
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(click_positions)} Scan-Klick(s)! (Gesamt: {state.total_clicks})", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(click_positions)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
         return True
 
+    # === SONDERFALL: Tastendruck ===
+    if step.key_press:
+        # Erst warten (mit zufälliger Verzögerung)
+        actual_delay = step.get_actual_delay()
+        if actual_delay > 0:
+            if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
+                                        f"Taste '{step.key_press}' in"):
+                return False
+
+        if state.stop_event.is_set():
+            return False
+
+        # Taste drücken
+        if send_key(step.key_press):
+            with state.lock:
+                state.key_presses += 1
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'! (Tasten: {state.key_presses})", end="", flush=True)
+        return True
+
     # === PHASE 1: Warten VOR dem Klick (Zeit oder Farbe) ===
     if step.wait_pixel and step.wait_color:
         # Optional: Erst delay_before warten, dann auf Farbe prüfen
-        if step.delay_before > 0:
-            remaining = step.delay_before
-            while remaining > 0 and not state.stop_event.is_set():
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte {remaining:.0f}s vor Farbprüfung...", end="", flush=True)
-                wait_time = min(1.0, remaining)
-                if state.stop_event.wait(wait_time):
-                    return False
-                remaining -= wait_time
+        actual_delay = step.get_actual_delay()
+        if actual_delay > 0:
+            if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
+                                        "Vor Farbprüfung"):
+                return False
 
         # Warten auf Farbe an Pixel-Position
         timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
         start_time = time.time()
         expected_name = get_color_name(step.wait_color)
         while not state.stop_event.is_set():
+            # Check skip
+            if state.skip_event.is_set():
+                state.skip_event.clear()
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", end="", flush=True)
+                break
+
+            # Check pause
+            while state.pause_event.is_set() and not state.stop_event.is_set():
+                clear_line()
+                print(f"[PAUSE] Warte auf Farbe... | Fortsetzen: CTRL+ALT+R", end="", flush=True)
+                time.sleep(0.5)
+
             # Prüfe Farbe
             if PILLOW_AVAILABLE:
                 img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
@@ -2142,16 +2385,12 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                 return False
 
-    elif step.delay_before > 0:
-        # Zeit-basierte Wartezeit VOR dem Klick
-        remaining = step.delay_before
-        while remaining > 0 and not state.stop_event.is_set():
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klicke in {remaining:.0f}s...", end="", flush=True)
-            wait_time = min(1.0, remaining)
-            if state.stop_event.wait(wait_time):
-                return False
-            remaining -= wait_time
+    elif step.delay_before > 0 or step.delay_max:
+        # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
+        actual_delay = step.get_actual_delay()
+        action = "Warten" if step.wait_only else "Klicke in"
+        if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
+            return False
 
     if state.stop_event.is_set():
         return False
@@ -2188,6 +2427,18 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     return True
 
 
+def format_duration(seconds: float) -> str:
+    """Formatiert Sekunden als hh:mm:ss oder mm:ss."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours > 0:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    elif minutes > 0:
+        return f"{minutes}m {secs:02d}s"
+    else:
+        return f"{secs}s"
+
 def sequence_worker(state: AutoClickerState) -> None:
     """Worker-Thread, der die Sequenz ausführt (Start + mehrere Loop-Phasen mit Zyklen)."""
     print("\n[WORKER] Sequenz gestartet.")
@@ -2208,23 +2459,35 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
+        # Statistiken zurücksetzen
+        state.total_clicks = 0
+        state.items_found = 0
+        state.key_presses = 0
+        state.start_time = time.time()
+        state.current_cycle = 0
+
     cycle_count = 0
 
     # Äußere Schleife für Zyklen (START → alle Loops → START → alle Loops → ...)
     while not state.stop_event.is_set() and not state.quit_event.is_set():
         cycle_count += 1
 
+        with state.lock:
+            state.current_cycle = cycle_count
+
         # Prüfen ob max Zyklen erreicht (0 = unendlich)
         if total_cycles > 0 and cycle_count > total_cycles:
             print(f"\n[FERTIG] Alle {total_cycles} Zyklen abgeschlossen!")
             break
 
+        cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
+
         # === PHASE 1: START-SEQUENZ ===
         if has_start and not state.stop_event.is_set():
             if cycle_count == 1:
-                print("\n[START] Führe Start-Sequenz aus...")
+                print(f"\n[START] Führe Start-Sequenz aus... ({cycle_str})")
             else:
-                print(f"\n[ZYKLUS #{cycle_count}] Starte erneut...")
+                print(f"\n[{cycle_str}] Starte erneut...")
             total_start = len(sequence.start_steps)
 
             for i, step in enumerate(sequence.start_steps):
@@ -2246,12 +2509,19 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if total_steps == 0:
                     continue
 
-                print(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x)...")
+                with state.lock:
+                    state.current_loop_name = loop_phase.name
+                    state.total_loop_repeats = loop_phase.repeat
+
+                print(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}")
 
                 # Diese Loop-Phase X-mal wiederholen
                 for repeat_num in range(1, loop_phase.repeat + 1):
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
+
+                    with state.lock:
+                        state.current_loop_repeat = repeat_num
 
                     for i, step in enumerate(loop_phase.steps):
                         if state.stop_event.is_set() or state.quit_event.is_set():
@@ -2274,8 +2544,20 @@ def sequence_worker(state: AutoClickerState) -> None:
 
     with state.lock:
         state.is_running = False
+        duration = time.time() - state.start_time if state.start_time else 0
 
+    # Statistiken ausgeben
     print("\n[WORKER] Sequenz gestoppt.")
+    print("-" * 50)
+    print("STATISTIKEN:")
+    print(f"  Laufzeit:     {format_duration(duration)}")
+    print(f"  Zyklen:       {cycle_count}")
+    print(f"  Klicks:       {state.total_clicks}")
+    if state.items_found > 0:
+        print(f"  Items:        {state.items_found}")
+    if state.key_presses > 0:
+        print(f"  Tasten:       {state.key_presses}")
+    print("-" * 50)
     print_status(state)
 
 # =============================================================================
@@ -2469,11 +2751,90 @@ def handle_toggle(state: AutoClickerState) -> None:
                 return
 
             state.is_running = True
+            state.is_paused = False
             state.stop_event.clear()
+            state.pause_event.clear()
+            state.skip_event.clear()
             state.current_step_index = 0
 
             worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
             worker.start()
+
+def handle_pause(state: AutoClickerState) -> None:
+    """Pausiert oder setzt die Sequenz fort."""
+    with state.lock:
+        if not state.is_running:
+            print("\n[INFO] Keine Sequenz läuft.")
+            return
+
+        if state.pause_event.is_set():
+            state.pause_event.clear()
+            state.is_paused = False
+            print("\n[RESUME] Sequenz fortgesetzt.")
+        else:
+            state.pause_event.set()
+            state.is_paused = True
+            print("\n[PAUSE] Sequenz pausiert. Fortsetzen: CTRL+ALT+R")
+
+def handle_skip(state: AutoClickerState) -> None:
+    """Überspringt die aktuelle Wartezeit."""
+    with state.lock:
+        if not state.is_running:
+            print("\n[INFO] Keine Sequenz läuft.")
+            return
+
+        state.skip_event.set()
+        print("\n[SKIP] Wartezeit übersprungen!")
+
+def handle_switch(state: AutoClickerState) -> None:
+    """Schneller Wechsel zwischen gespeicherten Sequenzen."""
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+
+    sequences = list_available_sequences()
+
+    if not sequences:
+        print("\n[INFO] Keine Sequenzen vorhanden! Erstelle eine mit CTRL+ALT+E")
+        return
+
+    print("\n" + "-" * 40)
+    print("QUICK-SWITCH: Sequenz wählen")
+    print("-" * 40)
+
+    for i, (name, path) in enumerate(sequences):
+        seq = load_sequence_file(path)
+        if seq:
+            # Markiere aktive Sequenz
+            active_marker = " ◄" if state.active_sequence and state.active_sequence.name == seq.name else ""
+            print(f"  {i+1}. {seq.name}{active_marker}")
+
+    print("\nNummer eingeben (Enter = abbrechen):")
+
+    try:
+        choice = input("> ").strip()
+        if not choice:
+            return
+
+        idx = int(choice) - 1
+        if idx < 0 or idx >= len(sequences):
+            print("[FEHLER] Ungültige Nummer!")
+            return
+
+        name, path = sequences[idx]
+        seq = load_sequence_file(path)
+
+        if seq:
+            with state.lock:
+                state.active_sequence = seq
+            print(f"\n[OK] Gewechselt zu: {seq.name}")
+            print("     Starten mit CTRL+ALT+S")
+
+    except ValueError:
+        print("[FEHLER] Ungültige Eingabe!")
+    except (KeyboardInterrupt, EOFError):
+        pass
 
 def handle_analyze(state: AutoClickerState) -> None:
     """Startet den Farb-Analysator."""
@@ -2510,6 +2871,9 @@ def register_hotkeys() -> bool:
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
+        (HOTKEY_PAUSE, VK_R, "CTRL+ALT+R (Pause/Resume)"),
+        (HOTKEY_SKIP, VK_K, "CTRL+ALT+K (Skip Wartezeit)"),
+        (HOTKEY_SWITCH, VK_W, "CTRL+ALT+W (Quick-Switch)"),
         (HOTKEY_ANALYZE, VK_T, "CTRL+ALT+T (Farb-Analysator)"),
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
@@ -2528,7 +2892,8 @@ def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
     for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
                   HOTKEY_EDITOR, HOTKEY_ITEM_SCAN, HOTKEY_LOAD, HOTKEY_SHOW,
-                  HOTKEY_TOGGLE, HOTKEY_ANALYZE, HOTKEY_QUIT]:
+                  HOTKEY_TOGGLE, HOTKEY_PAUSE, HOTKEY_SKIP, HOTKEY_SWITCH,
+                  HOTKEY_ANALYZE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -2551,6 +2916,9 @@ def print_help() -> None:
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
     print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
     print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
+    print("  CTRL+ALT+R  - Pause/Resume (während Sequenz läuft)")
+    print("  CTRL+ALT+K  - Skip (aktuelle Wartezeit überspringen)")
+    print("  CTRL+ALT+W  - Quick-Switch (schnell Sequenz wechseln)")
     print("  CTRL+ALT+Q  - Programm beenden")
     print()
     print("So funktioniert's:")
@@ -2608,6 +2976,9 @@ def main() -> int:
         HOTKEY_LOAD: handle_load,
         HOTKEY_SHOW: handle_show,
         HOTKEY_TOGGLE: handle_toggle,
+        HOTKEY_PAUSE: handle_pause,
+        HOTKEY_SKIP: handle_skip,
+        HOTKEY_SWITCH: handle_switch,
         HOTKEY_ANALYZE: handle_analyze,
     }
 
