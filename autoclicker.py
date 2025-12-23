@@ -406,12 +406,15 @@ class ItemProfile:
     name: str
     marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
     priority: int = 99  # 1 = beste, höher = schlechter
+    confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
+    confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
 
     def __str__(self) -> str:
         colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
         if len(self.marker_colors) > 3:
             colors_str += f" (+{len(self.marker_colors)-3})"
-        return f"[P{self.priority}] {self.name}: {colors_str}"
+        confirm_str = f" → Punkt {self.confirm_point}" if self.confirm_point else ""
+        return f"[P{self.priority}] {self.name}: {colors_str}{confirm_str}"
 
 @dataclass
 class ItemSlot:
@@ -659,7 +662,9 @@ def save_item_scan(config: ItemScanConfig) -> None:
             {
                 "name": item.name,
                 "marker_colors": [list(c) for c in item.marker_colors],
-                "priority": item.priority
+                "priority": item.priority,
+                "confirm_point": item.confirm_point,
+                "confirm_delay": item.confirm_delay
             }
             for item in config.items
         ]
@@ -695,7 +700,9 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    priority=i.get("priority", 99)
+                    priority=i.get("priority", 99),
+                    confirm_point=i.get("confirm_point"),
+                    confirm_delay=i.get("confirm_delay", 0.5)
                 )
                 items.append(item)
 
@@ -1454,9 +1461,34 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     print("  → Keine Farben gefunden, Item-Erstellung abgebrochen")
                     continue
 
-                item = ItemProfile(item_name, marker_colors, priority)
+                # Bestätigungs-Punkt abfragen
+                confirm_point = None
+                confirm_delay = 0.5
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'abbruch' = abbrechen): ").strip()
+                if confirm_input.lower() == "abbruch":
+                    print("  → Item-Erstellung abgebrochen")
+                    continue
+                if confirm_input:
+                    try:
+                        confirm_point = int(confirm_input)
+                        if confirm_point < 1:
+                            print("  → Ungültiger Punkt, Bestätigung übersprungen")
+                            confirm_point = None
+                        else:
+                            # Wartezeit vor Bestätigung
+                            delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                            if delay_input:
+                                try:
+                                    confirm_delay = float(delay_input)
+                                except ValueError:
+                                    confirm_delay = 0.5
+                    except ValueError:
+                        print("  → Keine gültige Zahl, Bestätigung übersprungen")
+
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
                 items.append(item)
-                print(f"  ✓ {item_name} hinzugefügt mit {len(marker_colors)} Marker-Farben")
+                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
+                print(f"  ✓ {item_name} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
                 continue
 
             elif user_input.startswith("edit "):
@@ -1491,6 +1523,24 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 new_colors = collect_marker_colors()
                             if new_colors:
                                 item.marker_colors = new_colors
+
+                        # Bestätigung bearbeiten
+                        current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                        confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
+                        if confirm_input == "0":
+                            item.confirm_point = None
+                            print("  → Bestätigung entfernt")
+                        elif confirm_input:
+                            try:
+                                item.confirm_point = int(confirm_input)
+                                delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                if delay_input:
+                                    try:
+                                        item.confirm_delay = float(delay_input)
+                                    except ValueError:
+                                        pass
+                            except ValueError:
+                                pass
 
                         print(f"  ✓ {item.name} aktualisiert")
                     else:
@@ -1615,7 +1665,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     Führt einen Item-Scan aus.
     mode="best": Gibt nur die Klick-Position des besten Items zurück
     mode="all": Gibt alle Klick-Positionen mit erkannten Items zurück
-    Returns Liste von (x, y) Positionen (leer wenn nichts gefunden)
+    Returns Liste von ((x, y), ItemProfile) Tupeln (leer wenn nichts gefunden)
     """
     with state.lock:
         if scan_name not in state.item_scans:
@@ -1683,13 +1733,13 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     if mode == "all":
         # Alle gefundenen Slots zurückgeben
         print(f"[SCAN] {len(found_items)} Items gefunden - klicke alle!")
-        return [slot.click_pos for slot, item, priority in found_items]
+        return [(slot.click_pos, item) for slot, item, priority in found_items]
     else:
         # Nur das beste Item zurückgeben
         found_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
         best_slot, best_item, best_priority = found_items[0]
         print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (P{best_priority})")
-        return [best_slot.click_pos]
+        return [(best_slot.click_pos, best_item)]
 
 
 # =============================================================================
@@ -2539,21 +2589,38 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         clear_line()
         print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
-        click_positions = execute_item_scan(state, step.item_scan, mode)
-        if click_positions:
+        scan_results = execute_item_scan(state, step.item_scan, mode)
+        if scan_results:
             # Klicke alle gefundenen Positionen
-            for i, pos in enumerate(click_positions):
+            for i, (pos, item) in enumerate(scan_results):
                 if state.stop_event.is_set():
                     return False
                 send_click(pos[0], pos[1])
                 with state.lock:
                     state.total_clicks += 1
                     state.items_found += 1
+
+                # Bestätigungs-Klick falls für dieses Item definiert
+                if item.confirm_point is not None:
+                    confirm_ok = False
+                    with state.lock:
+                        if item.confirm_point >= 1 and item.confirm_point <= len(state.points):
+                            confirm_pos = state.points[item.confirm_point - 1]
+                            confirm_ok = True
+                        else:
+                            print(f"\n  [WARNUNG] Bestätigungs-Punkt {item.confirm_point} nicht vorhanden!")
+                    if confirm_ok:
+                        if item.confirm_delay > 0:
+                            time.sleep(item.confirm_delay)
+                        send_click(confirm_pos.x, confirm_pos.y)
+                        with state.lock:
+                            state.total_clicks += 1
+
                 # Kurze Pause zwischen Klicks
-                if i < len(click_positions) - 1:
+                if i < len(scan_results) - 1:
                     time.sleep(0.2)
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(click_positions)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
         else:
             # Kein Item gefunden - Else-Aktion ausführen
             if step.else_action:
