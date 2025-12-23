@@ -290,28 +290,49 @@ class SequenceStep:
     delay_max: Optional[float] = None    # None = feste Zeit, sonst Bereich
     # Optional: Tastendruck statt Mausklick
     key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
+    # Optional: Fallback/Else-Aktion wenn Bedingung fehlschlägt
+    else_action: Optional[str] = None    # "skip", "click", "key"
+    else_x: int = 0                      # X für Fallback-Klick
+    else_y: int = 0                      # Y für Fallback-Klick
+    else_delay: float = 0                # Delay vor Fallback
+    else_key: Optional[str] = None       # Taste für Fallback
+    else_name: str = ""                  # Name des Fallback-Punkts
 
     def __str__(self) -> str:
+        else_str = self._else_str()
         if self.key_press:
             delay_str = self._delay_str()
-            return f"{delay_str} → drücke Taste '{self.key_press}'"
+            return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
         if self.item_scan:
             mode_str = "ALLE Items" if self.item_scan_mode == "all" else "bestes Item"
-            return f"SCAN '{self.item_scan}' → klicke {mode_str}"
+            return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
-                return f"WARTE auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick)"
+                return f"WARTE auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick){else_str}"
             return f"WARTE {self._delay_str()} (kein Klick)"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
             delay_str = self._delay_str()
             if self.delay_before > 0:
-                return f"warte {delay_str}, dann auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
-            return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}"
+                return f"warte {delay_str}, dann auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
+            return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
         elif self.delay_before > 0:
             return f"warte {self._delay_str()} → klicke {pos_str}"
         else:
             return f"sofort → klicke {pos_str}"
+
+    def _else_str(self) -> str:
+        """Hilfsfunktion für Else-Anzeige."""
+        if not self.else_action:
+            return ""
+        if self.else_action == "skip":
+            return " | ELSE: skip"
+        elif self.else_action == "click":
+            name = self.else_name or f"({self.else_x},{self.else_y})"
+            return f" | ELSE: klicke {name}"
+        elif self.else_action == "key":
+            return f" | ELSE: Taste '{self.else_key}'"
+        return ""
 
     def _delay_str(self) -> str:
         """Hilfsfunktion für Delay-Anzeige (fest oder Bereich)."""
@@ -471,7 +492,9 @@ def save_data(state: AutoClickerState) -> None:
                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
                 "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
                 "wait_only": s.wait_only, "delay_max": s.delay_max,
-                "key_press": s.key_press}
+                "key_press": s.key_press, "else_action": s.else_action,
+                "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
+                "else_key": s.else_key, "else_name": s.else_name}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -537,7 +560,13 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         item_scan_mode=s.get("item_scan_mode", "best"),
                         wait_only=s.get("wait_only", False),
                         delay_max=s.get("delay_max"),
-                        key_press=s.get("key_press")
+                        key_press=s.get("key_press"),
+                        else_action=s.get("else_action"),
+                        else_x=s.get("else_x", 0),
+                        else_y=s.get("else_y", 0),
+                        else_delay=s.get("else_delay", 0),
+                        else_key=s.get("else_key"),
+                        else_name=s.get("else_name", "")
                     )
                     steps.append(step)
                 return steps
@@ -1872,6 +1901,63 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
             raise
 
 
+def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict:
+    """Parst eine ELSE-Bedingung und gibt ein Dict mit den Else-Feldern zurück.
+
+    Formate:
+    - else skip          -> überspringen
+    - else <Nr> [delay]  -> Punkt klicken (optional mit Verzögerung)
+    - else key <Taste>   -> Taste drücken
+
+    Gibt leeres Dict zurück wenn Parsing fehlschlägt.
+    """
+    if not else_parts:
+        return {}
+
+    first = else_parts[0].lower()
+
+    # else skip
+    if first == "skip":
+        return {"else_action": "skip"}
+
+    # else key <Taste>
+    if first == "key" and len(else_parts) >= 2:
+        key_name = else_parts[1].lower()
+        if key_name in VK_CODES:
+            return {"else_action": "key", "else_key": key_name}
+        print(f"  → Unbekannte Taste: '{key_name}'")
+        return {}
+
+    # else <Nr> [delay] - Punkt klicken
+    try:
+        point_num = int(first)
+        with state.lock:
+            if 1 <= point_num <= len(state.points):
+                point = state.points[point_num - 1]
+                result = {
+                    "else_action": "click",
+                    "else_x": point.x,
+                    "else_y": point.y,
+                    "else_name": point.name or f"Punkt {point_num}"
+                }
+                # Optional: Delay
+                if len(else_parts) >= 2:
+                    try:
+                        result["else_delay"] = float(else_parts[1])
+                    except ValueError:
+                        pass
+                return result
+            else:
+                print(f"  → Punkt {point_num} nicht gefunden! Verfügbar: 1-{len(state.points)}")
+                return {}
+    except ValueError:
+        pass
+
+    print(f"  → Unbekanntes ELSE-Format: {' '.join(else_parts)}")
+    print("     Formate: else skip | else <Nr> [delay] | else key <Taste>")
+    return {}
+
+
 def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> list[SequenceStep]:
     """Bearbeitet eine Phase (Start oder Loop) der Sequenz."""
 
@@ -1894,6 +1980,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
     print("  scan <Name>       - Item-Scan: klicke BESTES Item")
     print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
+    print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
+    print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
+    print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
+    print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
     print("  del <Nr>          - Schritt löschen")
     print("  clear / show / fertig / abbruch")
     print("-" * 60)
@@ -1936,16 +2026,27 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
-                # Format: "scan <Name>" oder "scan <Name> all"
+                # Format: "scan <Name> [all] [else ...]"
                 scan_parts = user_input[5:].strip().split()
                 if not scan_parts:
-                    print("  → Format: scan <Name> [all]")
+                    print("  → Format: scan <Name> [all] [else skip|<Nr>|key <Taste>]")
                     continue
 
                 scan_name = scan_parts[0]
                 scan_mode = "best"  # Standard: nur bestes Item
-                if len(scan_parts) > 1 and scan_parts[1].lower() == "all":
+                else_data = {}
+
+                # Parse den Rest (all und/oder else)
+                rest_parts = scan_parts[1:]
+                if rest_parts and rest_parts[0].lower() == "all":
                     scan_mode = "all"
+                    rest_parts = rest_parts[1:]
+
+                # Prüfe auf else
+                if rest_parts and rest_parts[0].lower() == "else":
+                    else_data = parse_else_condition(rest_parts[1:], state)
+                    if not else_data and rest_parts[1:]:
+                        continue  # Fehler wurde schon ausgegeben
 
                 # Prüfen ob Item-Scan existiert
                 with state.lock:
@@ -1960,9 +2061,16 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         continue
 
                 # Scan-Schritt erstellen (x, y werden nicht verwendet)
-                mode_str = "alle" if scan_mode == "all" else "bestes"
-                step = SequenceStep(x=0, y=0, delay_before=0, name=f"Scan:{scan_name}",
-                                   item_scan=scan_name, item_scan_mode=scan_mode)
+                step = SequenceStep(
+                    x=0, y=0, delay_before=0, name=f"Scan:{scan_name}",
+                    item_scan=scan_name, item_scan_mode=scan_mode,
+                    else_action=else_data.get("else_action"),
+                    else_x=else_data.get("else_x", 0),
+                    else_y=else_data.get("else_y", 0),
+                    else_delay=else_data.get("else_delay", 0),
+                    else_key=else_data.get("else_key"),
+                    else_name=else_data.get("else_name", "")
+                )
                 steps.append(step)
                 print(f"  ✓ Hinzugefügt: {step}")
                 continue
@@ -2019,16 +2127,25 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             elif user_input.lower().startswith("wait "):
                 # Nur warten, kein Klick
-                # Format: "wait <Zeit>" oder "wait <Min>-<Max>" oder "wait pixel"
+                # Format: "wait <Zeit>" oder "wait <Min>-<Max>" oder "wait pixel [else ...]"
                 wait_parts = user_input[5:].strip().split()
                 if not wait_parts:
-                    print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel")
+                    print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel [else ...]")
                     continue
 
                 if wait_parts[0].lower() == "pixel":
                     # Auf Farbe warten ohne Klick
+                    # Format: "wait pixel [else skip|<Nr>|key <Taste>]"
+                    else_data = {}
+                    if len(wait_parts) > 1 and wait_parts[1].lower() == "else":
+                        else_data = parse_else_condition(wait_parts[2:], state)
+                        if not else_data and wait_parts[2:]:
+                            continue
+
                     print("\n  Farb-Trigger einrichten (ohne Klick):")
                     print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
+                    if else_data:
+                        print(f"  Bei Timeout: {else_data.get('else_action', 'skip')}")
                     print("  Drücke Enter...")
                     input()
                     px, py = get_cursor_pos()
@@ -2042,7 +2159,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print(f"  → Warte auf Farbe: RGB{color} ({color_name})")
                             step = SequenceStep(
                                 x=0, y=0, delay_before=0, name="Wait-Pixel",
-                                wait_pixel=(px, py), wait_color=color, wait_only=True
+                                wait_pixel=(px, py), wait_color=color, wait_only=True,
+                                else_action=else_data.get("else_action"),
+                                else_x=else_data.get("else_x", 0),
+                                else_y=else_data.get("else_y", 0),
+                                else_delay=else_data.get("else_delay", 0),
+                                else_key=else_data.get("else_key"),
+                                else_name=else_data.get("else_name", "")
                             )
                             steps.append(step)
                             print(f"  ✓ Hinzugefügt: {step}")
@@ -2080,9 +2203,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 continue
 
             # Neuen Schritt hinzufügen (Punkt + Zeit oder Pixel)
+            # Format: <Nr> <Sek> | <Nr> pixel | <Nr> <Sek> pixel [else ...]
             parts = user_input.split()
-            if len(parts) < 2 or len(parts) > 3:
-                print("  → Format: <Nr> <Sek> | <Nr> pixel | <Nr> <Sek> pixel")
+            if len(parts) < 2:
+                print("  → Format: <Nr> <Sek> | <Nr> pixel | <Nr> <Sek> pixel [else ...]")
                 continue
 
             point_num = int(parts[0])
@@ -2096,25 +2220,48 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 point_y = point.y
                 point_name = point.name
 
-            # Format: <Nr> pixel (sofort auf Farbe warten)
-            # Format: <Nr> <Sek> pixel (erst warten, dann auf Farbe)
-            # Format: <Nr> <Sek> (nur Zeit warten)
-            use_pixel = "pixel" in [p.lower() for p in parts]
+            # Finde "else" und "pixel" in den parts
+            lower_parts = [p.lower() for p in parts]
+            else_index = -1
+            pixel_index = -1
+            if "else" in lower_parts:
+                else_index = lower_parts.index("else")
+            if "pixel" in lower_parts:
+                pixel_index = lower_parts.index("pixel")
+
+            # Parse else condition wenn vorhanden
+            else_data = {}
+            if else_index > 0:
+                else_data = parse_else_condition(parts[else_index + 1:], state)
+                if not else_data and parts[else_index + 1:]:
+                    continue  # Fehler wurde schon ausgegeben
+                parts = parts[:else_index]  # Remove else from parts
+
+            use_pixel = pixel_index > 0 and (else_index < 0 or pixel_index < else_index)
             delay = 0
 
             if use_pixel:
-                # Delay ermitteln falls angegeben
-                if len(parts) == 3:
-                    delay = float(parts[1])
-                    if delay < 0:
-                        print("  → Wartezeit muss >= 0 sein!")
-                        continue
+                # Delay ermitteln falls angegeben (z.B. "1 5 pixel")
+                for i, p in enumerate(parts[1:], 1):
+                    if p.lower() != "pixel":
+                        try:
+                            delay = float(p)
+                            if delay < 0:
+                                print("  → Wartezeit muss >= 0 sein!")
+                                delay = -1
+                                break
+                        except ValueError:
+                            pass
+                if delay < 0:
+                    continue
 
                 # Pixel-basierte Wartezeit (optional mit Delay davor)
                 print("\n  Farb-Trigger einrichten:")
                 print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
                 if delay > 0:
                     print(f"  (Erst {delay}s warten, dann auf Farbe prüfen)")
+                if else_data:
+                    print(f"  Bei Timeout: {else_data.get('else_action', 'skip')}")
                 print("  Drücke Enter...")
                 input()
                 px, py = get_cursor_pos()
@@ -2130,7 +2277,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         print(f"  → Wenn diese Farbe erscheint → klicke auf {point_name}")
                         step = SequenceStep(
                             x=point_x, y=point_y, delay_before=delay, name=point_name,
-                            wait_pixel=(px, py), wait_color=color
+                            wait_pixel=(px, py), wait_color=color,
+                            else_action=else_data.get("else_action"),
+                            else_x=else_data.get("else_x", 0),
+                            else_y=else_data.get("else_y", 0),
+                            else_delay=else_data.get("else_delay", 0),
+                            else_key=else_data.get("else_key"),
+                            else_name=else_data.get("else_name", "")
                         )
                         steps.append(step)
                         print(f"  ✓ Hinzugefügt: {step}")
@@ -2264,6 +2417,54 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
 
     return True
 
+def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
+                        step_num: int, total_steps: int) -> bool:
+    """Führt die Else-Aktion eines Schritts aus. Gibt False zurück wenn abgebrochen."""
+    if not step.else_action:
+        return True
+
+    if step.else_action == "skip":
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", end="", flush=True)
+        return True
+
+    elif step.else_action == "click":
+        # Warten falls Delay angegeben
+        if step.else_delay > 0:
+            if not wait_with_pause_skip(state, step.else_delay, phase, step_num, total_steps,
+                                        f"ELSE: klicke in"):
+                return False
+
+        if state.stop_event.is_set():
+            return False
+
+        send_click(step.else_x, step.else_y)
+        with state.lock:
+            state.total_clicks += 1
+        name = step.else_name or f"({step.else_x},{step.else_y})"
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", end="", flush=True)
+        return True
+
+    elif step.else_action == "key":
+        # Warten falls Delay angegeben
+        if step.else_delay > 0:
+            if not wait_with_pause_skip(state, step.else_delay, phase, step_num, total_steps,
+                                        f"ELSE: Taste in"):
+                return False
+
+        if state.stop_event.is_set():
+            return False
+
+        if send_key(step.else_key):
+            with state.lock:
+                state.key_presses += 1
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
+        return True
+
+    return True
+
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
 
@@ -2296,6 +2497,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(click_positions)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
         else:
+            # Kein Item gefunden - Else-Aktion ausführen
+            if step.else_action:
+                return execute_else_action(state, step, phase, step_num, total_steps)
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
         return True
@@ -2375,6 +2579,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
             elapsed = time.time() - start_time
             if elapsed >= timeout:
+                # Timeout erreicht - Else-Aktion ausführen falls vorhanden
+                if step.else_action:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                    return execute_else_action(state, step, phase, step_num, total_steps)
                 print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
                 state.stop_event.set()  # Stoppt die ganze Sequenz
                 return False

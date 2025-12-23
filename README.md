@@ -13,6 +13,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, Farberkennung und Item-Scan 
 - **Zufällige Verzögerung**: `1 30-45` = warte 30-45 Sekunden zufällig
 - **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
 - **Item-Scan System**: Items anhand von Marker-Farben erkennen und priorisieren
+- **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
@@ -73,6 +74,9 @@ python autoclicker.py
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
 | `scan <Name>` | Item-Scan ausführen, bestes Item klicken |
 | `scan <Name> all` | Item-Scan ausführen, ALLE Items klicken |
+| `... else skip` | Bei Fehlschlag überspringen (z.B. `scan items else skip`) |
+| `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken (z.B. `scan items else 2 5`) |
+| `... else key <T>` | Bei Fehlschlag Taste drücken (z.B. `1 pixel else key enter`) |
 | `del <Nr>` | Schritt löschen |
 | `clear` | Alle Schritte löschen |
 | `show` | Aktuelle Schritte anzeigen |
@@ -133,6 +137,37 @@ Das Item-Scan System erkennt Items anhand ihrer Marker-Farben:
 
 - `scan items` → Scannt alle Slots, klickt das Item mit bester Priorität
 - `scan items all` → Scannt alle Slots, klickt ALLE erkannten Items
+
+## Bedingte Logik (ELSE)
+
+Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen definiert werden:
+
+### ELSE-Syntax
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `else skip` | Schritt überspringen, Sequenz fortsetzen |
+| `else <Nr>` | Anderen Punkt klicken |
+| `else <Nr> <Sek>` | Warten, dann anderen Punkt klicken |
+| `else key <Taste>` | Taste drücken |
+
+### Beispiele
+
+```
+scan items else skip           # Wenn kein Item: überspringen
+scan items else 2              # Wenn kein Item: Punkt 2 klicken
+scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
+1 pixel else skip              # Wenn Timeout: überspringen
+1 pixel else key enter         # Wenn Timeout: Enter drücken
+wait pixel else skip           # Wenn Timeout: überspringen
+```
+
+### Wann wird ELSE ausgelöst?
+
+- **Item-Scan**: Wenn kein Item gefunden wird
+- **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 60s)
+
+Ohne `else` stoppt die Sequenz bei Fehlschlag.
 
 ## Konfiguration (`config.json`)
 
