@@ -140,7 +140,7 @@ VK_P = 0x50  # Print/Show
 VK_S = 0x53  # Start/Stop
 VK_T = 0x54  # Test colors (Farb-Analysator)
 VK_Q = 0x51  # Quit
-VK_R = 0x52  # Pause/Resume
+VK_G = 0x47  # Pause/Resume (G statt R wegen Konflikten)
 VK_K = 0x4B  # Skip current wait
 VK_W = 0x57  # Quick-Switch (Wechseln)
 
@@ -2440,7 +2440,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         # Check pause
         while state.pause_event.is_set() and not state.stop_event.is_set():
             clear_line()
-            print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+R", end="", flush=True)
+            print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
             time.sleep(0.5)
 
         if state.stop_event.is_set():
@@ -2587,7 +2587,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             # Check pause
             while state.pause_event.is_set() and not state.stop_event.is_set():
                 clear_line()
-                print(f"[PAUSE] Warte auf Farbe... | Fortsetzen: CTRL+ALT+R", end="", flush=True)
+                print(f"[PAUSE] Warte auf Farbe... | Fortsetzen: CTRL+ALT+G", end="", flush=True)
                 time.sleep(0.5)
 
             # Prüfe Farbe
@@ -3026,7 +3026,7 @@ def handle_pause(state: AutoClickerState) -> None:
             print("\n[RESUME] Sequenz fortgesetzt.")
         else:
             state.pause_event.set()
-            print("\n[PAUSE] Sequenz pausiert. Fortsetzen: CTRL+ALT+R")
+            print("\n[PAUSE] Sequenz pausiert. Fortsetzen: CTRL+ALT+G")
 
 def handle_skip(state: AutoClickerState) -> None:
     """Überspringt die aktuelle Wartezeit."""
@@ -3123,7 +3123,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_LOAD, VK_L, "CTRL+ALT+L (Sequenz laden)"),
         (HOTKEY_SHOW, VK_P, "CTRL+ALT+P (Punkte/Sequenzen anzeigen)"),
         (HOTKEY_TOGGLE, VK_S, "CTRL+ALT+S (Start/Stop)"),
-        (HOTKEY_PAUSE, VK_R, "CTRL+ALT+R (Pause/Resume)"),
+        (HOTKEY_PAUSE, VK_G, "CTRL+ALT+G (Pause/Resume)"),
         (HOTKEY_SKIP, VK_K, "CTRL+ALT+K (Skip Wartezeit)"),
         (HOTKEY_SWITCH, VK_W, "CTRL+ALT+W (Quick-Switch)"),
         (HOTKEY_ANALYZE, VK_T, "CTRL+ALT+T (Farb-Analysator)"),
@@ -3168,7 +3168,7 @@ def print_help() -> None:
     print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
     print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
     print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
-    print("  CTRL+ALT+R  - Pause/Resume (während Sequenz läuft)")
+    print("  CTRL+ALT+G  - Pause/Resume (während Sequenz läuft)")
     print("  CTRL+ALT+K  - Skip (aktuelle Wartezeit überspringen)")
     print("  CTRL+ALT+W  - Quick-Switch (schnell Sequenz wechseln)")
     print("  CTRL+ALT+Q  - Programm beenden")
