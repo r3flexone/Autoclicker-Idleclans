@@ -60,6 +60,7 @@ DEFAULT_CONFIG = {
     "color_tolerance": 40,              # Farbtoleranz für Item-Scan (größer = toleranter)
     "pixel_wait_tolerance": 15,         # Toleranz für Pixel-Trigger (kleiner = genauer)
     "pixel_wait_timeout": 60,           # Timeout in Sekunden für Pixel-Trigger
+    "pixel_check_interval": 0.5,        # Wie oft auf Farbe prüfen (in Sekunden, kleiner = öfter)
     "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
 }
 
@@ -701,6 +702,7 @@ RAID_SCREEN_COLORS = [
 COLOR_TOLERANCE = CONFIG["color_tolerance"]
 PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
 PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
+PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
 DEBUG_DETECTION = CONFIG["debug_detection"]
 
 def color_distance(c1: tuple, c2: tuple) -> float:
@@ -2332,9 +2334,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 return False
 
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.1f}s)", end="", flush=True)
 
-            if state.stop_event.wait(1.0):
+            if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                 return False
 
     elif step.delay_before > 0:
