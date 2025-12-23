@@ -33,7 +33,17 @@ Voraussetzungen:
 Fail-Safe: Maus in obere linke Ecke (x<=2, y<=2) stoppt den Klicker.
 """
 
+# DPI-Awareness MUSS vor allen anderen Imports stehen!
+# Sonst cachen Windows-APIs falsche Koordinaten.
 import ctypes
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()  # Fallback für ältere Windows
+    except Exception:
+        pass
+
 import ctypes.wintypes as wintypes
 import threading
 import time
