@@ -1111,6 +1111,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
             config = load_item_scan_file(path)
             if config:
                 print(f"  [{i+1}] {config}")
+        print("\n  del <Nr> - Item-Scan löschen")
 
     print("\nAuswahl (oder 'abbruch'):")
 
@@ -1121,6 +1122,28 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
             if choice == "abbruch":
                 print("[ABBRUCH] Editor beendet.")
                 return
+
+            # Löschen-Befehl
+            if choice.startswith("del "):
+                try:
+                    del_num = int(choice[4:])
+                    if 1 <= del_num <= len(available_scans):
+                        name, path = available_scans[del_num - 1]
+                        confirm = input(f"Item-Scan '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            Path(path).unlink()
+                            with state.lock:
+                                if name in state.item_scans:
+                                    del state.item_scans[name]
+                            print(f"[OK] Item-Scan '{name}' gelöscht!")
+                            return
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültiger Scan! Verfügbar: 1-{len(available_scans)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
 
             choice_num = int(choice)
 
@@ -2342,7 +2365,7 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         if seq:
             print(f"  {i+1}. {seq}")
 
-    print("\nNummer eingeben (oder 'abbruch'):")
+    print("\nNummer eingeben | del <Nr> zum Löschen | 'abbruch':")
 
     while True:
         try:
@@ -2351,6 +2374,28 @@ def run_sequence_loader(state: AutoClickerState) -> None:
             if user_input == "abbruch":
                 print("[ABBRUCH] Keine Sequenz geladen.")
                 return
+
+            # Löschen-Befehl
+            if user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    if 1 <= del_num <= len(sequences):
+                        name, path = sequences[del_num - 1]
+                        confirm = input(f"Sequenz '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            Path(path).unlink()
+                            with state.lock:
+                                if state.active_sequence and state.active_sequence.name == name:
+                                    state.active_sequence = None
+                            print(f"[OK] Sequenz '{name}' gelöscht!")
+                            return
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültige Nummer! Verfügbar: 1-{len(sequences)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
 
             idx = int(user_input) - 1
             if idx < 0 or idx >= len(sequences):
@@ -2566,7 +2611,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         current_name = get_color_name(current_color)
                         elapsed = time.time() - start_time
                         clear_line()
-                        print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.1f}s)", end="", flush=True)
+                        print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
                         if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                             return False
                         continue
@@ -2583,7 +2628,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 return False
 
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.1f}s)", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
 
             if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                 return False
@@ -2878,6 +2923,7 @@ def handle_show(state: AutoClickerState) -> None:
     print("Optionen:")
     print("  <Nr>        - Punkt testen (Maus hinbewegen ohne Klick)")
     print("  <Nr> <Name> - Punkt umbenennen")
+    print("  del <Nr>    - Punkt löschen")
     print("  Enter       - Zurück")
     print("-" * 50)
 
@@ -2886,6 +2932,25 @@ def handle_show(state: AutoClickerState) -> None:
             user_input = input("> ").strip()
             if not user_input:
                 return
+
+            # Löschen-Befehl
+            if user_input.lower().startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    with state.lock:
+                        if del_num < 1 or del_num > len(state.points):
+                            print(f"[FEHLER] Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
+                            continue
+                        removed = state.points.pop(del_num - 1)
+                        num_points = len(state.points)
+                    save_data(state)
+                    print(f"[OK] Punkt {del_num} gelöscht: {removed}")
+                    if num_points == 0:
+                        print("[INFO] Keine Punkte mehr vorhanden.")
+                        return
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
 
             parts = user_input.split(maxsplit=1)
             point_num = int(parts[0])
