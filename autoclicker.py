@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 """
-Windows Autoclicker mit Sequenz-Unterstützung - Python 3.13
-============================================================
-Ein Autoclicker für Windows 11 mit sequenzieller Ausführung und Speicherung.
+Windows Autoclicker mit Sequenz-Unterstützung und Farberkennung
+================================================================
+Ein Autoclicker für Windows mit Sequenzen, Farb-Triggern und Item-Scan System.
 
 Starten: python autoclicker.py
 Beenden: CTRL+ALT+Q oder Konsole schließen
 
 Hotkeys:
-  CTRL+ALT+A  - Aktuelle Mausposition als Punkt speichern
+  CTRL+ALT+A  - Mausposition als Punkt speichern
   CTRL+ALT+U  - Letzten Punkt entfernen
-  CTRL+ALT+E  - Sequenz-Editor öffnen (Punkte mit Zeiten verknüpfen)
-  CTRL+ALT+N  - Item-Scan Editor (Items erkennen + vergleichen)
+  CTRL+ALT+C  - Alle Punkte löschen
+  CTRL+ALT+X  - Factory Reset (Punkte + Sequenzen)
+  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten/Farb-Trigger)
+  CTRL+ALT+N  - Item-Scan Editor (Items erkennen + priorisieren)
   CTRL+ALT+L  - Gespeicherte Sequenz laden
-  CTRL+ALT+P  - Alle Punkte und Sequenzen anzeigen
-  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)
-  CTRL+ALT+S  - Start/Stop Toggle (führt aktive Sequenz aus)
+  CTRL+ALT+P  - Punkte anzeigen/testen/umbenennen
+  CTRL+ALT+T  - Farb-Analysator
+  CTRL+ALT+S  - Start/Stop der aktiven Sequenz
   CTRL+ALT+Q  - Programm beenden
 
-Sequenzen:
-  - Eine Sequenz besteht aus Schritten (Punkt + Wartezeit danach)
-  - Der gleiche Punkt kann mehrmals verwendet werden
-  - Sequenzen werden in 'sequences/' gespeichert
+Features:
+  - Mehrphasen-System: START + mehrere LOOP-Phasen
+  - Farb-Trigger: Warte bis Farbe erscheint, dann klicke
+  - Item-Scan: Items anhand von Marker-Farben erkennen
+  - Konfigurierbar via config.json
 
-Fail-Safe: Maus in obere linke Ecke bewegen (x<=2, y<=2) stoppt den Klicker.
+Voraussetzungen:
+  - Windows 10/11, Python 3.10+
+  - Optional: pip install pillow (für Farberkennung)
+
+Fail-Safe: Maus in obere linke Ecke (x<=2, y<=2) stoppt den Klicker.
 """
 
 import ctypes
@@ -2559,10 +2566,11 @@ def print_help() -> None:
     print("  3. Sequenz starten (CTRL+ALT+S)")
     print()
     print("Bilderkennung:")
-    print("  - Nutze CTRL+ALT+T um Farben im Spiel zu analysieren")
+    print("  - Nutze CTRL+ALT+T um Farben zu analysieren")
+    print("  - Item-Scan mit CTRL+ALT+N erstellen")
     print("  - Erfordert Pillow: pip install pillow")
     print()
-    print(f"Sequenzen werden in '{SEQUENCES_DIR}/' gespeichert.")
+    print(f"Daten: '{SEQUENCES_DIR}/' | Einstellungen: '{CONFIG_FILE}'")
     print("=" * 65)
     print()
 
