@@ -39,7 +39,7 @@ import threading
 import time
 import sys
 import json
-import os
+import shutil
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -444,22 +444,12 @@ class AutoClickerState:
 
     # Laufzeit-Status
     is_running: bool = False
-    is_paused: bool = False
     total_clicks: int = 0
-    current_step_index: int = 0
 
     # Statistiken
     items_found: int = 0
     key_presses: int = 0
     start_time: Optional[float] = None
-    current_cycle: int = 0
-    current_loop_name: str = ""
-    current_loop_repeat: int = 0
-    total_loop_repeats: int = 0
-
-    # Editor-Modus
-    editor_mode: bool = False
-    temp_sequence: Optional[Sequence] = None
 
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
@@ -870,7 +860,6 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
             full_screenshot = ImageGrab.grab(all_screens=True)
             # Koordinaten anpassen (all_screens verschiebt den Ursprung)
             # Hole die tatsächlichen Bildschirmgrenzen
-            import ctypes
             SM_XVIRTUALSCREEN = 76
             SM_YVIRTUALSCREEN = 77
             x_offset = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
@@ -1034,12 +1023,7 @@ def select_region() -> Optional[tuple]:
 def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
     with state.lock:
-        if state.editor_mode:
-            status = "EDITOR"
-        elif state.is_running:
-            status = "RUNNING"
-        else:
-            status = "STOPPED"
+        status = "RUNNING" if state.is_running else "STOPPED"
 
         seq_name = state.active_sequence.name if state.active_sequence else "Keine"
         points_str = f"{len(state.points)} Punkt(e)"
@@ -2673,16 +2657,12 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.items_found = 0
         state.key_presses = 0
         state.start_time = time.time()
-        state.current_cycle = 0
 
     cycle_count = 0
 
     # Äußere Schleife für Zyklen (START → alle Loops → START → alle Loops → ...)
     while not state.stop_event.is_set() and not state.quit_event.is_set():
         cycle_count += 1
-
-        with state.lock:
-            state.current_cycle = cycle_count
 
         # Prüfen ob max Zyklen erreicht (0 = unendlich)
         if total_cycles > 0 and cycle_count > total_cycles:
@@ -2718,19 +2698,12 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if total_steps == 0:
                     continue
 
-                with state.lock:
-                    state.current_loop_name = loop_phase.name
-                    state.total_loop_repeats = loop_phase.repeat
-
                 print(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}")
 
                 # Diese Loop-Phase X-mal wiederholen
                 for repeat_num in range(1, loop_phase.repeat + 1):
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
-
-                    with state.lock:
-                        state.current_loop_repeat = repeat_num
 
                     for i, step in enumerate(loop_phase.steps):
                         if state.stop_event.is_set() or state.quit_event.is_set():
@@ -2848,7 +2821,6 @@ def handle_reset(state: AutoClickerState) -> None:
         # Alle Dateien im Sequenz-Ordner löschen
         seq_dir = Path(SEQUENCES_DIR)
         if seq_dir.exists():
-            import shutil
             shutil.rmtree(seq_dir)
         ensure_sequences_dir()
 
@@ -2960,11 +2932,9 @@ def handle_toggle(state: AutoClickerState) -> None:
                 return
 
             state.is_running = True
-            state.is_paused = False
             state.stop_event.clear()
             state.pause_event.clear()
             state.skip_event.clear()
-            state.current_step_index = 0
 
             worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
             worker.start()
@@ -2978,11 +2948,9 @@ def handle_pause(state: AutoClickerState) -> None:
 
         if state.pause_event.is_set():
             state.pause_event.clear()
-            state.is_paused = False
             print("\n[RESUME] Sequenz fortgesetzt.")
         else:
             state.pause_event.set()
-            state.is_paused = True
             print("\n[PAUSE] Sequenz pausiert. Fortsetzen: CTRL+ALT+R")
 
 def handle_skip(state: AutoClickerState) -> None:
