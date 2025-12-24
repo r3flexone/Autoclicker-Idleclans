@@ -66,27 +66,29 @@ def take_screenshot(region=None):
 
 def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, debug=False):
     """
-    Findet Slots basierend auf Rahmenfarbe.
+    Findet Slots basierend auf Flächenfarbe (gefüllte Rechtecke).
     Returns: Liste von (x, y, w, h) Rechtecken
     """
     # In HSV konvertieren für bessere Farberkennung
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Maske für die Rahmenfarbe erstellen
+    # Maske für die Slot-Farbe erstellen
     mask = cv2.inRange(hsv, color_lower, color_upper)
 
     # Debug: Originale Maske speichern
     if debug:
         cv2.imwrite("debug_mask_original.png", mask)
-        print(f"  [DEBUG] Originale Maske: {np.count_nonzero(mask)} weiße Pixel")
+        pixel_count = np.count_nonzero(mask)
+        print(f"  [DEBUG] Originale Maske: {pixel_count} weiße Pixel")
+        if pixel_count == 0:
+            print("  [DEBUG] KEINE Pixel gefunden! Farbe stimmt nicht.")
 
-    # Rahmen verdicken (wichtig für dünne Linien!)
-    kernel_dilate = np.ones((5, 5), np.uint8)
-    mask = cv2.dilate(mask, kernel_dilate, iterations=2)
+    # Kleine Lücken schließen (für gefüllte Flächen)
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    # Löcher füllen
-    kernel_close = np.ones((15, 15), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+    # Rauschen entfernen
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
     # Debug: Nach Verarbeitung
     if debug:
@@ -110,7 +112,7 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
         if w >= min_width and h >= min_height:
             # Prüfe ob es annähernd quadratisch/rechteckig ist
             aspect_ratio = w / h
-            if 0.3 < aspect_ratio < 3.0:  # Breiter Bereich für verschiedene Slot-Formen
+            if 0.3 < aspect_ratio < 3.0:
                 slots.append((x, y, w, h))
 
     # Nach X-Position sortieren (links nach rechts)
