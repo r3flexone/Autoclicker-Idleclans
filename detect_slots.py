@@ -66,13 +66,14 @@ def take_screenshot(region=None):
 
 def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, debug=False):
     """
-    Findet Slots basierend auf Flächenfarbe (gefüllte Rechtecke).
+    Findet Slots basierend auf Randfarbe (Bevel-Effekt mit hell/dunkel).
+    Die Slots haben Items drin, aber einen sichtbaren Rand.
     Returns: Liste von (x, y, w, h) Rechtecken
     """
     # In HSV konvertieren für bessere Farberkennung
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Maske für die Slot-Farbe erstellen
+    # Maske für die Rand-Farbe erstellen
     mask = cv2.inRange(hsv, color_lower, color_upper)
 
     # Debug: Originale Maske speichern
@@ -83,12 +84,18 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
         if pixel_count == 0:
             print("  [DEBUG] KEINE Pixel gefunden! Farbe stimmt nicht.")
 
-    # Kleine Lücken schließen (für gefüllte Flächen)
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    # Ränder verbinden und Löcher füllen
+    # 1. Erst die Linien verdicken (für dünne Ränder)
+    kernel_dilate = np.ones((3, 3), np.uint8)
+    mask = cv2.dilate(mask, kernel_dilate, iterations=2)
 
-    # Rauschen entfernen
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    # 2. Löcher füllen (die Items in der Mitte)
+    kernel_close = np.ones((25, 25), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+
+    # 3. Rauschen entfernen
+    kernel_open = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
     # Debug: Nach Verarbeitung
     if debug:
@@ -214,46 +221,74 @@ def main():
 
         if sub_choice == "1":
             # Farbe direkt vom Bildschirm scannen (LIVE, nicht aus altem Screenshot!)
-            print("\nBewege die Maus auf den RAHMEN eines Slots...")
-            print("(Die türkise/farbige Umrandung)")
+            print("\nDie Slots haben einen Rand mit 2 Farben (hell + dunkel).")
+            print("Scanne die HELLERE Randfarbe zuerst.\n")
+            print("Bewege die Maus auf den HELLEN RAND eines Slots...")
             input("ENTER wenn bereit...")
 
-            mx, my = get_cursor_pos()
+            colors_scanned = []
 
-            # Farbe direkt vom Bildschirm lesen (Windows API)
-            hdc = user32.GetDC(0)
-            gdi32 = ctypes.windll.gdi32
-            color = gdi32.GetPixel(hdc, mx, my)
-            user32.ReleaseDC(0, hdc)
+            for color_name in ["HELLE", "DUNKLE"]:
+                mx, my = get_cursor_pos()
 
-            if color != -1:
-                r = color & 0xFF
-                g = (color >> 8) & 0xFF
-                b = (color >> 16) & 0xFF
+                # Farbe direkt vom Bildschirm lesen (Windows API)
+                hdc = user32.GetDC(0)
+                gdi32 = ctypes.windll.gdi32
+                color = gdi32.GetPixel(hdc, mx, my)
+                user32.ReleaseDC(0, hdc)
 
-                # RGB zu HSV konvertieren
-                pixel_bgr = np.array([[[b, g, r]]], dtype=np.uint8)
-                pixel_hsv = cv2.cvtColor(pixel_bgr, cv2.COLOR_BGR2HSV)[0][0]
+                if color != -1:
+                    r = color & 0xFF
+                    g = (color >> 8) & 0xFF
+                    b = (color >> 16) & 0xFF
 
-                print(f"\n  Gescannte Farbe (LIVE vom Bildschirm):")
-                print(f"    RGB: ({r}, {g}, {b})")
-                print(f"    HSV: ({pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]})")
+                    # RGB zu HSV konvertieren
+                    pixel_bgr = np.array([[[b, g, r]]], dtype=np.uint8)
+                    pixel_hsv = cv2.cvtColor(pixel_bgr, cv2.COLOR_BGR2HSV)[0][0]
 
+                    print(f"\n  {color_name} Randfarbe:")
+                    print(f"    RGB: ({r}, {g}, {b})")
+                    print(f"    HSV: ({pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]})")
+                    colors_scanned.append(pixel_hsv)
+                else:
+                    print(f"  [FEHLER] Konnte {color_name} Farbe nicht lesen!")
+
+                if color_name == "HELLE":
+                    print("\nJetzt die DUNKLE Randfarbe scannen...")
+                    print("Bewege die Maus auf den DUNKLEN RAND...")
+                    input("ENTER wenn bereit...")
+
+            if len(colors_scanned) >= 1:
                 # Toleranz fragen
                 try:
-                    tol = int(input("\n  Toleranz (Standard: 20): ").strip() or "20")
+                    tol = int(input("\n  Toleranz (Standard: 25): ").strip() or "25")
                 except ValueError:
-                    tol = 20
+                    tol = 25
 
-                h, s, v = pixel_hsv
-                lower = np.array([max(0, h - tol), max(0, s - 60), max(0, v - 60)])
-                upper = np.array([min(180, h + tol), min(255, s + 60), min(255, v + 60)])
+                # Kombinierte Maske aus beiden Farben
+                if len(colors_scanned) == 2:
+                    # HSV-Bereich der beide Farben abdeckt
+                    h1, s1, v1 = colors_scanned[0]
+                    h2, s2, v2 = colors_scanned[1]
+
+                    h_min = min(h1, h2)
+                    h_max = max(h1, h2)
+                    s_min = min(s1, s2)
+                    s_max = max(s1, s2)
+                    v_min = min(v1, v2)
+                    v_max = max(v1, v2)
+
+                    lower = np.array([max(0, h_min - tol), max(0, s_min - 40), max(0, v_min - 40)])
+                    upper = np.array([min(180, h_max + tol), min(255, s_max + 40), min(255, v_max + 40)])
+                    print(f"\n  Kombinierter HSV-Bereich: {list(lower)} - {list(upper)}")
+                else:
+                    h, s, v = colors_scanned[0]
+                    lower = np.array([max(0, h - tol), max(0, s - 60), max(0, v - 60)])
+                    upper = np.array([min(180, h + tol), min(255, s + 60), min(255, v + 60)])
 
                 print(f"\n  Suche mit HSV-Bereich: {list(lower)} - {list(upper)}")
                 best_slots = find_slots(image, lower, upper, debug=True)
                 best_preset = "manuell gescannt"
-            else:
-                print("  [FEHLER] Konnte Farbe nicht lesen!")
 
         elif sub_choice == "2":
             # HSV manuell eingeben
