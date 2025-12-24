@@ -83,12 +83,12 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
         if pixel_count == 0:
             print("  [DEBUG] KEINE Pixel gefunden! Farbe stimmt nicht.")
 
-    # Große Löcher füllen (Items, orange Balken etc.)
-    kernel_close = np.ones((50, 50), np.uint8)
+    # Nur kleine Löcher füllen (nicht die ganze Fläche!)
+    kernel_close = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
 
-    # Kleine Störungen entfernen
-    kernel_open = np.ones((10, 10), np.uint8)
+    # Kleine Störungen/Rauschen entfernen
+    kernel_open = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
     # Debug: Nach Verarbeitung
