@@ -417,11 +417,19 @@ def main():
     # Vorschau erstellen
     preview = image.copy()
     for i, (x, y, w, h) in enumerate(best_slots):
+        # Rechteck um den Slot
         cv2.rectangle(preview, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        # Slot-Nummer
         cv2.putText(preview, str(i + 1), (x + 5, y + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # Klick-Position markieren (rotes Kreuz in der Mitte)
+        center_x = x + w // 2
+        center_y = y + h // 2
+        cv2.drawMarker(preview, (center_x, center_y), (0, 0, 255),
+                       cv2.MARKER_CROSS, 15, 2)
     cv2.imwrite("slots_preview.png", preview)
     print("\n[OK] Vorschau gespeichert: 'slots_preview.png'")
+    print("     (Rotes Kreuz = Klick-Position)")
 
     # Bestätigung
     print("\nSlots übernehmen? (j/n)")
@@ -456,11 +464,16 @@ def main():
     print("\nHintergrundfarbe aus erstem Slot extrahieren? (j/n)")
     if input("> ").strip().lower() == "j":
         x, y, w, h = best_slots[0]
-        # Mitte des Slots
-        center_x, center_y = x + w // 2, y + h // 2
-        pixel = image[center_y, center_x]
-        bg_color = [int(pixel[2]) // 5 * 5, int(pixel[1]) // 5 * 5, int(pixel[0]) // 5 * 5]
-        print(f"  → Hintergrund: RGB{tuple(bg_color)}")
+        # Vom RAND samplen (oben links + 5 Pixel), nicht aus der Mitte wo das Item ist!
+        sample_x = x + 5
+        sample_y = y + 5
+        # Sicherstellen dass wir im Bild bleiben
+        sample_x = min(sample_x, image.shape[1] - 1)
+        sample_y = min(sample_y, image.shape[0] - 1)
+
+        pixel = image[sample_y, sample_x]
+        bg_color = [int(pixel[2]), int(pixel[1]), int(pixel[0])]  # BGR -> RGB
+        print(f"  → Hintergrund (vom Rand): RGB{tuple(bg_color)}")
 
     # JSON erstellen (mit Offset für absolute Bildschirm-Koordinaten)
     slots_json = {}
