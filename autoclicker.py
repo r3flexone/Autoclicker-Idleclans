@@ -1435,27 +1435,31 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 except ValueError:
                     pass
 
-                # Marker-Farben aus Slot scannen
+                # Marker-Farben sammeln - Slot oder freier Bereich
                 if slots:
-                    print(f"\n  Lege das Item in einen Slot und gib die Slot-Nr ein (1-{len(slots)}, 'abbruch' = abbrechen):")
+                    print(f"\n  Slot-Nr (1-{len(slots)}) oder '0' für freien Bereich ('abbruch' = abbrechen):")
                     try:
-                        slot_input = input("  Slot-Nr: ").strip()
+                        slot_input = input("  > ").strip()
                         if slot_input.lower() == "abbruch":
                             print("  → Item-Erstellung abgebrochen")
                             continue
                         slot_num = int(slot_input)
-                        if slot_num < 1 or slot_num > len(slots):
-                            print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)}")
+                        if slot_num == 0:
+                            # Freier Bereich - manuell scannen
+                            marker_colors = collect_marker_colors_free()
+                        elif slot_num < 1 or slot_num > len(slots):
+                            print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slots)} oder 0")
                             continue
-                        selected_slot = slots[slot_num - 1]
-                        marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
+                        else:
+                            selected_slot = slots[slot_num - 1]
+                            marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
                     except ValueError:
                         print("  → Bitte eine Nummer eingeben!")
                         continue
                 else:
-                    # Fallback: Manuell Region auswählen
-                    print("\n  Marker-Farben für dieses Item sammeln:")
-                    marker_colors = collect_marker_colors()
+                    # Keine Slots - freier Bereich
+                    print("\n  Keine Slots vorhanden - freier Bereich wird verwendet:")
+                    marker_colors = collect_marker_colors_free()
 
                 if not marker_colors:
                     print("  → Keine Farben gefunden, Item-Erstellung abgebrochen")
@@ -1566,6 +1570,34 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
         except (KeyboardInterrupt, EOFError):
             raise
+
+
+def collect_marker_colors_free() -> list[tuple]:
+    """Sammelt Marker-Farben aus einem frei gewählten Bereich mit optionalem Hintergrund-Ausschluss."""
+    print("\n  Wähle einen Bereich auf dem Item aus:")
+    print("  (Die 5 häufigsten Farben werden automatisch genommen)")
+    region = select_region()
+    if not region:
+        return []
+
+    # Optional Hintergrundfarbe ausschließen
+    exclude_color = None
+    bg_input = input("  Hintergrundfarbe entfernen? (Enter = Nein, 'j' = Farbe aufnehmen): ").strip().lower()
+    if bg_input == "j":
+        print("  → Bewege die Maus auf den Hintergrund und drücke ENTER...")
+        input()
+        try:
+            x, y = get_cursor_position()
+            exclude_color = get_pixel_color(x, y)
+            if exclude_color:
+                # Auf 5er-Schritte runden (wie in collect_marker_colors)
+                exclude_color = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
+                color_name = get_color_name(exclude_color)
+                print(f"  → Hintergrund: RGB{exclude_color} ({color_name}) wird ausgeschlossen")
+        except Exception:
+            print("  → Konnte Hintergrundfarbe nicht aufnehmen, fahre ohne fort")
+
+    return collect_marker_colors(region, exclude_color)
 
 
 def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> list[tuple]:
