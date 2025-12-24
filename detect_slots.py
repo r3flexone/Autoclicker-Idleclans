@@ -133,8 +133,8 @@ def main():
     print("=" * 60)
 
     print("\nOptionen:")
-    print("  [1] Bereich auswählen (empfohlen)")
-    print("  [2] Ganzer Bildschirm")
+    print("  [1] Screenshot aus Zwischenablage (Win+Shift+S) - EMPFOHLEN")
+    print("  [2] Automatischer Screenshot (funktioniert nicht bei allen Spielen)")
     print("  [3] Bild-Datei laden")
 
     choice = input("\n> ").strip()
@@ -143,57 +143,29 @@ def main():
     offset_x, offset_y = 0, 0
     region = None
 
-    if choice == "3":
-        filepath = input("Pfad zur Bild-Datei: ").strip().strip('"')
-        image = cv2.imread(filepath)
-        if image is None:
-            print(f"[FEHLER] Konnte '{filepath}' nicht laden!")
+    if choice == "1":
+        # Clipboard - einfachste Methode
+        print("\n" + "=" * 50)
+        print("ANLEITUNG:")
+        print("  1. Drücke Win+Shift+S")
+        print("  2. Ziehe einen Rahmen um die Slots")
+        print("  3. Drücke hier ENTER")
+        print("=" * 50)
+        input("\nENTER wenn Screenshot in Zwischenablage...")
+
+        clipboard_img = ImageGrab.grabclipboard()
+        if clipboard_img is None:
+            print("[FEHLER] Kein Bild in der Zwischenablage!")
             return
+
+        image = cv2.cvtColor(np.array(clipboard_img), cv2.COLOR_RGB2BGR)
         print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
 
-        # Bei Bild-Datei: Position auf dem Bildschirm markieren
-        print("\nWo befindet sich die OBERE LINKE ECKE des Screenshots?")
-        print("Bewege die Maus dorthin und drücke ENTER...")
-        input()
-        offset_x, offset_y = get_cursor_pos()
-        print(f"  → Offset: ({offset_x}, {offset_y})")
+        # Offset wird SPÄTER berechnet (User klickt auf Slot 1)
+        offset_x, offset_y = None, None
 
-    elif choice == "1":
-        print("\nWähle den Bereich mit den Slots aus:")
-        region = select_region()
-        offset_x, offset_y = region[0], region[1]
-
-        print(f"\n[OK] Bereich: ({region[0]}, {region[1]}) - ({region[2]}, {region[3]})")
-        print(f"     Offset für Koordinaten: +{offset_x}, +{offset_y}")
-
-        print("\nScreenshot-Methode:")
-        print("  [1] Automatisch (funktioniert nicht bei allen Spielen)")
-        print("  [2] Manuell (Screenshot selbst machen und Datei laden)")
-        ss_choice = input("\n> ").strip()
-
-        if ss_choice == "2":
-            print("\n" + "=" * 50)
-            print("ANLEITUNG:")
-            print(f"  1. Mache jetzt einen Screenshot von GENAU diesem Bereich:")
-            print(f"     ({region[0]}, {region[1]}) bis ({region[2]}, {region[3]})")
-            print(f"     Größe: {region[2] - region[0]} x {region[3] - region[1]} Pixel")
-            print("  2. Speichere ihn als PNG-Datei")
-            print("  3. Gib den Pfad hier ein")
-            print("=" * 50)
-            filepath = input("\nPfad zur Screenshot-Datei: ").strip().strip('"')
-            image = cv2.imread(filepath)
-            if image is None:
-                print(f"[FEHLER] Konnte '{filepath}' nicht laden!")
-                return
-            print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
-        else:
-            print("\nMache Screenshot in 2 Sekunden...")
-            import time
-            time.sleep(2)
-            image = take_screenshot(region)
-            print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
-
-    else:
+    elif choice == "2":
+        # Automatischer Screenshot
         print("\nMache Screenshot in 3 Sekunden...")
         print("Stelle sicher, dass das Spiel sichtbar ist!")
         import time
@@ -202,6 +174,22 @@ def main():
             time.sleep(1)
         image = take_screenshot()
         print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
+        # offset bleibt 0,0 da ganzer Bildschirm
+
+    elif choice == "3":
+        filepath = input("Pfad zur Bild-Datei: ").strip().strip('"')
+        image = cv2.imread(filepath)
+        if image is None:
+            print(f"[FEHLER] Konnte '{filepath}' nicht laden!")
+            return
+        print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
+
+        # Offset wird SPÄTER berechnet (User klickt auf Slot 1)
+        offset_x, offset_y = None, None
+
+    else:
+        print("[FEHLER] Ungültige Option!")
+        return
 
     # Screenshot speichern für Debugging
     cv2.imwrite("screenshot_debug.png", image)
@@ -386,6 +374,28 @@ def main():
     if input("> ").strip().lower() != "j":
         print("[ABBRUCH]")
         return
+
+    # Offset berechnen falls noch nicht gesetzt (bei Clipboard-Screenshot)
+    if offset_x is None:
+        print("\n" + "=" * 50)
+        print("POSITION KALIBRIEREN:")
+        print("  Klicke auf die MITTE von SLOT 1 auf dem Bildschirm")
+        print("  (Der erste erkannte Slot, oben links)")
+        print("=" * 50)
+        input("ENTER wenn Maus auf Slot 1 ist...")
+
+        screen_x, screen_y = get_cursor_pos()
+
+        # Slot 1 im Bild
+        slot1_x, slot1_y, slot1_w, slot1_h = best_slots[0]
+        slot1_center_x = slot1_x + slot1_w // 2
+        slot1_center_y = slot1_y + slot1_h // 2
+
+        # Offset = Bildschirmposition - Position im Bild
+        offset_x = screen_x - slot1_center_x
+        offset_y = screen_y - slot1_center_y
+
+        print(f"  → Offset berechnet: ({offset_x}, {offset_y})")
 
     # Hintergrundfarbe
     bg_color = None
