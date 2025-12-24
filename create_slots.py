@@ -4,8 +4,17 @@ Hilfsskript zum automatischen Erstellen einer Slot-Reihe.
 Erstellt die slots.json Datei für den Autoclicker.
 """
 
-import json
+# DPI-Awareness MUSS vor allem anderen stehen (für Multi-Monitor)!
 import ctypes
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+import json
 from ctypes import wintypes
 
 # Windows API

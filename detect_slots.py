@@ -6,9 +6,18 @@ Erkennt die türkisen Slot-Rahmen und erstellt slots.json.
 Benötigt: pip install opencv-python pillow
 """
 
+# DPI-Awareness MUSS vor allem anderen stehen (für Multi-Monitor)!
+import ctypes
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 import json
 import sys
-import ctypes
 from ctypes import wintypes
 
 try:
