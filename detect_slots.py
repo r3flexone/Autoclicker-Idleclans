@@ -192,23 +192,30 @@ def main():
         sub_choice = input("\n> ").strip()
 
         if sub_choice == "1":
-            # Farbe direkt vom Bildschirm scannen
+            # Farbe direkt vom Bildschirm scannen (LIVE, nicht aus altem Screenshot!)
             print("\nBewege die Maus auf den RAHMEN eines Slots...")
             print("(Die türkise/farbige Umrandung)")
             input("ENTER wenn bereit...")
 
             mx, my = get_cursor_pos()
 
-            # Pixel vom Screenshot holen (relative Koordinate)
-            rel_x = mx - offset_x
-            rel_y = my - offset_y
+            # Farbe direkt vom Bildschirm lesen (Windows API)
+            hdc = user32.GetDC(0)
+            gdi32 = ctypes.windll.gdi32
+            color = gdi32.GetPixel(hdc, mx, my)
+            user32.ReleaseDC(0, hdc)
 
-            if 0 <= rel_x < image.shape[1] and 0 <= rel_y < image.shape[0]:
-                pixel_bgr = image[rel_y, rel_x]
-                pixel_hsv = cv2.cvtColor(np.array([[pixel_bgr]], dtype=np.uint8), cv2.COLOR_BGR2HSV)[0][0]
+            if color != -1:
+                r = color & 0xFF
+                g = (color >> 8) & 0xFF
+                b = (color >> 16) & 0xFF
 
-                print(f"\n  Gescannte Farbe:")
-                print(f"    RGB: ({pixel_bgr[2]}, {pixel_bgr[1]}, {pixel_bgr[0]})")
+                # RGB zu HSV konvertieren
+                pixel_bgr = np.array([[[b, g, r]]], dtype=np.uint8)
+                pixel_hsv = cv2.cvtColor(pixel_bgr, cv2.COLOR_BGR2HSV)[0][0]
+
+                print(f"\n  Gescannte Farbe (LIVE vom Bildschirm):")
+                print(f"    RGB: ({r}, {g}, {b})")
                 print(f"    HSV: ({pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]})")
 
                 # Toleranz fragen
@@ -225,7 +232,7 @@ def main():
                 best_slots = find_slots(image, lower, upper)
                 best_preset = "manuell gescannt"
             else:
-                print("  [FEHLER] Mausposition außerhalb des Screenshot-Bereichs!")
+                print("  [FEHLER] Konnte Farbe nicht lesen!")
 
         elif sub_choice == "2":
             # HSV manuell eingeben
