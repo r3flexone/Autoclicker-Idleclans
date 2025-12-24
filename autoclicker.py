@@ -399,6 +399,8 @@ class Sequence:
 # ITEM-SCAN SYSTEM (für Item-Erkennung und Vergleich)
 # =============================================================================
 ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
+SLOTS_FILE: str = "slots.json"      # Globale Slot-Definitionen
+ITEMS_FILE: str = "items.json"      # Globale Item-Definitionen
 
 @dataclass
 class ItemProfile:
@@ -449,7 +451,11 @@ class AutoClickerState:
     # Gespeicherte Sequenzen
     sequences: dict[str, Sequence] = field(default_factory=dict)
 
-    # Item-Scan Konfigurationen
+    # Globale Slots und Items (wiederverwendbar)
+    global_slots: dict[str, ItemSlot] = field(default_factory=dict)
+    global_items: dict[str, ItemProfile] = field(default_factory=dict)
+
+    # Item-Scan Konfigurationen (verknüpft Slots + Items)
     item_scans: dict[str, ItemScanConfig] = field(default_factory=dict)
 
     # Aktive Sequenz
@@ -742,6 +748,80 @@ def load_all_item_scans(state: AutoClickerState) -> None:
             state.item_scans[config.name] = config
     if state.item_scans:
         print(f"[LOAD] {len(state.item_scans)} Item-Scan(s) geladen")
+
+# =============================================================================
+# GLOBALE SLOTS UND ITEMS PERSISTENZ
+# =============================================================================
+def save_global_slots(state: AutoClickerState) -> None:
+    """Speichert alle globalen Slots."""
+    data = {
+        name: {
+            "name": slot.name,
+            "scan_region": list(slot.scan_region),
+            "click_pos": list(slot.click_pos),
+            "slot_color": list(slot.slot_color) if slot.slot_color else None
+        }
+        for name, slot in state.global_slots.items()
+    }
+    with open(SLOTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] {len(state.global_slots)} Slot(s) gespeichert")
+
+def load_global_slots(state: AutoClickerState) -> None:
+    """Lädt alle globalen Slots."""
+    if not Path(SLOTS_FILE).exists():
+        return
+    try:
+        with open(SLOTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for name, s in data.items():
+            slot_color = tuple(s["slot_color"]) if s.get("slot_color") else None
+            state.global_slots[name] = ItemSlot(
+                name=s["name"],
+                scan_region=tuple(s["scan_region"]),
+                click_pos=tuple(s["click_pos"]),
+                slot_color=slot_color
+            )
+        if state.global_slots:
+            print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
+    except Exception as e:
+        print(f"[FEHLER] Slots laden: {e}")
+
+def save_global_items(state: AutoClickerState) -> None:
+    """Speichert alle globalen Items."""
+    data = {
+        name: {
+            "name": item.name,
+            "marker_colors": [list(c) for c in item.marker_colors],
+            "priority": item.priority,
+            "confirm_point": item.confirm_point,
+            "confirm_delay": item.confirm_delay
+        }
+        for name, item in state.global_items.items()
+    }
+    with open(ITEMS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
+
+def load_global_items(state: AutoClickerState) -> None:
+    """Lädt alle globalen Items."""
+    if not Path(ITEMS_FILE).exists():
+        return
+    try:
+        with open(ITEMS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for name, i in data.items():
+            state.global_items[name] = ItemProfile(
+                name=i["name"],
+                marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                priority=i.get("priority", 99),
+                confirm_point=i.get("confirm_point"),
+                confirm_delay=i.get("confirm_delay", 0.5)
+            )
+        if state.global_items:
+            print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
+    except Exception as e:
+        print(f"[FEHLER] Items laden: {e}")
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -1093,12 +1173,381 @@ def print_points(state: AutoClickerState) -> None:
     print()
 
 # =============================================================================
-# ITEM-SCAN EDITOR
+# GLOBALER SLOT-EDITOR
+# =============================================================================
+def run_global_slot_editor(state: AutoClickerState) -> None:
+    """Editor für globale Slot-Definitionen."""
+    print("\n" + "=" * 60)
+    print("  SLOT-EDITOR")
+    print("=" * 60)
+
+    if not PILLOW_AVAILABLE:
+        print("\n[FEHLER] Pillow nicht installiert!")
+        return
+
+    # Aktuelle Slots anzeigen
+    with state.lock:
+        slots = dict(state.global_slots)
+
+    if slots:
+        print(f"\nVorhandene Slots ({len(slots)}):")
+        for i, (name, slot) in enumerate(slots.items()):
+            print(f"  {i+1}. {slot}")
+
+    print("\n" + "-" * 60)
+    print("Befehle:")
+    print("  add              - Neuen Slot hinzufügen")
+    print("  edit <Nr>        - Slot bearbeiten")
+    print("  del <Nr>         - Slot löschen")
+    print("  show             - Alle Slots anzeigen")
+    print("  fertig / abbruch")
+    print("-" * 60)
+
+    while True:
+        try:
+            user_input = input("[Slots] > ").strip().lower()
+
+            if user_input == "fertig" or user_input == "abbruch":
+                save_global_slots(state)
+                return
+            elif user_input == "":
+                continue
+            elif user_input == "show":
+                with state.lock:
+                    if state.global_slots:
+                        print("\nSlots:")
+                        for i, (name, slot) in enumerate(state.global_slots.items()):
+                            print(f"  {i+1}. {slot}")
+                    else:
+                        print("  (Keine Slots)")
+                continue
+
+            elif user_input == "add":
+                slot_num = len(state.global_slots) + 1
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
+                if slot_name.lower() == "abbruch":
+                    print("  → Slot-Erstellung abgebrochen")
+                    continue
+                if not slot_name:
+                    slot_name = f"Slot {slot_num}"
+
+                # Prüfen ob Name schon existiert
+                with state.lock:
+                    if slot_name in state.global_slots:
+                        print(f"  → Slot '{slot_name}' existiert bereits!")
+                        continue
+
+                print(f"\n  --- Scan-Region für '{slot_name}' ---")
+                print("  Wähle den Bereich wo das Item erscheint:")
+                scan_region = select_region()
+                if not scan_region:
+                    print("  → Keine Region ausgewählt")
+                    continue
+
+                print(f"\n  --- Klick-Position für '{slot_name}' ---")
+                print("  Maus auf die Klick-Position bewegen, ENTER drücken:")
+                input()
+                click_pos = get_cursor_position()
+                print(f"  → Klick-Position: {click_pos}")
+
+                print("\n  Hintergrundfarbe aufnehmen? (j/n, Enter = n):")
+                slot_color = None
+                if input("  > ").strip().lower() == "j":
+                    print("  Maus auf den leeren Slot-Hintergrund bewegen, ENTER drücken:")
+                    input()
+                    x, y = get_cursor_position()
+                    slot_color = get_pixel_color(x, y)
+                    if slot_color:
+                        slot_color = (slot_color[0] // 5 * 5, slot_color[1] // 5 * 5, slot_color[2] // 5 * 5)
+                        color_name = get_color_name(slot_color)
+                        print(f"  → Hintergrund: RGB{slot_color} ({color_name})")
+
+                slot = ItemSlot(slot_name, scan_region, click_pos, slot_color)
+                with state.lock:
+                    state.global_slots[slot_name] = slot
+                print(f"  ✓ Slot '{slot_name}' hinzugefügt!")
+                continue
+
+            elif user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    with state.lock:
+                        slot_names = list(state.global_slots.keys())
+                        if 1 <= del_num <= len(slot_names):
+                            name = slot_names[del_num - 1]
+                            del state.global_slots[name]
+                            print(f"  ✓ Slot '{name}' gelöscht!")
+                        else:
+                            print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_names)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
+                continue
+
+            elif user_input.startswith("edit "):
+                try:
+                    edit_num = int(user_input[5:])
+                    with state.lock:
+                        slot_names = list(state.global_slots.keys())
+                        if 1 <= edit_num <= len(slot_names):
+                            name = slot_names[edit_num - 1]
+                            slot = state.global_slots[name]
+                            print(f"\n  Bearbeite '{name}':")
+                            print("  Scan-Region neu aufnehmen? (j/n):")
+                            if input("  > ").strip().lower() == "j":
+                                new_region = select_region()
+                                if new_region:
+                                    slot.scan_region = new_region
+                            print("  Klick-Position neu aufnehmen? (j/n):")
+                            if input("  > ").strip().lower() == "j":
+                                print("  Maus positionieren, ENTER drücken:")
+                                input()
+                                slot.click_pos = get_cursor_position()
+                            print("  Hintergrundfarbe neu aufnehmen? (j/n):")
+                            if input("  > ").strip().lower() == "j":
+                                print("  Maus auf Hintergrund bewegen, ENTER drücken:")
+                                input()
+                                x, y = get_cursor_position()
+                                slot.slot_color = get_pixel_color(x, y)
+                                if slot.slot_color:
+                                    slot.slot_color = (slot.slot_color[0] // 5 * 5, slot.slot_color[1] // 5 * 5, slot.slot_color[2] // 5 * 5)
+                            print(f"  ✓ Slot aktualisiert!")
+                        else:
+                            print(f"  → Ungültiger Slot!")
+                except ValueError:
+                    print("  → Format: edit <Nr>")
+                continue
+
+            else:
+                print("  → Unbekannter Befehl")
+
+        except (KeyboardInterrupt, EOFError):
+            save_global_slots(state)
+            return
+
+
+# =============================================================================
+# GLOBALER ITEM-EDITOR
+# =============================================================================
+def run_global_item_editor(state: AutoClickerState) -> None:
+    """Editor für globale Item-Definitionen."""
+    print("\n" + "=" * 60)
+    print("  ITEM-EDITOR")
+    print("=" * 60)
+
+    if not PILLOW_AVAILABLE:
+        print("\n[FEHLER] Pillow nicht installiert!")
+        return
+
+    # Aktuelle Items anzeigen
+    with state.lock:
+        items = dict(state.global_items)
+
+    if items:
+        print(f"\nVorhandene Items ({len(items)}):")
+        for i, (name, item) in enumerate(items.items()):
+            print(f"  {i+1}. {item}")
+
+    print("\n" + "-" * 60)
+    print("Befehle:")
+    print("  add              - Neues Item hinzufügen")
+    print("  edit <Nr>        - Item bearbeiten")
+    print("  del <Nr>         - Item löschen")
+    print("  show             - Alle Items anzeigen")
+    print("  fertig / abbruch")
+    print("-" * 60)
+
+    while True:
+        try:
+            user_input = input("[Items] > ").strip().lower()
+
+            if user_input == "fertig" or user_input == "abbruch":
+                save_global_items(state)
+                return
+            elif user_input == "":
+                continue
+            elif user_input == "show":
+                with state.lock:
+                    if state.global_items:
+                        print("\nItems (sortiert nach Priorität):")
+                        sorted_items = sorted(state.global_items.values(), key=lambda x: x.priority)
+                        for i, item in enumerate(sorted_items):
+                            print(f"  {i+1}. {item}")
+                    else:
+                        print("  (Keine Items)")
+                continue
+
+            elif user_input == "add":
+                item_num = len(state.global_items) + 1
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
+                if item_name.lower() == "abbruch":
+                    print("  → Item-Erstellung abgebrochen")
+                    continue
+                if not item_name:
+                    item_name = f"Item {item_num}"
+
+                # Prüfen ob Name schon existiert
+                with state.lock:
+                    if item_name in state.global_items:
+                        print(f"  → Item '{item_name}' existiert bereits!")
+                        continue
+
+                # Priorität
+                priority = item_num
+                try:
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
+                    if prio_input.lower() == "abbruch":
+                        print("  → Item-Erstellung abgebrochen")
+                        continue
+                    if prio_input:
+                        priority = max(1, int(prio_input))
+                except ValueError:
+                    pass
+
+                # Marker-Farben sammeln (immer freier Bereich bei globalem Item)
+                marker_colors = collect_marker_colors_free()
+                if not marker_colors:
+                    print("  → Keine Farben gefunden, Item-Erstellung abgebrochen")
+                    continue
+
+                # Bestätigungs-Punkt abfragen
+                confirm_point = None
+                confirm_delay = 0.5
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja): ").strip()
+                if confirm_input:
+                    try:
+                        confirm_point = int(confirm_input)
+                        if confirm_point < 1:
+                            confirm_point = None
+                        else:
+                            delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                            if delay_input:
+                                try:
+                                    confirm_delay = float(delay_input)
+                                except ValueError:
+                                    pass
+                    except ValueError:
+                        pass
+
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                with state.lock:
+                    state.global_items[item_name] = item
+                confirm_str = f" → Punkt {confirm_point}" if confirm_point else ""
+                print(f"  ✓ Item '{item_name}' hinzugefügt!{confirm_str}")
+                continue
+
+            elif user_input.startswith("del "):
+                try:
+                    del_num = int(user_input[4:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= del_num <= len(item_names):
+                            name = item_names[del_num - 1]
+                            del state.global_items[name]
+                            print(f"  ✓ Item '{name}' gelöscht!")
+                        else:
+                            print(f"  → Ungültiges Item! Verfügbar: 1-{len(item_names)}")
+                except ValueError:
+                    print("  → Format: del <Nr>")
+                continue
+
+            elif user_input.startswith("edit "):
+                try:
+                    edit_num = int(user_input[5:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= edit_num <= len(item_names):
+                            name = item_names[edit_num - 1]
+                            item = state.global_items[name]
+                            print(f"\n  Bearbeite '{name}':")
+
+                            # Priorität
+                            try:
+                                prio_input = input(f"  Priorität (aktuell {item.priority}, Enter=behalten): ").strip()
+                                if prio_input:
+                                    item.priority = max(1, int(prio_input))
+                            except ValueError:
+                                pass
+
+                            # Farben neu sammeln?
+                            if input("  Marker-Farben neu sammeln? (j/n): ").strip().lower() == "j":
+                                new_colors = collect_marker_colors_free()
+                                if new_colors:
+                                    item.marker_colors = new_colors
+
+                            # Bestätigung
+                            current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                            confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
+                            if confirm_input == "0":
+                                item.confirm_point = None
+                            elif confirm_input:
+                                try:
+                                    item.confirm_point = int(confirm_input)
+                                    delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                    if delay_input:
+                                        try:
+                                            item.confirm_delay = float(delay_input)
+                                        except ValueError:
+                                            pass
+                                except ValueError:
+                                    pass
+
+                            print(f"  ✓ Item aktualisiert!")
+                        else:
+                            print(f"  → Ungültiges Item!")
+                except ValueError:
+                    print("  → Format: edit <Nr>")
+                continue
+
+            else:
+                print("  → Unbekannter Befehl")
+
+        except (KeyboardInterrupt, EOFError):
+            save_global_items(state)
+            return
+
+
+# =============================================================================
+# ITEM-SCAN HAUPTMENÜ
+# =============================================================================
+def run_item_scan_menu(state: AutoClickerState) -> None:
+    """Hauptmenü für Slots, Items und Scans."""
+    print("\n" + "=" * 60)
+    print("  ITEM-SCAN SYSTEM")
+    print("=" * 60)
+
+    with state.lock:
+        slot_count = len(state.global_slots)
+        item_count = len(state.global_items)
+        scan_count = len(state.item_scans)
+
+    print(f"\n  [1] Slots bearbeiten     ({slot_count} vorhanden)")
+    print(f"  [2] Items bearbeiten     ({item_count} vorhanden)")
+    print(f"  [3] Scans bearbeiten     ({scan_count} vorhanden)")
+    print("\n  [0] Abbrechen")
+
+    try:
+        choice = input("\n> ").strip()
+        if choice == "1":
+            run_global_slot_editor(state)
+        elif choice == "2":
+            run_global_item_editor(state)
+        elif choice == "3":
+            run_item_scan_editor(state)
+        elif choice == "0" or choice.lower() == "abbruch":
+            return
+        else:
+            print("[FEHLER] Ungültige Auswahl")
+    except (KeyboardInterrupt, EOFError):
+        return
+
+
+# =============================================================================
+# ITEM-SCAN EDITOR (Verknüpfung)
 # =============================================================================
 def run_item_scan_editor(state: AutoClickerState) -> None:
-    """Interaktiver Editor für Item-Scan Konfigurationen."""
+    """Interaktiver Editor für Item-Scan Konfigurationen (verknüpft Slots + Items)."""
     print("\n" + "=" * 60)
-    print("  ITEM-SCAN EDITOR")
+    print("  SCAN-EDITOR (Slots + Items verknüpfen)")
     print("=" * 60)
 
     if not PILLOW_AVAILABLE:
@@ -1174,45 +1623,130 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
 
 
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
-    """Bearbeitet eine Item-Scan Konfiguration."""
+    """Bearbeitet eine Item-Scan Konfiguration (verknüpft globale Slots + Items)."""
+
+    # Prüfe ob globale Slots und Items vorhanden sind
+    with state.lock:
+        available_slots = dict(state.global_slots)
+        available_items = dict(state.global_items)
+
+    if not available_slots:
+        print("\n[FEHLER] Keine globalen Slots vorhanden!")
+        print("         Erstelle zuerst Slots im Slot-Editor (Option 1)")
+        return
+
+    if not available_items:
+        print("\n[FEHLER] Keine globalen Items vorhanden!")
+        print("         Erstelle zuerst Items im Item-Editor (Option 2)")
+        return
 
     if existing:
-        print(f"\n--- Bearbeite Item-Scan: {existing.name} ---")
+        print(f"\n--- Bearbeite Scan: {existing.name} ---")
         scan_name = existing.name
-        slots = list(existing.slots)
-        items = list(existing.items)
+        selected_slot_names = [s.name for s in existing.slots]
+        selected_item_names = [i.name for i in existing.items]
         tolerance = existing.color_tolerance
     else:
-        print("\n--- Neuen Item-Scan erstellen ---")
-        scan_name = input("Name des Item-Scans: ").strip()
+        print("\n--- Neuen Scan erstellen ---")
+        scan_name = input("Name des Scans: ").strip()
         if not scan_name:
-            scan_name = f"ItemScan_{int(time.time())}"
-        slots = []
-        items = []
+            scan_name = f"Scan_{int(time.time())}"
+        selected_slot_names = []
+        selected_item_names = []
         tolerance = 40
 
-    # Schritt 1: Slots definieren
+    # Schritt 1: Slots auswählen
     print("\n" + "=" * 60)
-    print("  SCHRITT 1: SLOTS DEFINIEREN (wo Items erscheinen)")
+    print("  SCHRITT 1: SLOTS AUSWÄHLEN")
     print("=" * 60)
-    slots = edit_item_slots(slots)
+    print("\nVerfügbare Slots:")
+    slot_list = list(available_slots.keys())
+    for i, name in enumerate(slot_list):
+        selected = "✓" if name in selected_slot_names else " "
+        print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    if not slots:
+    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    while True:
+        try:
+            inp = input("[Slots] > ").strip().lower()
+            if inp == "fertig":
+                break
+            elif inp == "all":
+                selected_slot_names = list(slot_list)
+                print(f"  ✓ Alle {len(slot_list)} Slots ausgewählt")
+            elif inp == "clear":
+                selected_slot_names = []
+                print("  ✓ Auswahl gelöscht")
+            elif inp == "show":
+                print(f"\nAusgewählt: {', '.join(selected_slot_names) if selected_slot_names else '(keine)'}")
+            else:
+                try:
+                    num = int(inp)
+                    if 1 <= num <= len(slot_list):
+                        name = slot_list[num - 1]
+                        if name in selected_slot_names:
+                            selected_slot_names.remove(name)
+                            print(f"  - {name} entfernt")
+                        else:
+                            selected_slot_names.append(name)
+                            print(f"  + {name} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(slot_list)}")
+                except ValueError:
+                    print("  → Unbekannter Befehl")
+        except (KeyboardInterrupt, EOFError):
+            return
+
+    if not selected_slot_names:
         print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
         return
 
-    # Schritt 2: Item-Profile definieren (optional)
+    # Schritt 2: Items auswählen
     print("\n" + "=" * 60)
-    print("  SCHRITT 2: ITEM-PROFILE DEFINIEREN (was erkannt wird)")
+    print("  SCHRITT 2: ITEMS AUSWÄHLEN")
     print("=" * 60)
-    print("  (Optional - du kannst Items auch später hinzufügen)")
-    items = edit_item_profiles(items, slots)
+    print("\nVerfügbare Items:")
+    item_list = list(available_items.keys())
+    for i, name in enumerate(item_list):
+        selected = "✓" if name in selected_item_names else " "
+        print(f"  [{selected}] {i+1}. {available_items[name]}")
 
-    if not items:
-        print("\n[INFO] Keine Item-Profile definiert.")
-        save_anyway = input("Trotzdem speichern? (j/n): ").strip().lower()
-        if save_anyway != "j":
-            print("[ABBRUCH] Item-Scan nicht gespeichert.")
+    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    while True:
+        try:
+            inp = input("[Items] > ").strip().lower()
+            if inp == "fertig":
+                break
+            elif inp == "all":
+                selected_item_names = list(item_list)
+                print(f"  ✓ Alle {len(item_list)} Items ausgewählt")
+            elif inp == "clear":
+                selected_item_names = []
+                print("  ✓ Auswahl gelöscht")
+            elif inp == "show":
+                print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
+            else:
+                try:
+                    num = int(inp)
+                    if 1 <= num <= len(item_list):
+                        name = item_list[num - 1]
+                        if name in selected_item_names:
+                            selected_item_names.remove(name)
+                            print(f"  - {name} entfernt")
+                        else:
+                            selected_item_names.append(name)
+                            print(f"  + {name} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(item_list)}")
+                except ValueError:
+                    print("  → Unbekannter Befehl")
+        except (KeyboardInterrupt, EOFError):
+            return
+
+    if not selected_item_names:
+        print("\n[INFO] Keine Items ausgewählt.")
+        if input("Trotzdem speichern? (j/n): ").strip().lower() != "j":
+            print("[ABBRUCH] Scan nicht gespeichert.")
             return
 
     # Schritt 3: Toleranz
@@ -1228,6 +1762,11 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     except ValueError:
         pass
 
+    # Slots und Items aus globalen Definitionen holen
+    with state.lock:
+        slots = [state.global_slots[n] for n in selected_slot_names if n in state.global_slots]
+        items = [state.global_items[n] for n in selected_item_names if n in state.global_items]
+
     # Speichern
     config = ItemScanConfig(
         name=scan_name,
@@ -1241,9 +1780,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
     save_item_scan(config)
 
-    print(f"\n[ERFOLG] Item-Scan '{scan_name}' gespeichert!")
-    print(f"         {len(slots)} Slots, {len(items)} Item-Profile")
-    print(f"         Nutze im Sequenz-Editor: '<Nr> scan {scan_name}'")
+    print(f"\n[ERFOLG] Scan '{scan_name}' gespeichert!")
+    print(f"         {len(slots)} Slots, {len(items)} Items")
+    print(f"         Nutze im Sequenz-Editor: 'scan {scan_name}'")
 
 
 def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
@@ -3013,12 +3552,12 @@ def handle_editor(state: AutoClickerState) -> None:
     run_sequence_editor(state)
 
 def handle_item_scan_editor(state: AutoClickerState) -> None:
-    """Öffnet den Item-Scan Editor."""
+    """Öffnet das Item-Scan Menü (Slots, Items, Scans)."""
     with state.lock:
         if state.is_running:
             print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
             return
-    run_item_scan_editor(state)
+    run_item_scan_menu(state)
 
 def handle_load(state: AutoClickerState) -> None:
     """Lädt eine Sequenz."""
@@ -3319,8 +3858,10 @@ def main() -> int:
     ensure_sequences_dir()
     ensure_item_scans_dir()
 
-    # Gespeicherte Punkte und Item-Scans laden
+    # Gespeicherte Daten laden
     load_points(state)
+    load_global_slots(state)
+    load_global_items(state)
     load_all_item_scans(state)
 
     # Hotkeys registrieren
