@@ -64,7 +64,7 @@ def take_screenshot(region=None):
     img = ImageGrab.grab(bbox=region)
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-def find_slots(image, color_lower, color_upper, min_width=40, min_height=40):
+def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, debug=False):
     """
     Findet Slots basierend auf Rahmenfarbe.
     Returns: Liste von (x, y, w, h) Rechtecken
@@ -75,23 +75,42 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40):
     # Maske für die Rahmenfarbe erstellen
     mask = cv2.inRange(hsv, color_lower, color_upper)
 
-    # Rauschen entfernen
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    # Debug: Originale Maske speichern
+    if debug:
+        cv2.imwrite("debug_mask_original.png", mask)
+        print(f"  [DEBUG] Originale Maske: {np.count_nonzero(mask)} weiße Pixel")
+
+    # Rahmen verdicken (wichtig für dünne Linien!)
+    kernel_dilate = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel_dilate, iterations=2)
+
+    # Löcher füllen
+    kernel_close = np.ones((15, 15), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+
+    # Debug: Nach Verarbeitung
+    if debug:
+        cv2.imwrite("debug_mask_processed.png", mask)
+        print(f"  [DEBUG] Nach Verarbeitung: {np.count_nonzero(mask)} weiße Pixel")
 
     # Konturen finden
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if debug:
+        print(f"  [DEBUG] {len(contours)} Konturen gefunden")
 
     slots = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
 
+        if debug and w > 20 and h > 20:
+            print(f"  [DEBUG] Kontur: ({x},{y}) {w}x{h}")
+
         # Nur Rechtecke mit Mindestgröße
         if w >= min_width and h >= min_height:
             # Prüfe ob es annähernd quadratisch/rechteckig ist
             aspect_ratio = w / h
-            if 0.5 < aspect_ratio < 2.0:
+            if 0.3 < aspect_ratio < 3.0:  # Breiter Bereich für verschiedene Slot-Formen
                 slots.append((x, y, w, h))
 
     # Nach X-Position sortieren (links nach rechts)
@@ -229,7 +248,7 @@ def main():
                 upper = np.array([min(180, h + tol), min(255, s + 60), min(255, v + 60)])
 
                 print(f"\n  Suche mit HSV-Bereich: {list(lower)} - {list(upper)}")
-                best_slots = find_slots(image, lower, upper)
+                best_slots = find_slots(image, lower, upper, debug=True)
                 best_preset = "manuell gescannt"
             else:
                 print("  [FEHLER] Konnte Farbe nicht lesen!")
