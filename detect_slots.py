@@ -183,13 +183,54 @@ def main():
 
     if not best_slots:
         print("\n[WARNUNG] Keine Slots automatisch erkannt!")
-        print("          Versuche manuelle Farbanpassung...")
+        print("\nOptionen:")
+        print("  [1] Rahmenfarbe manuell scannen (empfohlen)")
+        print("  [2] HSV-Werte manuell eingeben")
+        print("  [3] Top-Farben im Bild analysieren")
+        print("  [0] Abbrechen")
 
-        # Zeige häufigste Farben im Bild
-        print("\nMöchtest du eine eigene HSV-Farbe eingeben? (j/n)")
-        if input("> ").strip().lower() == "j":
+        sub_choice = input("\n> ").strip()
+
+        if sub_choice == "1":
+            # Farbe direkt vom Bildschirm scannen
+            print("\nBewege die Maus auf den RAHMEN eines Slots...")
+            print("(Die türkise/farbige Umrandung)")
+            input("ENTER wenn bereit...")
+
+            mx, my = get_cursor_pos()
+
+            # Pixel vom Screenshot holen (relative Koordinate)
+            rel_x = mx - offset_x
+            rel_y = my - offset_y
+
+            if 0 <= rel_x < image.shape[1] and 0 <= rel_y < image.shape[0]:
+                pixel_bgr = image[rel_y, rel_x]
+                pixel_hsv = cv2.cvtColor(np.array([[pixel_bgr]], dtype=np.uint8), cv2.COLOR_BGR2HSV)[0][0]
+
+                print(f"\n  Gescannte Farbe:")
+                print(f"    RGB: ({pixel_bgr[2]}, {pixel_bgr[1]}, {pixel_bgr[0]})")
+                print(f"    HSV: ({pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]})")
+
+                # Toleranz fragen
+                try:
+                    tol = int(input("\n  Toleranz (Standard: 20): ").strip() or "20")
+                except ValueError:
+                    tol = 20
+
+                h, s, v = pixel_hsv
+                lower = np.array([max(0, h - tol), max(0, s - 60), max(0, v - 60)])
+                upper = np.array([min(180, h + tol), min(255, s + 60), min(255, v + 60)])
+
+                print(f"\n  Suche mit HSV-Bereich: {list(lower)} - {list(upper)}")
+                best_slots = find_slots(image, lower, upper)
+                best_preset = "manuell gescannt"
+            else:
+                print("  [FEHLER] Mausposition außerhalb des Screenshot-Bereichs!")
+
+        elif sub_choice == "2":
+            # HSV manuell eingeben
             try:
-                print("HSV-Werte eingeben (z.B. für Türkis: 85, 150, 150)")
+                print("\nHSV-Werte eingeben:")
                 h = int(input("  Hue (0-180): ").strip())
                 s = int(input("  Saturation (0-255): ").strip())
                 v = int(input("  Value (0-255): ").strip())
@@ -199,6 +240,41 @@ def main():
                 upper = np.array([min(180, h + tolerance), min(255, s + 50), min(255, v + 50)])
 
                 best_slots = find_slots(image, lower, upper)
+                best_preset = "manuell HSV"
+            except ValueError:
+                print("  Ungültige Eingabe!")
+
+        elif sub_choice == "3":
+            # Top-Farben analysieren
+            print("\nAnalysiere häufigste Farben im Bild...")
+            hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+            # Farben zählen (gruppiert)
+            color_counts = {}
+            for y in range(0, hsv_image.shape[0], 2):
+                for x in range(0, hsv_image.shape[1], 2):
+                    h, s, v = hsv_image[y, x]
+                    if s > 50 and v > 50:  # Nur gesättigte Farben
+                        key = (h // 5 * 5, s // 20 * 20, v // 20 * 20)
+                        color_counts[key] = color_counts.get(key, 0) + 1
+
+            # Top 10 anzeigen
+            sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            print("\nTop 10 Farben (HSV):")
+            for i, ((h, s, v), count) in enumerate(sorted_colors):
+                print(f"  {i+1}. HSV({h}, {s}, {v}) - {count} Pixel")
+
+            try:
+                choice_num = int(input("\nWelche Farbe verwenden? (1-10): ").strip())
+                if 1 <= choice_num <= len(sorted_colors):
+                    h, s, v = sorted_colors[choice_num - 1][0]
+                    tol = int(input("Toleranz (Standard: 15): ").strip() or "15")
+
+                    lower = np.array([max(0, h - tol), max(0, s - 40), max(0, v - 40)])
+                    upper = np.array([min(180, h + tol), min(255, s + 40), min(255, v + 40)])
+
+                    best_slots = find_slots(image, lower, upper)
+                    best_preset = f"Farbe #{choice_num}"
             except ValueError:
                 print("  Ungültige Eingabe!")
 
