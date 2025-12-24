@@ -8,6 +8,8 @@ Benötigt: pip install opencv-python pillow
 
 import json
 import sys
+import ctypes
+from ctypes import wintypes
 
 try:
     import cv2
@@ -18,9 +20,39 @@ except ImportError:
     print("         pip install opencv-python pillow numpy")
     sys.exit(1)
 
-def take_screenshot():
-    """Macht einen Screenshot des gesamten Bildschirms."""
-    img = ImageGrab.grab()
+# Windows API
+user32 = ctypes.windll.user32
+
+def get_cursor_pos():
+    """Liest die aktuelle Mausposition."""
+    point = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(point))
+    return point.x, point.y
+
+def select_region():
+    """Lässt den User einen Bereich auswählen."""
+    print("\n  Bereich auswählen:")
+    print("  Maus auf OBEN-LINKS bewegen, ENTER drücken...")
+    input()
+    x1, y1 = get_cursor_pos()
+    print(f"  → Ecke 1: ({x1}, {y1})")
+
+    print("  Maus auf UNTEN-RECHTS bewegen, ENTER drücken...")
+    input()
+    x2, y2 = get_cursor_pos()
+    print(f"  → Ecke 2: ({x2}, {y2})")
+
+    # Sicherstellen dass x1 < x2 und y1 < y2
+    if x1 > x2:
+        x1, x2 = x2, x1
+    if y1 > y2:
+        y1, y2 = y2, y1
+
+    return (x1, y1, x2, y2)
+
+def take_screenshot(region=None):
+    """Macht einen Screenshot (optional nur von einem Bereich)."""
+    img = ImageGrab.grab(bbox=region)
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 def find_slots(image, color_lower, color_upper, min_width=40, min_height=40):
@@ -64,18 +96,47 @@ def main():
     print("=" * 60)
 
     print("\nOptionen:")
-    print("  [1] Screenshot machen (Spiel muss sichtbar sein)")
-    print("  [2] Bild-Datei laden")
+    print("  [1] Bereich auswählen (empfohlen)")
+    print("  [2] Ganzer Bildschirm")
+    print("  [3] Bild-Datei laden")
 
     choice = input("\n> ").strip()
 
-    if choice == "2":
+    # Offset für absolute Koordinaten
+    offset_x, offset_y = 0, 0
+    region = None
+
+    if choice == "3":
         filepath = input("Pfad zur Bild-Datei: ").strip().strip('"')
         image = cv2.imread(filepath)
         if image is None:
             print(f"[FEHLER] Konnte '{filepath}' nicht laden!")
             return
         print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
+
+        # Bei Bild-Datei: Nach Offset fragen
+        print("\nWo befindet sich dieser Bereich auf dem Bildschirm?")
+        print("(Für korrekte Klick-Koordinaten)")
+        try:
+            offset_x = int(input("  X-Offset (links): ").strip() or "0")
+            offset_y = int(input("  Y-Offset (oben): ").strip() or "0")
+        except ValueError:
+            pass
+
+    elif choice == "1":
+        print("\nWähle den Bereich mit den Slots aus:")
+        region = select_region()
+        offset_x, offset_y = region[0], region[1]
+
+        print(f"\n[OK] Bereich: ({region[0]}, {region[1]}) - ({region[2]}, {region[3]})")
+        print(f"     Offset für Koordinaten: +{offset_x}, +{offset_y}")
+
+        print("\nMache Screenshot in 2 Sekunden...")
+        import time
+        time.sleep(2)
+        image = take_screenshot(region)
+        print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
+
     else:
         print("\nMache Screenshot in 3 Sekunden...")
         print("Stelle sicher, dass das Spiel sichtbar ist!")
@@ -86,9 +147,9 @@ def main():
         image = take_screenshot()
         print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
 
-        # Screenshot speichern für Debugging
-        cv2.imwrite("screenshot_debug.png", image)
-        print("     (Gespeichert als 'screenshot_debug.png')")
+    # Screenshot speichern für Debugging
+    cv2.imwrite("screenshot_debug.png", image)
+    print("     (Gespeichert als 'screenshot_debug.png')")
 
     # Türkis/Cyan Farbe der Slot-Rahmen (HSV)
     # Türkis ist ca. Hue 80-100 in OpenCV (0-180 Skala)
@@ -170,16 +231,25 @@ def main():
         bg_color = [int(pixel[2]) // 5 * 5, int(pixel[1]) // 5 * 5, int(pixel[0]) // 5 * 5]
         print(f"  → Hintergrund: RGB{tuple(bg_color)}")
 
-    # JSON erstellen
+    # JSON erstellen (mit Offset für absolute Bildschirm-Koordinaten)
     slots_json = {}
+    print(f"\nBerechne absolute Koordinaten (Offset: +{offset_x}, +{offset_y})...")
+
     for i, (x, y, w, h) in enumerate(best_slots):
         name = f"Slot {i + 1}"
+
+        # Absolute Koordinaten = relative + offset
+        abs_x = x + offset_x
+        abs_y = y + offset_y
+
         slots_json[name] = {
             "name": name,
-            "scan_region": [x, y, x + w, y + h],
-            "click_pos": [x + w // 2, y + h // 2],  # Mitte
+            "scan_region": [abs_x, abs_y, abs_x + w, abs_y + h],
+            "click_pos": [abs_x + w // 2, abs_y + h // 2],  # Mitte
             "slot_color": bg_color
         }
+
+        print(f"  {name}: Bildschirm-Position ({abs_x}, {abs_y})")
 
     # Speichern
     with open("slots.json", "w", encoding="utf-8") as f:
