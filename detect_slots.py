@@ -237,102 +237,49 @@ def main():
     if not best_slots:
         print("\n[WARNUNG] Keine Slots automatisch erkannt!")
         print("\nOptionen:")
-        print("  [1] Rahmenfarbe manuell scannen (empfohlen)")
-        print("  [2] HSV-Werte manuell eingeben")
-        print("  [3] Top-Farben im Bild analysieren")
+        print("  [1] Farbe aus BILD samplen (Pixel-Position eingeben)")
+        print("  [2] Top-Farben im Bild analysieren")
+        print("  [3] HSV-Werte manuell eingeben")
         print("  [0] Abbrechen")
 
         sub_choice = input("\n> ").strip()
 
         if sub_choice == "1":
-            # Farbe direkt vom Bildschirm scannen (LIVE, nicht aus altem Screenshot!)
-            print("\nDie Slots haben einen Rand mit 2 Farben (hell + dunkel).")
-            print("Scanne die HELLERE Randfarbe zuerst.\n")
-            print("Bewege die Maus auf den HELLEN RAND eines Slots...")
-            input("ENTER wenn bereit...")
+            # Farbe aus dem geladenen Bild samplen
+            print("\nÖffne 'screenshot_debug.png' in einem Bildbetrachter.")
+            print("Finde die Pixel-Position des TÜRKISEN HINTERGRUNDS eines Slots.")
+            print("(In Paint: Maus auf Türkis bewegen, Position unten ablesen)")
+            print(f"\nBild-Größe: {image.shape[1]} x {image.shape[0]}")
 
-            colors_scanned = []
+            try:
+                px = int(input("\n  X-Position im Bild: ").strip())
+                py = int(input("  Y-Position im Bild: ").strip())
 
-            for color_name in ["HELLE", "DUNKLE"]:
-                mx, my = get_cursor_pos()
-
-                # Farbe direkt vom Bildschirm lesen (Windows API)
-                hdc = user32.GetDC(0)
-                gdi32 = ctypes.windll.gdi32
-                color = gdi32.GetPixel(hdc, mx, my)
-                user32.ReleaseDC(0, hdc)
-
-                if color != -1:
-                    r = color & 0xFF
-                    g = (color >> 8) & 0xFF
-                    b = (color >> 16) & 0xFF
-
-                    # RGB zu HSV konvertieren
+                if 0 <= px < image.shape[1] and 0 <= py < image.shape[0]:
+                    # BGR aus Bild lesen
+                    b, g, r = image[py, px]
                     pixel_bgr = np.array([[[b, g, r]]], dtype=np.uint8)
                     pixel_hsv = cv2.cvtColor(pixel_bgr, cv2.COLOR_BGR2HSV)[0][0]
 
-                    print(f"\n  {color_name} Randfarbe:")
+                    print(f"\n  Farbe bei ({px}, {py}):")
                     print(f"    RGB: ({r}, {g}, {b})")
                     print(f"    HSV: ({pixel_hsv[0]}, {pixel_hsv[1]}, {pixel_hsv[2]})")
-                    colors_scanned.append(pixel_hsv)
+
+                    tol = int(input("\n  Toleranz (Standard: 30): ").strip() or "30")
+
+                    h, s, v = pixel_hsv
+                    lower = np.array([max(0, h - tol), max(0, s - 50), max(0, v - 50)])
+                    upper = np.array([min(180, h + tol), min(255, s + 50), min(255, v + 50)])
+
+                    print(f"\n  Suche mit HSV-Bereich: {list(lower)} - {list(upper)}")
+                    best_slots = find_slots(image, lower, upper, debug=True)
+                    best_preset = "aus Bild gesampelt"
                 else:
-                    print(f"  [FEHLER] Konnte {color_name} Farbe nicht lesen!")
-
-                if color_name == "HELLE":
-                    print("\nJetzt die DUNKLE Randfarbe scannen...")
-                    print("Bewege die Maus auf den DUNKLEN RAND...")
-                    input("ENTER wenn bereit...")
-
-            if len(colors_scanned) >= 1:
-                # Toleranz fragen
-                try:
-                    tol = int(input("\n  Toleranz (Standard: 25): ").strip() or "25")
-                except ValueError:
-                    tol = 25
-
-                # Kombinierte Maske aus beiden Farben
-                if len(colors_scanned) == 2:
-                    # HSV-Bereich der beide Farben abdeckt
-                    h1, s1, v1 = colors_scanned[0]
-                    h2, s2, v2 = colors_scanned[1]
-
-                    h_min = min(h1, h2)
-                    h_max = max(h1, h2)
-                    s_min = min(s1, s2)
-                    s_max = max(s1, s2)
-                    v_min = min(v1, v2)
-                    v_max = max(v1, v2)
-
-                    lower = np.array([max(0, h_min - tol), max(0, s_min - 40), max(0, v_min - 40)])
-                    upper = np.array([min(180, h_max + tol), min(255, s_max + 40), min(255, v_max + 40)])
-                    print(f"\n  Kombinierter HSV-Bereich: {list(lower)} - {list(upper)}")
-                else:
-                    h, s, v = colors_scanned[0]
-                    lower = np.array([max(0, h - tol), max(0, s - 60), max(0, v - 60)])
-                    upper = np.array([min(180, h + tol), min(255, s + 60), min(255, v + 60)])
-
-                print(f"\n  Suche mit HSV-Bereich: {list(lower)} - {list(upper)}")
-                best_slots = find_slots(image, lower, upper, debug=True)
-                best_preset = "manuell gescannt"
+                    print("  [FEHLER] Position außerhalb des Bildes!")
+            except ValueError:
+                print("  [FEHLER] Ungültige Eingabe!")
 
         elif sub_choice == "2":
-            # HSV manuell eingeben
-            try:
-                print("\nHSV-Werte eingeben:")
-                h = int(input("  Hue (0-180): ").strip())
-                s = int(input("  Saturation (0-255): ").strip())
-                v = int(input("  Value (0-255): ").strip())
-                tolerance = int(input("  Toleranz (Standard: 15): ").strip() or "15")
-
-                lower = np.array([max(0, h - tolerance), max(0, s - 50), max(0, v - 50)])
-                upper = np.array([min(180, h + tolerance), min(255, s + 50), min(255, v + 50)])
-
-                best_slots = find_slots(image, lower, upper)
-                best_preset = "manuell HSV"
-            except ValueError:
-                print("  Ungültige Eingabe!")
-
-        elif sub_choice == "3":
             # Top-Farben analysieren
             print("\nAnalysiere häufigste Farben im Bild...")
             hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -363,6 +310,23 @@ def main():
 
                     best_slots = find_slots(image, lower, upper)
                     best_preset = f"Farbe #{choice_num}"
+            except ValueError:
+                print("  Ungültige Eingabe!")
+
+        elif sub_choice == "3":
+            # HSV manuell eingeben
+            try:
+                print("\nHSV-Werte eingeben:")
+                h = int(input("  Hue (0-180): ").strip())
+                s = int(input("  Saturation (0-255): ").strip())
+                v = int(input("  Value (0-255): ").strip())
+                tolerance = int(input("  Toleranz (Standard: 15): ").strip() or "15")
+
+                lower = np.array([max(0, h - tolerance), max(0, s - 50), max(0, v - 50)])
+                upper = np.array([min(180, h + tolerance), min(255, s + 50), min(255, v + 50)])
+
+                best_slots = find_slots(image, lower, upper, debug=True)
+                best_preset = "manuell HSV"
             except ValueError:
                 print("  Ungültige Eingabe!")
 
