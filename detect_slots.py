@@ -31,6 +31,7 @@ except ImportError:
 
 # Windows API
 user32 = ctypes.windll.user32
+gdi32 = ctypes.windll.gdi32
 
 def get_cursor_pos():
     """Liest die aktuelle Mausposition."""
@@ -58,6 +59,74 @@ def select_region():
         y1, y2 = y2, y1
 
     return (x1, y1, x2, y2)
+
+def take_screenshot_bitblt(region=None):
+    """
+    Screenshot mit BitBlt (Windows API) - funktioniert besser mit Spielen!
+    Liest direkt vom Bildschirm-DC wie GetPixel.
+    """
+    if region:
+        left, top, right, bottom = region
+        width = right - left
+        height = bottom - top
+    else:
+        left, top = 0, 0
+        width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+        height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+
+    # Device Contexts erstellen
+    hwnd = user32.GetDesktopWindow()
+    hwndDC = user32.GetWindowDC(hwnd)
+
+    # Kompatiblen Memory DC erstellen
+    memDC = gdi32.CreateCompatibleDC(hwndDC)
+
+    # Bitmap erstellen
+    bmp = gdi32.CreateCompatibleBitmap(hwndDC, width, height)
+    old_bmp = gdi32.SelectObject(memDC, bmp)
+
+    # BitBlt - kopiert vom Bildschirm in den Memory DC
+    gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)  # SRCCOPY
+
+    # Bitmap-Daten auslesen
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ('biSize', ctypes.c_uint32),
+            ('biWidth', ctypes.c_int32),
+            ('biHeight', ctypes.c_int32),
+            ('biPlanes', ctypes.c_uint16),
+            ('biBitCount', ctypes.c_uint16),
+            ('biCompression', ctypes.c_uint32),
+            ('biSizeImage', ctypes.c_uint32),
+            ('biXPelsPerMeter', ctypes.c_int32),
+            ('biYPelsPerMeter', ctypes.c_int32),
+            ('biClrUsed', ctypes.c_uint32),
+            ('biClrImportant', ctypes.c_uint32),
+        ]
+
+    bi = BITMAPINFOHEADER()
+    bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+    bi.biWidth = width
+    bi.biHeight = -height  # Negativ = top-down
+    bi.biPlanes = 1
+    bi.biBitCount = 32
+    bi.biCompression = 0  # BI_RGB
+
+    # Buffer für Bilddaten
+    buffer_size = width * height * 4
+    buffer = (ctypes.c_char * buffer_size)()
+
+    gdi32.GetDIBits(memDC, bmp, 0, height, buffer, ctypes.byref(bi), 0)
+
+    # Aufräumen
+    gdi32.SelectObject(memDC, old_bmp)
+    gdi32.DeleteObject(bmp)
+    gdi32.DeleteDC(memDC)
+    user32.ReleaseDC(hwnd, hwndDC)
+
+    # In numpy array konvertieren (BGRA -> BGR)
+    img = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
+    return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
 def take_screenshot(region=None):
     """Macht einen Screenshot (optional nur von einem Bereich)."""
@@ -139,8 +208,8 @@ def main():
     print("=" * 60)
 
     print("\nOptionen:")
-    print("  [1] Screenshot aus Zwischenablage (Win+Shift+S) - EMPFOHLEN")
-    print("  [2] Automatischer Screenshot (funktioniert nicht bei allen Spielen)")
+    print("  [1] Bereich markieren + BitBlt (EMPFOHLEN für Spiele)")
+    print("  [2] Screenshot aus Zwischenablage (Win+Shift+S)")
     print("  [3] Bild-Datei laden")
 
     choice = input("\n> ").strip()
@@ -150,7 +219,35 @@ def main():
     region = None
 
     if choice == "1":
-        # Clipboard - einfachste Methode
+        # BitBlt mit Region-Auswahl - beste Methode für Spiele!
+        print("\n" + "=" * 50)
+        print("BEREICH MARKIEREN:")
+        print("  Du markierst jetzt den Bereich mit den Slots.")
+        print("  Die Koordinaten werden automatisch gespeichert!")
+        print("=" * 50)
+
+        region = select_region()
+        offset_x, offset_y = region[0], region[1]
+
+        print(f"\n[OK] Bereich: ({region[0]}, {region[1]}) - ({region[2]}, {region[3]})")
+        print(f"     Koordinaten-Offset: +{offset_x}, +{offset_y}")
+
+        print("\nMache Screenshot mit BitBlt in 2 Sekunden...")
+        print("(Funktioniert auch bei Spielen!)")
+        import time
+        time.sleep(2)
+
+        try:
+            image = take_screenshot_bitblt(region)
+            print(f"[OK] Screenshot (BitBlt): {image.shape[1]}x{image.shape[0]}")
+        except Exception as e:
+            print(f"[WARNUNG] BitBlt fehlgeschlagen: {e}")
+            print("          Versuche ImageGrab...")
+            image = take_screenshot(region)
+            print(f"[OK] Screenshot (ImageGrab): {image.shape[1]}x{image.shape[0]}")
+
+    elif choice == "2":
+        # Clipboard
         print("\n" + "=" * 50)
         print("ANLEITUNG:")
         print("  1. Drücke Win+Shift+S")
@@ -169,18 +266,6 @@ def main():
 
         # Offset wird SPÄTER berechnet (User klickt auf Slot 1)
         offset_x, offset_y = None, None
-
-    elif choice == "2":
-        # Automatischer Screenshot
-        print("\nMache Screenshot in 3 Sekunden...")
-        print("Stelle sicher, dass das Spiel sichtbar ist!")
-        import time
-        for i in range(3, 0, -1):
-            print(f"  {i}...")
-            time.sleep(1)
-        image = take_screenshot()
-        print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
-        # offset bleibt 0,0 da ganzer Bildschirm
 
     elif choice == "3":
         filepath = input("Pfad zur Bild-Datei: ").strip().strip('"')
