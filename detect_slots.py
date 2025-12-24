@@ -75,26 +75,13 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
     # Maske für die Slot-Farbe erstellen
     mask = cv2.inRange(hsv, color_lower, color_upper)
 
-    # Debug: Originale Maske speichern
+    # Debug: Maske speichern
     if debug:
-        cv2.imwrite("debug_mask_original.png", mask)
+        cv2.imwrite("debug_mask.png", mask)
         pixel_count = np.count_nonzero(mask)
-        print(f"  [DEBUG] Originale Maske: {pixel_count} weiße Pixel")
+        print(f"  [DEBUG] Maske: {pixel_count} weiße Pixel")
         if pixel_count == 0:
             print("  [DEBUG] KEINE Pixel gefunden! Farbe stimmt nicht.")
-
-    # Nur kleine Löcher füllen (nicht die ganze Fläche!)
-    kernel_close = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
-
-    # Kleine Störungen/Rauschen entfernen
-    kernel_open = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
-
-    # Debug: Nach Verarbeitung
-    if debug:
-        cv2.imwrite("debug_mask_processed.png", mask)
-        print(f"  [DEBUG] Nach Verarbeitung: {np.count_nonzero(mask)} weiße Pixel")
 
     # Konturen finden
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
