@@ -166,11 +166,32 @@ def main():
         print(f"\n[OK] Bereich: ({region[0]}, {region[1]}) - ({region[2]}, {region[3]})")
         print(f"     Offset für Koordinaten: +{offset_x}, +{offset_y}")
 
-        print("\nMache Screenshot in 2 Sekunden...")
-        import time
-        time.sleep(2)
-        image = take_screenshot(region)
-        print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
+        print("\nScreenshot-Methode:")
+        print("  [1] Automatisch (funktioniert nicht bei allen Spielen)")
+        print("  [2] Manuell (Screenshot selbst machen und Datei laden)")
+        ss_choice = input("\n> ").strip()
+
+        if ss_choice == "2":
+            print("\n" + "=" * 50)
+            print("ANLEITUNG:")
+            print(f"  1. Mache jetzt einen Screenshot von GENAU diesem Bereich:")
+            print(f"     ({region[0]}, {region[1]}) bis ({region[2]}, {region[3]})")
+            print(f"     Größe: {region[2] - region[0]} x {region[3] - region[1]} Pixel")
+            print("  2. Speichere ihn als PNG-Datei")
+            print("  3. Gib den Pfad hier ein")
+            print("=" * 50)
+            filepath = input("\nPfad zur Screenshot-Datei: ").strip().strip('"')
+            image = cv2.imread(filepath)
+            if image is None:
+                print(f"[FEHLER] Konnte '{filepath}' nicht laden!")
+                return
+            print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
+        else:
+            print("\nMache Screenshot in 2 Sekunden...")
+            import time
+            time.sleep(2)
+            image = take_screenshot(region)
+            print(f"[OK] Screenshot: {image.shape[1]}x{image.shape[0]}")
 
     else:
         print("\nMache Screenshot in 3 Sekunden...")
