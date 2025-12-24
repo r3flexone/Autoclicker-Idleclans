@@ -66,14 +66,13 @@ def take_screenshot(region=None):
 
 def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, debug=False):
     """
-    Findet Slots basierend auf Randfarbe (Bevel-Effekt mit hell/dunkel).
-    Die Slots haben Items drin, aber einen sichtbaren Rand.
+    Findet Slots basierend auf Hintergrundfarbe.
     Returns: Liste von (x, y, w, h) Rechtecken
     """
     # In HSV konvertieren für bessere Farberkennung
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Maske für die Rand-Farbe erstellen
+    # Maske für die Slot-Farbe erstellen
     mask = cv2.inRange(hsv, color_lower, color_upper)
 
     # Debug: Originale Maske speichern
@@ -84,17 +83,12 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
         if pixel_count == 0:
             print("  [DEBUG] KEINE Pixel gefunden! Farbe stimmt nicht.")
 
-    # Ränder verbinden und Löcher füllen
-    # 1. Erst die Linien verdicken (für dünne Ränder)
-    kernel_dilate = np.ones((3, 3), np.uint8)
-    mask = cv2.dilate(mask, kernel_dilate, iterations=2)
-
-    # 2. Löcher füllen (die Items in der Mitte)
-    kernel_close = np.ones((25, 25), np.uint8)
+    # Große Löcher füllen (Items, orange Balken etc.)
+    kernel_close = np.ones((50, 50), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
 
-    # 3. Rauschen entfernen
-    kernel_open = np.ones((5, 5), np.uint8)
+    # Kleine Störungen entfernen
+    kernel_open = np.ones((10, 10), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
     # Debug: Nach Verarbeitung
@@ -119,11 +113,36 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
         if w >= min_width and h >= min_height:
             # Prüfe ob es annähernd quadratisch/rechteckig ist
             aspect_ratio = w / h
-            if 0.3 < aspect_ratio < 3.0:
+            if 0.5 < aspect_ratio < 2.0:  # Slots sind meist quadratisch
                 slots.append((x, y, w, h))
 
     # Nach X-Position sortieren (links nach rechts)
     slots.sort(key=lambda s: s[0])
+
+    # Größen normalisieren: Alle Slots sollten gleich groß sein
+    if len(slots) >= 2:
+        # Median-Größe berechnen
+        widths = [s[2] for s in slots]
+        heights = [s[3] for s in slots]
+        median_w = sorted(widths)[len(widths) // 2]
+        median_h = sorted(heights)[len(heights) // 2]
+
+        if debug:
+            print(f"  [DEBUG] Median-Größe: {median_w}x{median_h}")
+
+        # Alle Slots auf Median-Größe anpassen (Position bleibt, Größe wird vereinheitlicht)
+        normalized = []
+        for x, y, w, h in slots:
+            # Nur Slots behalten die ähnlich groß sind (±30%)
+            if 0.7 * median_w <= w <= 1.3 * median_w and 0.7 * median_h <= h <= 1.3 * median_h:
+                # Zentrieren: Position anpassen wenn Größe geändert wird
+                new_x = x + (w - median_w) // 2
+                new_y = y + (h - median_h) // 2
+                normalized.append((new_x, new_y, median_w, median_h))
+            elif debug:
+                print(f"  [DEBUG] Slot ({x},{y}) {w}x{h} entfernt (falsche Größe)")
+
+        slots = normalized
 
     return slots
 
@@ -195,16 +214,15 @@ def main():
     cv2.imwrite("screenshot_debug.png", image)
     print("     (Gespeichert als 'screenshot_debug.png')")
 
-    # Türkis/Cyan Farbe der Slot-Rahmen (HSV)
-    # Türkis ist ca. Hue 80-100 in OpenCV (0-180 Skala)
-    print("\nSuche nach türkisen Slot-Rahmen...")
+    # Türkis/Teal Farbe der Slot-Hintergründe (HSV)
+    print("\nSuche nach türkisen Slot-Hintergründen...")
 
-    # Verschiedene Türkis-Töne probieren
+    # Verschiedene Türkis-Töne probieren (angepasst für Idle Clans)
     color_presets = {
-        "türkis (hell)": (np.array([75, 100, 100]), np.array([95, 255, 255])),
-        "türkis (dunkel)": (np.array([80, 50, 80]), np.array([100, 255, 200])),
-        "cyan": (np.array([85, 100, 100]), np.array([95, 255, 255])),
-        "grün-türkis": (np.array([70, 80, 80]), np.array([90, 255, 255])),
+        "idle-clans-teal": (np.array([75, 80, 100]), np.array([95, 200, 180])),
+        "türkis (breit)": (np.array([70, 60, 80]), np.array([100, 220, 200])),
+        "türkis (hell)": (np.array([75, 100, 120]), np.array([90, 200, 180])),
+        "türkis (dunkel)": (np.array([75, 80, 80]), np.array([95, 200, 150])),
     }
 
     best_slots = []
