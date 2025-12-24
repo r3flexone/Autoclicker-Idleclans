@@ -464,9 +464,9 @@ def main():
     print("\nHintergrundfarbe aus erstem Slot extrahieren? (j/n)")
     if input("> ").strip().lower() == "j":
         x, y, w, h = best_slots[0]
-        # Vom RAND samplen (oben links + 5 Pixel), nicht aus der Mitte wo das Item ist!
-        sample_x = x + 5
-        sample_y = y + 5
+        # Vom RAND samplen (oben links + 10 Pixel wegen abgerundeter Ecken!)
+        sample_x = x + 10
+        sample_y = y + 10
         # Sicherstellen dass wir im Bild bleiben
         sample_x = min(sample_x, image.shape[1] - 1)
         sample_y = min(sample_y, image.shape[0] - 1)
