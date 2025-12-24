@@ -151,14 +151,12 @@ def main():
             return
         print(f"[OK] Bild geladen: {image.shape[1]}x{image.shape[0]}")
 
-        # Bei Bild-Datei: Nach Offset fragen
-        print("\nWo befindet sich dieser Bereich auf dem Bildschirm?")
-        print("(Für korrekte Klick-Koordinaten)")
-        try:
-            offset_x = int(input("  X-Offset (links): ").strip() or "0")
-            offset_y = int(input("  Y-Offset (oben): ").strip() or "0")
-        except ValueError:
-            pass
+        # Bei Bild-Datei: Position auf dem Bildschirm markieren
+        print("\nWo befindet sich die OBERE LINKE ECKE des Screenshots?")
+        print("Bewege die Maus dorthin und drücke ENTER...")
+        input()
+        offset_x, offset_y = get_cursor_pos()
+        print(f"  → Offset: ({offset_x}, {offset_y})")
 
     elif choice == "1":
         print("\nWähle den Bereich mit den Slots aus:")
