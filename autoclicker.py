@@ -1701,6 +1701,9 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 priority = item_num
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    if prio_input.lower() == "abbruch":
+                        print("  → Abgebrochen")
+                        continue
                     if prio_input:
                         priority = max(1, int(prio_input))
                 except ValueError:
