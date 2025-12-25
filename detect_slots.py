@@ -477,23 +477,26 @@ def main():
 
     # JSON erstellen (mit Offset für absolute Bildschirm-Koordinaten)
     slots_json = {}
-    print(f"\nBerechne absolute Koordinaten (Offset: +{offset_x}, +{offset_y})...")
+    inset = 10  # 10 Pixel Inset wegen abgerundeter Ecken
+    print(f"\nBerechne absolute Koordinaten (Offset: +{offset_x}, +{offset_y}, Inset: {inset}px)...")
 
     for i, (x, y, w, h) in enumerate(best_slots):
         name = f"Slot {i + 1}"
 
-        # Absolute Koordinaten = relative + offset
-        abs_x = x + offset_x
-        abs_y = y + offset_y
+        # Absolute Koordinaten = relative + offset + inset
+        abs_x = x + offset_x + inset
+        abs_y = y + offset_y + inset
+        abs_w = w - (2 * inset)  # Breite um 2x inset reduzieren
+        abs_h = h - (2 * inset)  # Höhe um 2x inset reduzieren
 
         slots_json[name] = {
             "name": name,
-            "scan_region": [abs_x, abs_y, abs_x + w, abs_y + h],
-            "click_pos": [abs_x + w // 2, abs_y + h // 2],  # Mitte
+            "scan_region": [abs_x, abs_y, abs_x + abs_w, abs_y + abs_h],
+            "click_pos": [abs_x + abs_w // 2, abs_y + abs_h // 2],  # Mitte
             "slot_color": bg_color
         }
 
-        print(f"  {name}: Bildschirm-Position ({abs_x}, {abs_y})")
+        print(f"  {name}: Bildschirm-Position ({abs_x}, {abs_y}), Größe: {abs_w}x{abs_h}")
 
     # Speichern
     with open("slots.json", "w", encoding="utf-8") as f:
