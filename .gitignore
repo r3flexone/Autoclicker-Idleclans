@@ -39,3 +39,6 @@ Thumbs.db
 
 # User data (sequences and points)
 sequences/
+
+# User config (auto-generated with defaults)
+config.json
