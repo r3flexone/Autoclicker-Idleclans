@@ -1717,12 +1717,37 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                     print("  → Keine Farben gefunden!")
                     continue
 
+                # Bestätigungs-Klick abfragen (z.B. für "Accept" Button)
+                confirm_point = None
+                confirm_delay = 0.5
+                print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
+                print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
+                confirm_input = input("  Punkt-Nr für Bestätigung (Enter = Nein): ").strip()
+                if confirm_input.lower() == "abbruch":
+                    print("  → Abgebrochen")
+                    continue
+                if confirm_input:
+                    try:
+                        confirm_point = int(confirm_input)
+                        if confirm_point < 1:
+                            confirm_point = None
+                        else:
+                            delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
+                            if delay_input:
+                                try:
+                                    confirm_delay = float(delay_input)
+                                except ValueError:
+                                    pass
+                    except ValueError:
+                        print("  → Keine gültige Zahl, keine Bestätigung")
+
                 # Item erstellen und speichern
-                item = ItemProfile(item_name, marker_colors, priority, None, 0.5)
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
 
-                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!")
+                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
+                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}")
                 continue
 
             elif user_input == "del all":
