@@ -3638,9 +3638,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         with state.lock:
                             state.total_clicks += 1
 
-                # Kurze Pause zwischen Klicks
-                if i < len(scan_results) - 1:
-                    time.sleep(0.2)
+                # 1 Sekunde Pause nach jedem Klick
+                time.sleep(1.0)
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
         else:
