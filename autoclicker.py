@@ -77,7 +77,7 @@ DEFAULT_CONFIG = {
     "max_total_clicks": None,           # None = unendlich
     "failsafe_enabled": True,           # Fail-Safe aktivieren
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
-    "pixel_wait_tolerance": 0,          # Toleranz für Pixel-Trigger (0 = exakt)
+    "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Schwankungen erlaubt)
     "pixel_wait_timeout": 300,          # Timeout in Sekunden für Pixel-Trigger (5 Min)
     "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
     "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
