@@ -1426,7 +1426,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                     scan_region = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
                     click_pos = (abs_x + abs_w // 2, abs_y + abs_h // 2)
 
-                    new_slot = Slot(
+                    new_slot = ItemSlot(
                         name=slot_name,
                         scan_region=scan_region,
                         click_pos=click_pos,
