@@ -293,6 +293,7 @@ class SequenceStep:
     # Optional: Warten auf Farbe statt Zeit (VOR dem Klick)
     wait_pixel: Optional[tuple] = None   # (x, y) Position zum Prüfen
     wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
+    wait_until_gone: bool = False        # True = warte bis Farbe WEG ist, False = warte bis Farbe DA ist
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
     item_scan_mode: str = "best"         # "best" = nur bestes Item, "all" = alle Items
@@ -320,14 +321,16 @@ class SequenceStep:
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
-                return f"WARTE auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick){else_str}"
+                gone_str = "WEG ist" if self.wait_until_gone else "DA ist"
+                return f"WARTE bis Farbe {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick){else_str}"
             return f"WARTE {self._delay_str()} (kein Klick)"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
         if self.wait_pixel and self.wait_color:
+            gone_str = "bis Farbe WEG" if self.wait_until_gone else "auf Farbe"
             delay_str = self._delay_str()
             if self.delay_before > 0:
-                return f"warte {delay_str}, dann auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
-            return f"warte auf Farbe bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
+                return f"warte {delay_str}, dann {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
+            return f"warte {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
         elif self.delay_before > 0:
             return f"warte {self._delay_str()} → klicke {pos_str}"
         else:
@@ -507,6 +510,7 @@ def save_data(state: AutoClickerState) -> None:
     def step_to_dict(s: SequenceStep) -> dict:
         return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
                 "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
+                "wait_until_gone": s.wait_until_gone,
                 "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
                 "wait_only": s.wait_only, "delay_max": s.delay_max,
                 "key_press": s.key_press, "else_action": s.else_action,
@@ -573,6 +577,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
                         wait_color=wait_color,
+                        wait_until_gone=s.get("wait_until_gone", False),
                         item_scan=s.get("item_scan"),
                         item_scan_mode=s.get("item_scan_mode", "best"),
                         wait_only=s.get("wait_only", False),
@@ -3090,9 +3095,12 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  <Nr> 0            - Sofort klicken")
     print("  <Nr> pixel        - Warte auf Farbe, dann klicke")
     print("  <Nr> <Zeit> pixel - Erst Xs warten, dann auf Farbe")
+    print("  <Nr> gone         - Warte bis Farbe WEG, dann klicke")
+    print("  <Nr> <Zeit> gone  - Erst Xs warten, dann bis Farbe WEG")
     print("  wait <Zeit>       - Nur warten, KEIN Klick (z.B. 'wait 10')")
     print("  wait <Min>-<Max>  - Zufällig warten (z.B. 'wait 30-45')")
     print("  wait pixel        - Auf Farbe warten, KEIN Klick")
+    print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
     print("  scan <Name>       - Item-Scan: klicke BESTES Item")
@@ -3250,17 +3258,22 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel [else ...]")
                     continue
 
-                if wait_parts[0].lower() == "pixel":
+                if wait_parts[0].lower() == "pixel" or wait_parts[0].lower() == "gone":
                     # Auf Farbe warten ohne Klick
-                    # Format: "wait pixel [else skip|<Nr>|key <Taste>]"
+                    # Format: "wait pixel [else ...]" oder "wait gone [else ...]"
+                    wait_until_gone = wait_parts[0].lower() == "gone"
                     else_data = {}
                     if len(wait_parts) > 1 and wait_parts[1].lower() == "else":
                         else_data = parse_else_condition(wait_parts[2:], state)
                         if not else_data and wait_parts[2:]:
                             continue
 
-                    print("\n  Farb-Trigger einrichten (ohne Klick):")
-                    print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
+                    if wait_until_gone:
+                        print("\n  Farb-Trigger einrichten (warte bis Farbe WEG ist):")
+                        print("  Bewege die Maus zur Position mit der Farbe die VERSCHWINDEN soll")
+                    else:
+                        print("\n  Farb-Trigger einrichten (ohne Klick):")
+                        print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
                     if else_data:
                         print(f"  Bei Timeout: {else_data.get('else_action', 'skip')}")
                     print("  Drücke Enter...")
@@ -3273,10 +3286,14 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         if img:
                             color = img.getpixel((0, 0))[:3]
                             color_name = get_color_name(color)
-                            print(f"  → Warte auf Farbe: RGB{color} ({color_name})")
+                            if wait_until_gone:
+                                print(f"  → Warte bis Farbe WEG: RGB{color} ({color_name})")
+                            else:
+                                print(f"  → Warte auf Farbe: RGB{color} ({color_name})")
                             step = SequenceStep(
-                                x=0, y=0, delay_before=0, name="Wait-Pixel",
+                                x=0, y=0, delay_before=0, name="Wait-Gone" if wait_until_gone else "Wait-Pixel",
                                 wait_pixel=(px, py), wait_color=color, wait_only=True,
+                                wait_until_gone=wait_until_gone,
                                 else_action=else_data.get("else_action"),
                                 else_x=else_data.get("else_x", 0),
                                 else_y=else_data.get("else_y", 0),
@@ -3337,14 +3354,17 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 point_y = point.y
                 point_name = point.name
 
-            # Finde "else" und "pixel" in den parts
+            # Finde "else", "pixel" und "gone" in den parts
             lower_parts = [p.lower() for p in parts]
             else_index = -1
             pixel_index = -1
+            gone_index = -1
             if "else" in lower_parts:
                 else_index = lower_parts.index("else")
             if "pixel" in lower_parts:
                 pixel_index = lower_parts.index("pixel")
+            if "gone" in lower_parts:
+                gone_index = lower_parts.index("gone")
 
             # Parse else condition wenn vorhanden
             else_data = {}
@@ -3355,12 +3375,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 parts = parts[:else_index]  # Remove else from parts
 
             use_pixel = pixel_index > 0 and (else_index < 0 or pixel_index < else_index)
+            use_gone = gone_index > 0 and (else_index < 0 or gone_index < else_index)
             delay = 0
 
-            if use_pixel:
-                # Delay ermitteln falls angegeben (z.B. "1 5 pixel")
+            if use_pixel or use_gone:
+                # Delay ermitteln falls angegeben (z.B. "1 5 pixel" oder "1 5 gone")
                 for i, p in enumerate(parts[1:], 1):
-                    if p.lower() != "pixel":
+                    if p.lower() not in ("pixel", "gone"):
                         try:
                             delay = float(p)
                             if delay < 0:
@@ -3372,9 +3393,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 if delay < 0:
                     continue
 
-                # Pixel-basierte Wartezeit (optional mit Delay davor)
-                print("\n  Farb-Trigger einrichten:")
-                print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
+                # Pixel-basierte oder Gone-Wartezeit (optional mit Delay davor)
+                if use_gone:
+                    print("\n  Farb-Trigger einrichten (warte bis Farbe WEG):")
+                    print("  Bewege die Maus zur Position mit der Farbe die VERSCHWINDEN soll")
+                else:
+                    print("\n  Farb-Trigger einrichten:")
+                    print("  Bewege die Maus zur Position wo die Farbe geprüft werden soll")
                 if delay > 0:
                     print(f"  (Erst {delay}s warten, dann auf Farbe prüfen)")
                 if else_data:
@@ -3390,11 +3415,16 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     if img:
                         color = img.getpixel((0, 0))[:3]
                         color_name = get_color_name(color)
-                        print(f"  → Gespeicherte Farbe: RGB{color} ({color_name})")
-                        print(f"  → Wenn diese Farbe erscheint → klicke auf {point_name}")
+                        if use_gone:
+                            print(f"  → Gespeicherte Farbe: RGB{color} ({color_name})")
+                            print(f"  → Wenn diese Farbe WEG ist → klicke auf {point_name}")
+                        else:
+                            print(f"  → Gespeicherte Farbe: RGB{color} ({color_name})")
+                            print(f"  → Wenn diese Farbe erscheint → klicke auf {point_name}")
                         step = SequenceStep(
                             x=point_x, y=point_y, delay_before=delay, name=point_name,
                             wait_pixel=(px, py), wait_color=color,
+                            wait_until_gone=use_gone,
                             else_action=else_data.get("else_action"),
                             else_x=else_data.get("else_x", 0),
                             else_y=else_data.get("else_y", 0),
@@ -3688,10 +3718,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                                         "Vor Farbprüfung"):
                 return False
 
-        # Warten auf Farbe an Pixel-Position
+        # Warten auf Farbe an Pixel-Position (oder warten bis Farbe WEG ist)
         timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
         start_time = time.time()
         expected_name = get_color_name(step.wait_color)
+        wait_mode = "WEG" if step.wait_until_gone else "DA"
         while not state.stop_event.is_set():
             # Check skip
             if state.skip_event.is_set():
@@ -3714,12 +3745,20 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                     current_color = img.getpixel((0, 0))[:3]
                     dist = color_distance(current_color, step.wait_color)
 
-                    if dist <= PIXEL_WAIT_TOLERANCE:
+                    # Bedingung: Farbe DA (dist <= Toleranz) oder Farbe WEG (dist > Toleranz)
+                    color_matches = dist <= PIXEL_WAIT_TOLERANCE
+                    condition_met = (not color_matches) if step.wait_until_gone else color_matches
+
+                    if condition_met:
                         clear_line()
-                        if step.wait_only:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt!", end="", flush=True)
+                        if step.wait_until_gone:
+                            msg = "Farbe weg!"
                         else:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Farbe erkannt! Klicke...", end="", flush=True)
+                            msg = "Farbe erkannt!"
+                        if step.wait_only:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                        else:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         break
 
                     # Debug-Ausgabe wenn aktiviert
@@ -3727,7 +3766,10 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         current_name = get_color_name(current_color)
                         elapsed = time.time() - start_time
                         clear_line()
-                        print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
+                        if step.wait_until_gone:
+                            print(f"[{phase}] Warte bis WEG... Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
+                        else:
+                            print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
                         if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                             return False
                         continue
@@ -3744,7 +3786,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 return False
 
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
             if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
                 return False
