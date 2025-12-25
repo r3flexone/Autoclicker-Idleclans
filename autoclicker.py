@@ -4048,7 +4048,7 @@ def handle_clear(state: AutoClickerState) -> None:
     print_status(state)
 
 def handle_reset(state: AutoClickerState) -> None:
-    """Löscht ALLES - Punkte UND Sequenzen (Factory Reset)."""
+    """Löscht ALLES - kompletter Factory Reset wie frisch von GitHub."""
     with state.lock:
         if state.is_running:
             print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
@@ -4060,6 +4060,11 @@ def handle_reset(state: AutoClickerState) -> None:
     print("\nFolgendes wird gelöscht:")
     print(f"  • {len(state.points)} Punkt(e)")
     print(f"  • {len(list_available_sequences())} Sequenz-Datei(en)")
+    print(f"  • {len(state.global_slots)} Slot(s)")
+    print(f"  • {len(state.global_items)} Item(s)")
+    print(f"  • {len(state.item_scans)} Item-Scan(s)")
+    print(f"  • Config-Einstellungen")
+    print("\nDas Programm wird danach wie frisch von GitHub sein!")
     print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
 
     try:
@@ -4068,20 +4073,40 @@ def handle_reset(state: AutoClickerState) -> None:
             print("[ABBRUCH] Nichts wurde gelöscht.")
             return
 
-        # Punkte löschen
+        # Speicher löschen
         with state.lock:
             state.points.clear()
             state.sequences.clear()
             state.active_sequence = None
+            state.global_slots.clear()
+            state.global_items.clear()
+            state.item_scans.clear()
 
-        # Alle Dateien im Sequenz-Ordner löschen
-        seq_dir = Path(SEQUENCES_DIR)
-        if seq_dir.exists():
-            shutil.rmtree(seq_dir)
+        # Alle Ordner löschen
+        folders_to_delete = [SEQUENCES_DIR, ITEMS_DIR, SLOTS_DIR, ITEM_SCANS_DIR]
+        for folder in folders_to_delete:
+            folder_path = Path(folder)
+            if folder_path.exists():
+                shutil.rmtree(folder_path)
+                print(f"  ✓ {folder}/ gelöscht")
+
+        # Config löschen
+        config_path = Path(CONFIG_FILE)
+        if config_path.exists():
+            config_path.unlink()
+            print(f"  ✓ {CONFIG_FILE} gelöscht")
+
+        # Ordner neu erstellen
         ensure_sequences_dir()
+        for folder in [ITEMS_DIR, SLOTS_DIR, ITEM_SCANS_DIR]:
+            Path(folder).mkdir(exist_ok=True)
 
-        print("\n[RESET] ✓ Alles wurde gelöscht!")
-        print("[RESET] Das Programm ist jetzt wie neu.")
+        # Config auf Standard zurücksetzen
+        global CONFIG
+        CONFIG = DEFAULT_CONFIG.copy()
+
+        print("\n[RESET] ✓ Factory Reset abgeschlossen!")
+        print("[RESET] Das Programm ist jetzt wie frisch von GitHub.")
         print_status(state)
 
     except (KeyboardInterrupt, EOFError):
