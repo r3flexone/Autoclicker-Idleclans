@@ -82,7 +82,8 @@ DEFAULT_CONFIG = {
     "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
     "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
     "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
-    "min_markers_required": 2,          # Mindestanzahl Marker für Item-Erkennung (2 = sicherer)
+    "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
+    "min_markers_required": 2,          # Nur wenn require_all_markers=False: Mindestanzahl Marker
 }
 
 def load_config() -> dict:
@@ -2753,9 +2754,13 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
                     markers_found += 1
 
             # Item erkannt wenn genug Marker-Farben gefunden
-            min_required = CONFIG.get("min_markers_required", 2)
-            # Aber nicht mehr als das Item hat
-            min_required = min(min_required, len(item.marker_colors))
+            if CONFIG.get("require_all_markers", True):
+                # ALLE Marker müssen gefunden werden
+                min_required = len(item.marker_colors)
+            else:
+                # Nur Mindestanzahl muss gefunden werden
+                min_required = CONFIG.get("min_markers_required", 2)
+                min_required = min(min_required, len(item.marker_colors))
             if markers_found >= min_required:
                 print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
                 if item.priority < slot_best_priority:
