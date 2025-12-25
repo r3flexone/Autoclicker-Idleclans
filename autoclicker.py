@@ -65,6 +65,13 @@ except ImportError:
     print("[WARNUNG] Pillow nicht installiert. Bilderkennung deaktiviert.")
     print("          Installieren mit: pip install pillow")
 
+# NumPy für optimierte Farberkennung (optional)
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
 # =============================================================================
 # KONFIGURATION
 # =============================================================================
@@ -853,6 +860,21 @@ def get_cursor_pos() -> tuple[int, int]:
     user32.GetCursorPos(ctypes.byref(point))
     return point.x, point.y
 
+# Alias für Kompatibilität
+get_cursor_position = get_cursor_pos
+
+def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
+    """Liest die Farbe eines einzelnen Pixels an der angegebenen Position."""
+    if not PILLOW_AVAILABLE:
+        return None
+    try:
+        img = ImageGrab.grab(bbox=(x, y, x + 1, y + 1), all_screens=True)
+        if img:
+            return img.getpixel((0, 0))[:3]
+    except Exception:
+        pass
+    return None
+
 def set_cursor_pos(x: int, y: int) -> bool:
     """Setzt die Mausposition."""
     return bool(user32.SetCursorPos(x, y))
@@ -904,6 +926,31 @@ def clear_line() -> None:
     """Löscht die aktuelle Konsolenzeile."""
     print("\r" + " " * 80 + "\r", end="", flush=True)
 
+def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:
+    """
+    Wartet solange pausiert ist. Gibt False zurück wenn gestoppt wurde.
+
+    Args:
+        state: AutoClickerState
+        message: Nachricht die während der Pause angezeigt wird
+
+    Returns:
+        True wenn fortgesetzt, False wenn gestoppt
+    """
+    while state.pause_event.is_set() and not state.stop_event.is_set():
+        clear_line()
+        print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
+        time.sleep(0.5)
+    return not state.stop_event.is_set()
+
+def require_pillow(func_name: str) -> bool:
+    """Prüft ob Pillow verfügbar ist und gibt Fehlermeldung aus."""
+    if not PILLOW_AVAILABLE:
+        print(f"[FEHLER] {func_name}: Pillow nicht installiert!")
+        print("         Installieren mit: pip install pillow")
+        return False
+    return True
+
 # =============================================================================
 # BILDERKENNUNG (Screen Detection)
 # =============================================================================
@@ -917,6 +964,40 @@ DEBUG_DETECTION = CONFIG["debug_detection"]
 def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
     return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2 + (c1[2]-c2[2])**2) ** 0.5
+
+def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: float) -> bool:
+    """
+    Prüft ob eine Farbe im Bild vorhanden ist (optimiert mit NumPy wenn verfügbar).
+
+    Args:
+        img: PIL Image
+        target_color: RGB-Tuple (r, g, b)
+        tolerance: Maximale Farbdistanz
+
+    Returns:
+        True wenn Farbe gefunden, sonst False
+    """
+    if NUMPY_AVAILABLE:
+        # Schnelle NumPy-Version (ca. 100x schneller)
+        img_array = np.array(img)
+        if len(img_array.shape) == 3 and img_array.shape[2] >= 3:
+            # Nur RGB-Kanäle verwenden
+            rgb = img_array[:, :, :3].astype(np.float32)
+            target = np.array(target_color, dtype=np.float32)
+            # Euklidische Distanz für alle Pixel gleichzeitig berechnen
+            distances = np.sqrt(np.sum((rgb - target) ** 2, axis=2))
+            return bool(np.any(distances <= tolerance))
+        return False
+    else:
+        # Fallback: Langsame PIL-Version (jeden 2. Pixel prüfen)
+        pixels = img.load()
+        width, height = img.size
+        for x in range(0, width, 2):
+            for y in range(0, height, 2):
+                pixel = pixels[x, y][:3]
+                if color_distance(pixel, target_color) <= tolerance:
+                    return True
+        return False
 
 def get_color_name(rgb: tuple) -> str:
     """Gibt einen ungefähren Farbnamen für RGB zurück."""
@@ -1050,8 +1131,9 @@ def take_screenshot_bitblt(region: tuple = None):
         ctypes.windll.gdi32.DeleteDC(memDC)
         ctypes.windll.user32.ReleaseDC(hwnd, hwndDC)
 
-        # In PIL Image konvertieren
-        import numpy as np
+        # In PIL Image konvertieren (benötigt NumPy)
+        if not NUMPY_AVAILABLE:
+            return None
         img_array = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
         # BGRA -> RGB
         img_rgb = img_array[:, :, [2, 1, 0]]
@@ -1375,8 +1457,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
 
                 print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
 
-                # Slots im Bild suchen
-                import numpy as np
+                # Slots im Bild suchen (benötigt NumPy)
+                if not NUMPY_AVAILABLE:
+                    print("  [FEHLER] NumPy nicht installiert! pip install numpy")
+                    continue
                 img_array = np.array(img)
                 # RGB zu BGR für OpenCV
                 img_bgr = img_array[:, :, ::-1].copy()
@@ -2735,30 +2819,16 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         if img is None:
             continue
 
-        pixels = img.load()
-        width, height = img.size
-
         # Prüfe alle Item-Profile für diesen Slot
         slot_best_item = None
         slot_best_priority = 999
 
         for item in config.items:
-            # Prüfe ob Marker-Farben vorhanden sind
+            # Prüfe ob Marker-Farben vorhanden sind (optimiert mit NumPy)
             markers_found = 0
 
             for marker_color in item.marker_colors:
-                color_found = False
-                # Suche nach dieser Marker-Farbe im Bild
-                for x in range(0, width, 2):  # Jeden 2. Pixel für Geschwindigkeit
-                    if color_found:
-                        break
-                    for y in range(0, height, 2):
-                        pixel = pixels[x, y][:3]
-                        if color_distance(pixel, marker_color) <= config.color_tolerance:
-                            color_found = True
-                            break
-
-                if color_found:
+                if find_color_in_image(img, marker_color, config.color_tolerance):
                     markers_found += 1
 
             # Item erkannt wenn genug Marker-Farben gefunden
@@ -3597,12 +3667,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
             return True
 
         # Check pause
-        while state.pause_event.is_set() and not state.stop_event.is_set():
-            clear_line()
-            print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
-            time.sleep(0.5)
-
-        if state.stop_event.is_set():
+        if not wait_while_paused(state, message):
             return False
 
         clear_line()
@@ -3761,10 +3826,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 break
 
             # Check pause
-            while state.pause_event.is_set() and not state.stop_event.is_set():
-                clear_line()
-                print(f"[PAUSE] Warte auf Farbe... | Fortsetzen: CTRL+ALT+G", end="", flush=True)
-                time.sleep(0.5)
+            if not wait_while_paused(state, "Warte auf Farbe..."):
+                break
 
             # Prüfe Farbe
             if PILLOW_AVAILABLE:
