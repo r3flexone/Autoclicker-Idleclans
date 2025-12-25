@@ -1864,7 +1864,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
 
                             # Bestätigung
                             current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
-                            confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
+                            confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-Nr=setzen, 0=entfernen, Enter=behalten): ").strip()
                             if confirm_input == "0":
                                 item.confirm_point = None
                             elif confirm_input:
