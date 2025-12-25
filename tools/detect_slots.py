@@ -18,7 +18,11 @@ except Exception:
 
 import json
 import sys
+import os
 from ctypes import wintypes
+
+# Ausgabe-Ordner = gleicher Ordner wie dieses Skript
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 try:
     import cv2
@@ -32,6 +36,10 @@ except ImportError:
 # Windows API
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
+
+def get_output_path(filename):
+    """Gibt den vollständigen Pfad für Ausgabedateien zurück."""
+    return os.path.join(SCRIPT_DIR, filename)
 
 def get_cursor_pos():
     """Liest die aktuelle Mausposition."""
@@ -146,7 +154,7 @@ def find_slots(image, color_lower, color_upper, min_width=40, min_height=40, deb
 
     # Debug: Maske speichern
     if debug:
-        cv2.imwrite("debug_mask.png", mask)
+        cv2.imwrite(get_output_path("debug_mask.png"), mask)
         pixel_count = np.count_nonzero(mask)
         print(f"  [DEBUG] Maske: {pixel_count} weiße Pixel")
         if pixel_count == 0:
@@ -283,8 +291,8 @@ def main():
         return
 
     # Screenshot speichern für Debugging
-    cv2.imwrite("screenshot_debug.png", image)
-    print("     (Gespeichert als 'screenshot_debug.png')")
+    cv2.imwrite(get_output_path("screenshot_debug.png"), image)
+    print(f"     (Gespeichert in: {get_output_path('screenshot_debug.png')})")
 
     # Türkis/Teal Farbe der Slot-Hintergründe (HSV)
     print("\nSuche nach türkisen Slot-Hintergründen...")
@@ -431,8 +439,8 @@ def main():
         center_y = y + h // 2
         cv2.drawMarker(preview, (center_x, center_y), (0, 0, 255),
                        cv2.MARKER_CROSS, 15, 2)
-    cv2.imwrite("slots_preview.png", preview)
-    print("\n[OK] Vorschau gespeichert: 'slots_preview.png'")
+    cv2.imwrite(get_output_path("slots_preview.png"), preview)
+    print(f"\n[OK] Vorschau gespeichert: {get_output_path('slots_preview.png')}")
     print("     (Grün = erkannt, Gelb = tatsächlicher Bereich, Rot = Klick)")
 
     # Bestätigung
@@ -503,10 +511,12 @@ def main():
         print(f"  {name}: Bildschirm-Position ({abs_x}, {abs_y}), Größe: {abs_w}x{abs_h}")
 
     # Speichern
-    with open("slots.json", "w", encoding="utf-8") as f:
+    output_file = get_output_path("slots.json")
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(slots_json, f, indent=2, ensure_ascii=False)
 
-    print(f"\n[ERFOLG] {len(best_slots)} Slots in 'slots.json' gespeichert!")
+    print(f"\n[ERFOLG] {len(best_slots)} Slots gespeichert in:")
+    print(f"         {output_file}")
 
 if __name__ == "__main__":
     try:
