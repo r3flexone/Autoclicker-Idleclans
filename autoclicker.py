@@ -860,9 +860,6 @@ def get_cursor_pos() -> tuple[int, int]:
     user32.GetCursorPos(ctypes.byref(point))
     return point.x, point.y
 
-# Alias für Kompatibilität
-get_cursor_position = get_cursor_pos
-
 def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
     """Liest die Farbe eines einzelnen Pixels an der angegebenen Position."""
     if not PILLOW_AVAILABLE:
@@ -1596,7 +1593,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 print(f"\n  --- Klick-Position für '{slot_name}' ---")
                 print("  Maus auf die Klick-Position bewegen, ENTER drücken:")
                 input()
-                click_pos = get_cursor_position()
+                click_pos = get_cursor_pos()
                 print(f"  → Klick-Position: {click_pos}")
 
                 print("\n  Hintergrundfarbe aufnehmen? (j/n, Enter = n):")
@@ -1604,7 +1601,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 if input("  > ").strip().lower() == "j":
                     print("  Maus auf den leeren Slot-Hintergrund bewegen, ENTER drücken:")
                     input()
-                    x, y = get_cursor_position()
+                    x, y = get_cursor_pos()
                     slot_color = get_pixel_color(x, y)
                     if slot_color:
                         slot_color = (slot_color[0] // 5 * 5, slot_color[1] // 5 * 5, slot_color[2] // 5 * 5)
@@ -1707,12 +1704,12 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                             if input("  > ").strip().lower() == "j":
                                 print("  Maus positionieren, ENTER drücken:")
                                 input()
-                                slot.click_pos = get_cursor_position()
+                                slot.click_pos = get_cursor_pos()
                             print("  Hintergrundfarbe neu aufnehmen? (j/n):")
                             if input("  > ").strip().lower() == "j":
                                 print("  Maus auf Hintergrund bewegen, ENTER drücken:")
                                 input()
-                                x, y = get_cursor_position()
+                                x, y = get_cursor_pos()
                                 slot.slot_color = get_pixel_color(x, y)
                                 if slot.slot_color:
                                     slot.slot_color = (slot.slot_color[0] // 5 * 5, slot.slot_color[1] // 5 * 5, slot.slot_color[2] // 5 * 5)
@@ -2661,7 +2658,7 @@ def collect_marker_colors_free() -> list[tuple]:
         print("  → Bewege die Maus auf den Hintergrund und drücke ENTER...")
         input()
         try:
-            x, y = get_cursor_position()
+            x, y = get_cursor_pos()
             exclude_color = get_pixel_color(x, y)
             if exclude_color:
                 # Auf 5er-Schritte runden (wie in collect_marker_colors)
