@@ -52,8 +52,9 @@ import os
 import json
 import shutil
 import random
+import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Callable
 from pathlib import Path
 
 # Bilderkennung (optional - nur wenn pillow installiert)
@@ -62,8 +63,8 @@ try:
     PILLOW_AVAILABLE = True
 except ImportError:
     PILLOW_AVAILABLE = False
-    print("[WARNUNG] Pillow nicht installiert. Bilderkennung deaktiviert.")
-    print("          Installieren mit: pip install pillow")
+    logger.warning("Pillow nicht installiert. Bilderkennung deaktiviert.")
+    logger.warning("Installieren mit: pip install pillow")
 
 # NumPy für optimierte Farberkennung (optional)
 try:
@@ -71,6 +72,33 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
+# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
+logger = logging.getLogger("autoclicker")
+logger.setLevel(logging.DEBUG)
+
+# Console Handler mit Format
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
+_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+_console_handler.setFormatter(_console_formatter)
+logger.addHandler(_console_handler)
+
+def set_log_level(level: str) -> None:
+    """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
+    }
+    if level.upper() in levels:
+        _console_handler.setLevel(levels[level.upper()])
+        logger.debug(f"Log-Level auf {level.upper()} gesetzt")
 
 # =============================================================================
 # KONFIGURATION
@@ -646,7 +674,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                 return Sequence(data["name"], [], [], [], 1)
 
     except Exception as e:
-        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
 def list_available_sequences() -> list[tuple[str, Path]]:
@@ -748,7 +776,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
             )
 
     except Exception as e:
-        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
 def list_available_item_scans() -> list[tuple[str, Path]]:
@@ -813,7 +841,7 @@ def load_global_slots(state: AutoClickerState) -> None:
         if state.global_slots:
             print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
     except Exception as e:
-        print(f"[FEHLER] Slots laden: {e}")
+        logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 def save_global_items(state: AutoClickerState) -> None:
     """Speichert alle globalen Items."""
@@ -849,7 +877,7 @@ def load_global_items(state: AutoClickerState) -> None:
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
     except Exception as e:
-        print(f"[FEHLER] Items laden: {e}")
+        logger.error(f"Items laden fehlgeschlagen: {e}")
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -1072,10 +1100,10 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
         else:
             return ImageGrab.grab(all_screens=True)
     except Exception as e:
-        print(f"[FEHLER] Screenshot fehlgeschlagen: {e}")
+        logger.error(f"Screenshot fehlgeschlagen: {e}")
         return None
 
-def take_screenshot_bitblt(region: tuple = None):
+def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
     """
     Screenshot mit BitBlt (Windows API) - funktioniert besser mit Spielen!
     Returns: PIL Image oder None
@@ -1136,7 +1164,7 @@ def take_screenshot_bitblt(region: tuple = None):
         img_rgb = img_array[:, :, [2, 1, 0]]
         return Image.fromarray(img_rgb)
     except Exception as e:
-        print(f"[FEHLER] BitBlt Screenshot fehlgeschlagen: {e}")
+        logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
 
 def analyze_screen_colors(region: tuple = None) -> dict:
@@ -1145,7 +1173,7 @@ def analyze_screen_colors(region: tuple = None) -> dict:
     Nützlich um die richtigen Farben für die Erkennung zu finden.
     """
     if not PILLOW_AVAILABLE:
-        print("[FEHLER] Pillow nicht installiert!")
+        logger.error("Pillow nicht installiert!")
         return {}
 
     img = take_screenshot(region)
@@ -1166,7 +1194,7 @@ def analyze_screen_colors(region: tuple = None) -> dict:
 
     return color_counts
 
-def run_color_analyzer():
+def run_color_analyzer() -> None:
     """Interaktive Farbanalyse für die aktuelle Mausposition oder Region."""
     print("\n" + "=" * 60)
     print("  FARB-ANALYSATOR")
@@ -1217,7 +1245,7 @@ def run_color_analyzer():
     except (KeyboardInterrupt, EOFError):
         print("\n[ABBRUCH]")
 
-def analyze_and_print_colors(region: tuple = None):
+def analyze_and_print_colors(region: tuple = None) -> None:
     """Analysiert und zeigt die häufigsten Farben."""
     print("\n[ANALYSE] Analysiere Farben...")
 
@@ -4496,7 +4524,7 @@ def main() -> int:
     # Hotkeys registrieren
     print("Registriere Hotkeys...")
     if not register_hotkeys():
-        print("[WARNUNG] Nicht alle Hotkeys registriert.")
+        logger.warning("Nicht alle Hotkeys registriert.")
     print()
 
     print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
