@@ -1263,6 +1263,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     print("  add              - Neuen Slot manuell hinzufügen")
     print("  edit <Nr>        - Slot bearbeiten")
     print("  del <Nr>         - Slot löschen")
+    print("  del all          - ALLE Slots löschen")
     print("  show             - Alle Slots anzeigen")
     print("  fertig / abbruch")
     print("-" * 60)
@@ -1485,6 +1486,16 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 with state.lock:
                     state.global_slots[slot_name] = slot
                 print(f"  ✓ Slot '{slot_name}' hinzugefügt!")
+                continue
+
+            elif user_input == "del all":
+                with state.lock:
+                    count = len(state.global_slots)
+                    if count == 0:
+                        print("  → Keine Slots vorhanden")
+                    else:
+                        state.global_slots.clear()
+                        print(f"  ✓ Alle {count} Slots gelöscht!")
                 continue
 
             elif user_input.startswith("del "):
