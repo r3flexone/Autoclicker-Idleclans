@@ -52,8 +52,9 @@ import os
 import json
 import shutil
 import random
+import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Callable
 from pathlib import Path
 
 # Bilderkennung (optional - nur wenn pillow installiert)
@@ -62,8 +63,42 @@ try:
     PILLOW_AVAILABLE = True
 except ImportError:
     PILLOW_AVAILABLE = False
-    print("[WARNUNG] Pillow nicht installiert. Bilderkennung deaktiviert.")
-    print("          Installieren mit: pip install pillow")
+    logger.warning("Pillow nicht installiert. Bilderkennung deaktiviert.")
+    logger.warning("Installieren mit: pip install pillow")
+
+# NumPy für optimierte Farberkennung (optional)
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
+# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
+logger = logging.getLogger("autoclicker")
+logger.setLevel(logging.DEBUG)
+
+# Console Handler mit Format
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
+_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+_console_handler.setFormatter(_console_formatter)
+logger.addHandler(_console_handler)
+
+def set_log_level(level: str) -> None:
+    """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
+    }
+    if level.upper() in levels:
+        _console_handler.setLevel(levels[level.upper()])
+        logger.debug(f"Log-Level auf {level.upper()} gesetzt")
 
 # =============================================================================
 # KONFIGURATION
@@ -639,7 +674,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                 return Sequence(data["name"], [], [], [], 1)
 
     except Exception as e:
-        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
 def list_available_sequences() -> list[tuple[str, Path]]:
@@ -741,7 +776,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
             )
 
     except Exception as e:
-        print(f"[FEHLER] Konnte {filepath} nicht laden: {e}")
+        logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
 def list_available_item_scans() -> list[tuple[str, Path]]:
@@ -806,7 +841,7 @@ def load_global_slots(state: AutoClickerState) -> None:
         if state.global_slots:
             print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
     except Exception as e:
-        print(f"[FEHLER] Slots laden: {e}")
+        logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 def save_global_items(state: AutoClickerState) -> None:
     """Speichert alle globalen Items."""
@@ -842,7 +877,7 @@ def load_global_items(state: AutoClickerState) -> None:
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
     except Exception as e:
-        print(f"[FEHLER] Items laden: {e}")
+        logger.error(f"Items laden fehlgeschlagen: {e}")
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -852,6 +887,18 @@ def get_cursor_pos() -> tuple[int, int]:
     point = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(point))
     return point.x, point.y
+
+def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
+    """Liest die Farbe eines einzelnen Pixels an der angegebenen Position."""
+    if not PILLOW_AVAILABLE:
+        return None
+    try:
+        img = ImageGrab.grab(bbox=(x, y, x + 1, y + 1), all_screens=True)
+        if img:
+            return img.getpixel((0, 0))[:3]
+    except Exception:
+        pass
+    return None
 
 def set_cursor_pos(x: int, y: int) -> bool:
     """Setzt die Mausposition."""
@@ -904,6 +951,31 @@ def clear_line() -> None:
     """Löscht die aktuelle Konsolenzeile."""
     print("\r" + " " * 80 + "\r", end="", flush=True)
 
+def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:
+    """
+    Wartet solange pausiert ist. Gibt False zurück wenn gestoppt wurde.
+
+    Args:
+        state: AutoClickerState
+        message: Nachricht die während der Pause angezeigt wird
+
+    Returns:
+        True wenn fortgesetzt, False wenn gestoppt
+    """
+    while state.pause_event.is_set() and not state.stop_event.is_set():
+        clear_line()
+        print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
+        time.sleep(0.5)
+    return not state.stop_event.is_set()
+
+def require_pillow(func_name: str) -> bool:
+    """Prüft ob Pillow verfügbar ist und gibt Fehlermeldung aus."""
+    if not PILLOW_AVAILABLE:
+        print(f"[FEHLER] {func_name}: Pillow nicht installiert!")
+        print("         Installieren mit: pip install pillow")
+        return False
+    return True
+
 # =============================================================================
 # BILDERKENNUNG (Screen Detection)
 # =============================================================================
@@ -917,6 +989,40 @@ DEBUG_DETECTION = CONFIG["debug_detection"]
 def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
     return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2 + (c1[2]-c2[2])**2) ** 0.5
+
+def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: float) -> bool:
+    """
+    Prüft ob eine Farbe im Bild vorhanden ist (optimiert mit NumPy wenn verfügbar).
+
+    Args:
+        img: PIL Image
+        target_color: RGB-Tuple (r, g, b)
+        tolerance: Maximale Farbdistanz
+
+    Returns:
+        True wenn Farbe gefunden, sonst False
+    """
+    if NUMPY_AVAILABLE:
+        # Schnelle NumPy-Version (ca. 100x schneller)
+        img_array = np.array(img)
+        if len(img_array.shape) == 3 and img_array.shape[2] >= 3:
+            # Nur RGB-Kanäle verwenden
+            rgb = img_array[:, :, :3].astype(np.float32)
+            target = np.array(target_color, dtype=np.float32)
+            # Euklidische Distanz für alle Pixel gleichzeitig berechnen
+            distances = np.sqrt(np.sum((rgb - target) ** 2, axis=2))
+            return bool(np.any(distances <= tolerance))
+        return False
+    else:
+        # Fallback: Langsame PIL-Version (jeden 2. Pixel prüfen)
+        pixels = img.load()
+        width, height = img.size
+        for x in range(0, width, 2):
+            for y in range(0, height, 2):
+                pixel = pixels[x, y][:3]
+                if color_distance(pixel, target_color) <= tolerance:
+                    return True
+        return False
 
 def get_color_name(rgb: tuple) -> str:
     """Gibt einen ungefähren Farbnamen für RGB zurück."""
@@ -994,10 +1100,10 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
         else:
             return ImageGrab.grab(all_screens=True)
     except Exception as e:
-        print(f"[FEHLER] Screenshot fehlgeschlagen: {e}")
+        logger.error(f"Screenshot fehlgeschlagen: {e}")
         return None
 
-def take_screenshot_bitblt(region: tuple = None):
+def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
     """
     Screenshot mit BitBlt (Windows API) - funktioniert besser mit Spielen!
     Returns: PIL Image oder None
@@ -1050,14 +1156,15 @@ def take_screenshot_bitblt(region: tuple = None):
         ctypes.windll.gdi32.DeleteDC(memDC)
         ctypes.windll.user32.ReleaseDC(hwnd, hwndDC)
 
-        # In PIL Image konvertieren
-        import numpy as np
+        # In PIL Image konvertieren (benötigt NumPy)
+        if not NUMPY_AVAILABLE:
+            return None
         img_array = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
         # BGRA -> RGB
         img_rgb = img_array[:, :, [2, 1, 0]]
         return Image.fromarray(img_rgb)
     except Exception as e:
-        print(f"[FEHLER] BitBlt Screenshot fehlgeschlagen: {e}")
+        logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
 
 def analyze_screen_colors(region: tuple = None) -> dict:
@@ -1066,7 +1173,7 @@ def analyze_screen_colors(region: tuple = None) -> dict:
     Nützlich um die richtigen Farben für die Erkennung zu finden.
     """
     if not PILLOW_AVAILABLE:
-        print("[FEHLER] Pillow nicht installiert!")
+        logger.error("Pillow nicht installiert!")
         return {}
 
     img = take_screenshot(region)
@@ -1087,7 +1194,7 @@ def analyze_screen_colors(region: tuple = None) -> dict:
 
     return color_counts
 
-def run_color_analyzer():
+def run_color_analyzer() -> None:
     """Interaktive Farbanalyse für die aktuelle Mausposition oder Region."""
     print("\n" + "=" * 60)
     print("  FARB-ANALYSATOR")
@@ -1138,7 +1245,7 @@ def run_color_analyzer():
     except (KeyboardInterrupt, EOFError):
         print("\n[ABBRUCH]")
 
-def analyze_and_print_colors(region: tuple = None):
+def analyze_and_print_colors(region: tuple = None) -> None:
     """Analysiert und zeigt die häufigsten Farben."""
     print("\n[ANALYSE] Analysiere Farben...")
 
@@ -1375,8 +1482,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
 
                 print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
 
-                # Slots im Bild suchen
-                import numpy as np
+                # Slots im Bild suchen (benötigt NumPy)
+                if not NUMPY_AVAILABLE:
+                    print("  [FEHLER] NumPy nicht installiert! pip install numpy")
+                    continue
                 img_array = np.array(img)
                 # RGB zu BGR für OpenCV
                 img_bgr = img_array[:, :, ::-1].copy()
@@ -1512,7 +1621,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 print(f"\n  --- Klick-Position für '{slot_name}' ---")
                 print("  Maus auf die Klick-Position bewegen, ENTER drücken:")
                 input()
-                click_pos = get_cursor_position()
+                click_pos = get_cursor_pos()
                 print(f"  → Klick-Position: {click_pos}")
 
                 print("\n  Hintergrundfarbe aufnehmen? (j/n, Enter = n):")
@@ -1520,7 +1629,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 if input("  > ").strip().lower() == "j":
                     print("  Maus auf den leeren Slot-Hintergrund bewegen, ENTER drücken:")
                     input()
-                    x, y = get_cursor_position()
+                    x, y = get_cursor_pos()
                     slot_color = get_pixel_color(x, y)
                     if slot_color:
                         slot_color = (slot_color[0] // 5 * 5, slot_color[1] // 5 * 5, slot_color[2] // 5 * 5)
@@ -1623,12 +1732,12 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                             if input("  > ").strip().lower() == "j":
                                 print("  Maus positionieren, ENTER drücken:")
                                 input()
-                                slot.click_pos = get_cursor_position()
+                                slot.click_pos = get_cursor_pos()
                             print("  Hintergrundfarbe neu aufnehmen? (j/n):")
                             if input("  > ").strip().lower() == "j":
                                 print("  Maus auf Hintergrund bewegen, ENTER drücken:")
                                 input()
-                                x, y = get_cursor_position()
+                                x, y = get_cursor_pos()
                                 slot.slot_color = get_pixel_color(x, y)
                                 if slot.slot_color:
                                     slot.slot_color = (slot.slot_color[0] // 5 * 5, slot.slot_color[1] // 5 * 5, slot.slot_color[2] // 5 * 5)
@@ -2577,7 +2686,7 @@ def collect_marker_colors_free() -> list[tuple]:
         print("  → Bewege die Maus auf den Hintergrund und drücke ENTER...")
         input()
         try:
-            x, y = get_cursor_position()
+            x, y = get_cursor_pos()
             exclude_color = get_pixel_color(x, y)
             if exclude_color:
                 # Auf 5er-Schritte runden (wie in collect_marker_colors)
@@ -2735,30 +2844,16 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         if img is None:
             continue
 
-        pixels = img.load()
-        width, height = img.size
-
         # Prüfe alle Item-Profile für diesen Slot
         slot_best_item = None
         slot_best_priority = 999
 
         for item in config.items:
-            # Prüfe ob Marker-Farben vorhanden sind
+            # Prüfe ob Marker-Farben vorhanden sind (optimiert mit NumPy)
             markers_found = 0
 
             for marker_color in item.marker_colors:
-                color_found = False
-                # Suche nach dieser Marker-Farbe im Bild
-                for x in range(0, width, 2):  # Jeden 2. Pixel für Geschwindigkeit
-                    if color_found:
-                        break
-                    for y in range(0, height, 2):
-                        pixel = pixels[x, y][:3]
-                        if color_distance(pixel, marker_color) <= config.color_tolerance:
-                            color_found = True
-                            break
-
-                if color_found:
+                if find_color_in_image(img, marker_color, config.color_tolerance):
                     markers_found += 1
 
             # Item erkannt wenn genug Marker-Farben gefunden
@@ -3597,12 +3692,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
             return True
 
         # Check pause
-        while state.pause_event.is_set() and not state.stop_event.is_set():
-            clear_line()
-            print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
-            time.sleep(0.5)
-
-        if state.stop_event.is_set():
+        if not wait_while_paused(state, message):
             return False
 
         clear_line()
@@ -3761,10 +3851,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 break
 
             # Check pause
-            while state.pause_event.is_set() and not state.stop_event.is_set():
-                clear_line()
-                print(f"[PAUSE] Warte auf Farbe... | Fortsetzen: CTRL+ALT+G", end="", flush=True)
-                time.sleep(0.5)
+            if not wait_while_paused(state, "Warte auf Farbe..."):
+                break
 
             # Prüfe Farbe
             if PILLOW_AVAILABLE:
@@ -4436,7 +4524,7 @@ def main() -> int:
     # Hotkeys registrieren
     print("Registriere Hotkeys...")
     if not register_hotkeys():
-        print("[WARNUNG] Nicht alle Hotkeys registriert.")
+        logger.warning("Nicht alle Hotkeys registriert.")
     print()
 
     print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
