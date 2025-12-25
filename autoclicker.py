@@ -976,6 +976,69 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
         print(f"[FEHLER] Screenshot fehlgeschlagen: {e}")
         return None
 
+def take_screenshot_bitblt(region: tuple = None):
+    """
+    Screenshot mit BitBlt (Windows API) - funktioniert besser mit Spielen!
+    Returns: PIL Image oder None
+    """
+    try:
+        if region:
+            left, top, right, bottom = region
+            width = right - left
+            height = bottom - top
+        else:
+            left, top = 0, 0
+            width = ctypes.windll.user32.GetSystemMetrics(0)
+            height = ctypes.windll.user32.GetSystemMetrics(1)
+
+        # Device Contexts
+        hwnd = ctypes.windll.user32.GetDesktopWindow()
+        hwndDC = ctypes.windll.user32.GetWindowDC(hwnd)
+        memDC = ctypes.windll.gdi32.CreateCompatibleDC(hwndDC)
+        bmp = ctypes.windll.gdi32.CreateCompatibleBitmap(hwndDC, width, height)
+        old_bmp = ctypes.windll.gdi32.SelectObject(memDC, bmp)
+
+        # BitBlt
+        ctypes.windll.gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)
+
+        # Bitmap-Daten auslesen
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ('biSize', ctypes.c_uint32), ('biWidth', ctypes.c_int32),
+                ('biHeight', ctypes.c_int32), ('biPlanes', ctypes.c_uint16),
+                ('biBitCount', ctypes.c_uint16), ('biCompression', ctypes.c_uint32),
+                ('biSizeImage', ctypes.c_uint32), ('biXPelsPerMeter', ctypes.c_int32),
+                ('biYPelsPerMeter', ctypes.c_int32), ('biClrUsed', ctypes.c_uint32),
+                ('biClrImportant', ctypes.c_uint32),
+            ]
+
+        bi = BITMAPINFOHEADER()
+        bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bi.biWidth = width
+        bi.biHeight = -height
+        bi.biPlanes = 1
+        bi.biBitCount = 32
+        bi.biCompression = 0
+
+        buffer = (ctypes.c_char * (width * height * 4))()
+        ctypes.windll.gdi32.GetDIBits(memDC, bmp, 0, height, buffer, ctypes.byref(bi), 0)
+
+        # Aufräumen
+        ctypes.windll.gdi32.SelectObject(memDC, old_bmp)
+        ctypes.windll.gdi32.DeleteObject(bmp)
+        ctypes.windll.gdi32.DeleteDC(memDC)
+        ctypes.windll.user32.ReleaseDC(hwnd, hwndDC)
+
+        # In PIL Image konvertieren
+        import numpy as np
+        img_array = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
+        # BGRA -> RGB
+        img_rgb = img_array[:, :, [2, 1, 0]]
+        return Image.fromarray(img_rgb)
+    except Exception as e:
+        print(f"[FEHLER] BitBlt Screenshot fehlgeschlagen: {e}")
+        return None
+
 def analyze_screen_colors(region: tuple = None) -> dict:
     """
     Analysiert die häufigsten Farben in einem Screenshot.
@@ -1196,7 +1259,8 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add              - Neuen Slot hinzufügen")
+    print("  auto             - AUTOMATISCHE Slot-Erkennung (empfohlen)")
+    print("  add              - Neuen Slot manuell hinzufügen")
     print("  edit <Nr>        - Slot bearbeiten")
     print("  del <Nr>         - Slot löschen")
     print("  show             - Alle Slots anzeigen")
@@ -1220,6 +1284,161 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                             print(f"  {i+1}. {slot}")
                     else:
                         print("  (Keine Slots)")
+                continue
+
+            elif user_input == "auto":
+                # Automatische Slot-Erkennung
+                print("\n" + "=" * 50)
+                print("  AUTOMATISCHE SLOT-ERKENNUNG")
+                print("=" * 50)
+                print("\nMarkiere den Bereich mit den Slots:")
+                print("  1. Maus auf OBEN-LINKS, ENTER")
+                print("  2. Maus auf UNTEN-RECHTS, ENTER")
+
+                region = select_region()
+                if not region:
+                    print("  → Keine Region ausgewählt")
+                    continue
+
+                offset_x, offset_y = region[0], region[1]
+                print(f"\n  Region: {region}")
+                print("  Mache Screenshot mit BitBlt in 2 Sekunden...")
+                time.sleep(2)
+
+                # Screenshot mit BitBlt (funktioniert mit Spielen)
+                img = take_screenshot_bitblt(region)
+                if img is None:
+                    print("  [FEHLER] Screenshot fehlgeschlagen!")
+                    continue
+
+                print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
+
+                # Farbe für Slot-Erkennung scannen
+                print("\n  Bewege Maus auf den TÜRKISEN SLOT-HINTERGRUND...")
+                input("  ENTER wenn bereit...")
+                mx, my = get_cursor_position()
+
+                # Farbe vom Bildschirm lesen
+                hdc = ctypes.windll.user32.GetDC(0)
+                color = ctypes.windll.gdi32.GetPixel(hdc, mx, my)
+                ctypes.windll.user32.ReleaseDC(0, hdc)
+
+                if color == -1:
+                    print("  [FEHLER] Konnte Farbe nicht lesen!")
+                    continue
+
+                r = color & 0xFF
+                g = (color >> 8) & 0xFF
+                b = (color >> 16) & 0xFF
+                print(f"  Farbe: RGB({r}, {g}, {b})")
+
+                # RGB zu HSV
+                r_n, g_n, b_n = r / 255, g / 255, b / 255
+                max_c, min_c = max(r_n, g_n, b_n), min(r_n, g_n, b_n)
+                diff = max_c - min_c
+
+                if diff == 0:
+                    h = 0
+                elif max_c == r_n:
+                    h = (60 * ((g_n - b_n) / diff) + 360) % 360
+                elif max_c == g_n:
+                    h = (60 * ((b_n - r_n) / diff) + 120) % 360
+                else:
+                    h = (60 * ((r_n - g_n) / diff) + 240) % 360
+
+                s = 0 if max_c == 0 else (diff / max_c) * 255
+                v = max_c * 255
+                h = h / 2  # OpenCV Hue: 0-180
+
+                print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
+
+                # Slots im Bild suchen
+                import numpy as np
+                img_array = np.array(img)
+                # RGB zu BGR für OpenCV
+                img_bgr = img_array[:, :, ::-1].copy()
+
+                try:
+                    import cv2
+                except ImportError:
+                    print("  [FEHLER] OpenCV nicht installiert! pip install opencv-python")
+                    continue
+
+                hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+                tol = 25
+                lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
+                upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
+
+                mask = cv2.inRange(hsv_img, lower, upper)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                # Slots filtern
+                detected_slots = []
+                for contour in contours:
+                    x, y, w, h_box = cv2.boundingRect(contour)
+                    if w >= 40 and h_box >= 40:
+                        aspect = w / h_box
+                        if 0.5 < aspect < 2.0:
+                            detected_slots.append((x, y, w, h_box))
+
+                detected_slots.sort(key=lambda s: (s[1] // 50, s[0]))  # Zeile, dann X
+
+                if not detected_slots:
+                    print("\n  [FEHLER] Keine Slots erkannt!")
+                    print("  Versuche es mit einer anderen Farbe.")
+                    continue
+
+                # Größen normalisieren
+                if len(detected_slots) >= 2:
+                    widths = [s[2] for s in detected_slots]
+                    heights = [s[3] for s in detected_slots]
+                    median_w = sorted(widths)[len(widths) // 2]
+                    median_h = sorted(heights)[len(heights) // 2]
+
+                    normalized = []
+                    for x, y, w, h_box in detected_slots:
+                        if 0.7 * median_w <= w <= 1.3 * median_w:
+                            new_x = x + (w - median_w) // 2
+                            new_y = y + (h_box - median_h) // 2
+                            normalized.append((new_x, new_y, median_w, median_h))
+                    detected_slots = normalized
+
+                print(f"\n  {len(detected_slots)} Slots erkannt!")
+
+                # Hintergrundfarbe
+                slot_color = [r, g, b]
+
+                # Slots hinzufügen
+                inset = 10
+                added = 0
+                start_num = len(state.global_slots) + 1
+
+                for i, (x, y, w, h_box) in enumerate(detected_slots):
+                    slot_name = f"Slot {start_num + i}"
+
+                    # Mit Offset und Inset
+                    abs_x = x + offset_x + inset
+                    abs_y = y + offset_y + inset
+                    abs_w = w - (2 * inset)
+                    abs_h = h_box - (2 * inset)
+
+                    scan_region = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
+                    click_pos = (abs_x + abs_w // 2, abs_y + abs_h // 2)
+
+                    new_slot = Slot(
+                        name=slot_name,
+                        scan_region=scan_region,
+                        click_pos=click_pos,
+                        slot_color=slot_color
+                    )
+
+                    with state.lock:
+                        state.global_slots[slot_name] = new_slot
+                    added += 1
+                    print(f"    + {slot_name}: {scan_region}")
+
+                print(f"\n  [OK] {added} Slots hinzugefügt!")
+                save_global_slots(state)
                 continue
 
             elif user_input == "add":
