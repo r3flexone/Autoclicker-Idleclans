@@ -1607,11 +1607,21 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         for i, (name, item) in enumerate(items.items()):
             print(f"  {i+1}. {item}")
 
+    # Verfügbare Slots anzeigen
+    with state.lock:
+        slots = dict(state.global_slots)
+    if slots:
+        print(f"\nVerfügbare Slots für Item-Lernen ({len(slots)}):")
+        for i, (name, slot) in enumerate(slots.items()):
+            print(f"  {i+1}. {slot.name}")
+
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add              - Neues Item hinzufügen")
+    print("  learn <Slot-Nr>  - Item aus Slot lernen (automatisch!)")
+    print("  add              - Neues Item manuell hinzufügen")
     print("  edit <Nr>        - Item bearbeiten")
     print("  del <Nr>         - Item löschen")
+    print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
     print("  fertig / abbruch")
     print("-" * 60)
@@ -1634,6 +1644,96 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                             print(f"  {i+1}. {item}")
                     else:
                         print("  (Keine Items)")
+                continue
+
+            elif user_input.startswith("learn"):
+                # Learn: Item aus Slot lernen
+                with state.lock:
+                    slot_list = list(state.global_slots.values())
+
+                if not slot_list:
+                    print("  → Keine Slots vorhanden! Erst Slots mit 'auto' im Slot-Editor erstellen.")
+                    continue
+
+                # Slot-Nummer aus Befehl oder nachfragen
+                slot_num = None
+                if user_input.startswith("learn "):
+                    try:
+                        slot_num = int(user_input[6:])
+                    except ValueError:
+                        pass
+
+                if slot_num is None:
+                    print(f"\n  Verfügbare Slots (1-{len(slot_list)}):")
+                    for i, slot in enumerate(slot_list):
+                        print(f"    {i+1}. {slot.name}")
+                    try:
+                        slot_input = input("  Slot-Nr wo das Item liegt: ").strip()
+                        if slot_input.lower() == "abbruch":
+                            continue
+                        slot_num = int(slot_input)
+                    except ValueError:
+                        print("  → Ungültige Eingabe!")
+                        continue
+
+                if slot_num < 1 or slot_num > len(slot_list):
+                    print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
+                    continue
+
+                selected_slot = slot_list[slot_num - 1]
+                print(f"\n  Scanne Slot '{selected_slot.name}'...")
+
+                # Item-Name abfragen
+                item_num = len(state.global_items) + 1
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
+                if item_name.lower() == "abbruch":
+                    continue
+                if not item_name:
+                    item_name = f"Item {item_num}"
+
+                # Prüfen ob Name schon existiert
+                with state.lock:
+                    if item_name in state.global_items:
+                        print(f"  → Item '{item_name}' existiert bereits!")
+                        continue
+
+                # Priorität
+                priority = item_num
+                try:
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    if prio_input:
+                        priority = max(1, int(prio_input))
+                except ValueError:
+                    pass
+
+                # Screenshot des Slots machen und Farben extrahieren
+                print(f"  Scanne Farben in Region {selected_slot.scan_region}...")
+                marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
+
+                if not marker_colors:
+                    print("  → Keine Farben gefunden!")
+                    continue
+
+                # Item erstellen und speichern
+                item = ItemProfile(item_name, marker_colors, priority, None, 0.5)
+                with state.lock:
+                    state.global_items[item_name] = item
+
+                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!")
+                continue
+
+            elif user_input == "del all":
+                with state.lock:
+                    count = len(state.global_items)
+                    if count == 0:
+                        print("  → Keine Items vorhanden!")
+                        continue
+                    confirm = input(f"  {count} Item(s) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        state.global_items.clear()
+                        print(f"  ✓ {count} Item(s) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
                 continue
 
             elif user_input == "add":
