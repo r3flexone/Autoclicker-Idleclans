@@ -214,6 +214,7 @@ def main():
     print("=" * 60)
     print("  AUTOMATISCHE SLOT-ERKENNUNG")
     print("=" * 60)
+    print(f"\n  Ausgabe-Ordner: {SCRIPT_DIR}")
 
     print("\nOptionen:")
     print("  [1] Bereich markieren + BitBlt (EMPFOHLEN für Spiele)")
