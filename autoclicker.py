@@ -399,8 +399,14 @@ class Sequence:
 # ITEM-SCAN SYSTEM (für Item-Erkennung und Vergleich)
 # =============================================================================
 ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
-SLOTS_FILE: str = "slots.json"      # Globale Slot-Definitionen
-ITEMS_FILE: str = "items.json"      # Globale Item-Definitionen
+SLOTS_DIR: str = "slots"            # Ordner für Slots und Screenshots
+ITEMS_DIR: str = "items"            # Ordner für Items und Screenshots
+SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
+ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
+
+# Ordner erstellen falls nicht vorhanden
+for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR]:
+    os.makedirs(folder, exist_ok=True)
 
 @dataclass
 class ItemProfile:
@@ -1439,6 +1445,29 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                     print(f"    + {slot_name}: {scan_region}")
 
                 print(f"\n  [OK] {added} Slots hinzugefügt!")
+
+                # Screenshots speichern
+                try:
+                    import cv2 as cv2_save
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+
+                    # Original Screenshot
+                    screenshot_path = os.path.join(SLOTS_DIR, f"screenshot_{timestamp}.png")
+                    img.save(screenshot_path)
+                    print(f"  Screenshot: {screenshot_path}")
+
+                    # Vorschau mit Markierungen erstellen
+                    preview_path = os.path.join(SLOTS_DIR, f"preview_{timestamp}.png")
+                    preview = img_bgr.copy()
+                    for dx, dy, dw, dh in detected_slots:
+                        cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
+                        cv2_save.rectangle(preview, (dx + inset, dy + inset),
+                                          (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
+                    cv2_save.imwrite(preview_path, preview)
+                    print(f"  Vorschau: {preview_path}")
+                except Exception as e:
+                    print(f"  [WARNUNG] Screenshots speichern: {e}")
+
                 save_global_slots(state)
                 continue
 
