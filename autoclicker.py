@@ -1270,6 +1270,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     print("  add              - Neuen Slot manuell hinzufügen")
     print("  edit <Nr>        - Slot bearbeiten")
     print("  del <Nr>         - Slot löschen")
+    print("  del <Nr>-<Nr>    - Bereich löschen (z.B. del 1-7)")
     print("  del all          - ALLE Slots löschen")
     print("  show             - Alle Slots anzeigen")
     print("  fertig / abbruch")
@@ -1529,18 +1530,65 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 continue
 
             elif user_input.startswith("del "):
-                try:
-                    del_num = int(user_input[4:])
-                    with state.lock:
-                        slot_names = list(state.global_slots.keys())
-                        if 1 <= del_num <= len(slot_names):
-                            name = slot_names[del_num - 1]
-                            del state.global_slots[name]
-                            print(f"  ✓ Slot '{name}' gelöscht!")
-                        else:
-                            print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_names)}")
-                except ValueError:
-                    print("  → Format: del <Nr>")
+                del_arg = user_input[4:].strip()
+                with state.lock:
+                    slot_names = list(state.global_slots.keys())
+                    if not slot_names:
+                        print("  → Keine Slots vorhanden!")
+                        continue
+
+                    # Bereichs-Löschen: del 1-7
+                    if "-" in del_arg:
+                        try:
+                            parts = del_arg.split("-")
+                            start = int(parts[0])
+                            end = int(parts[1])
+                            if start > end:
+                                start, end = end, start
+                            if start < 1 or end > len(slot_names):
+                                print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slot_names)}")
+                                continue
+                            # Von hinten löschen damit Indizes stimmen
+                            deleted = []
+                            for i in range(end, start - 1, -1):
+                                name = slot_names[i - 1]
+                                del state.global_slots[name]
+                                deleted.append(name)
+                            print(f"  ✓ {len(deleted)} Slots gelöscht ({start}-{end})")
+                        except (ValueError, IndexError):
+                            print("  → Format: del <start>-<end> (z.B. del 1-7)")
+                            continue
+                    else:
+                        # Einzelnes Löschen
+                        try:
+                            del_num = int(del_arg)
+                            if 1 <= del_num <= len(slot_names):
+                                name = slot_names[del_num - 1]
+                                del state.global_slots[name]
+                                print(f"  ✓ Slot '{name}' gelöscht!")
+                            else:
+                                print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_names)}")
+                                continue
+                        except ValueError:
+                            print("  → Format: del <Nr> oder del <start>-<end>")
+                            continue
+
+                    # Auto-Renummerierung wenn alle Slots "Slot X" heißen
+                    remaining = list(state.global_slots.items())
+                    if remaining:
+                        all_numbered = all(
+                            name.startswith("Slot ") and name[5:].isdigit()
+                            for name, _ in remaining
+                        )
+                        if all_numbered:
+                            # Neu nummerieren
+                            new_slots = {}
+                            for i, (old_name, slot) in enumerate(remaining):
+                                new_name = f"Slot {i + 1}"
+                                slot.name = new_name
+                                new_slots[new_name] = slot
+                            state.global_slots = new_slots
+                            print(f"  → Slots neu nummeriert (1-{len(new_slots)})")
                 continue
 
             elif user_input.startswith("edit "):
