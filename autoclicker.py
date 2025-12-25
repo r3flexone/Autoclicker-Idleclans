@@ -1317,7 +1317,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 # Farbe für Slot-Erkennung scannen
                 print("\n  Bewege Maus auf den TÜRKISEN SLOT-HINTERGRUND...")
                 input("  ENTER wenn bereit...")
-                mx, my = get_cursor_position()
+                mx, my = get_cursor_pos()
 
                 # Farbe vom Bildschirm lesen
                 hdc = ctypes.windll.user32.GetDC(0)
