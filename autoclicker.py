@@ -82,6 +82,7 @@ DEFAULT_CONFIG = {
     "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
     "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
     "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
+    "marker_count": 5,                  # Anzahl Marker-Farben die beim Item-Lernen gespeichert werden
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
     "min_markers_required": 2,          # Nur wenn require_all_markers=False: Mindestanzahl Marker
 }
@@ -2292,8 +2293,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                             pixel = pixels[x, y][:3]
                             rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
                             color_counts[rounded] = color_counts.get(rounded, 0) + 1
-                    sorted_colors = sorted(color_counts.items(), key=lambda c: c[1], reverse=True)[:5]
-                    print(f"  Top 5 Farben in {slot_name}:")
+                    marker_count = CONFIG.get("marker_count", 5)
+                    sorted_colors = sorted(color_counts.items(), key=lambda c: c[1], reverse=True)[:marker_count]
+                    print(f"  Top {marker_count} Farben in {slot_name}:")
                     for i, (color, count) in enumerate(sorted_colors):
                         color_name = get_color_name(color)
                         print(f"    {i+1}. RGB{color} - {color_name} ({count} Pixel)")
@@ -2634,11 +2636,12 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
             color_name = get_color_name(exclude_color)
             print(f"  → Slot-Hintergrund ~RGB{exclude_color} ({color_name}) ausgeschlossen ({total_excluded} Pixel, {len(colors_to_remove)} Farbtöne)")
 
-    # Top 5 häufigste Farben
-    sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    # Top N häufigste Farben (aus Config)
+    marker_count = CONFIG.get("marker_count", 5)
+    sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:marker_count]
     colors = [color for color, count in sorted_colors]
 
-    print(f"\n  Top 5 Farben gefunden:")
+    print(f"\n  Top {marker_count} Farben gefunden:")
     for i, (color, count) in enumerate(sorted_colors):
         color_name = get_color_name(color)
         print(f"    {i+1}. RGB{color} - {color_name} ({count} Pixel)")
