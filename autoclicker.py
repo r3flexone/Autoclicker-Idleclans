@@ -3861,19 +3861,28 @@ def sequence_worker(state: AutoClickerState) -> None:
 # HOTKEY HANDLER
 # =============================================================================
 def handle_record(state: AutoClickerState) -> None:
-    """Nimmt die aktuelle Mausposition auf - sofort ohne Eingabe."""
+    """Nimmt die aktuelle Mausposition auf - mit optionaler Namenseingabe."""
     x, y = get_cursor_pos()
 
     with state.lock:
         count = len(state.points) + 1
-        name = f"P{count}"
+        default_name = f"P{count}"
+
+    print(f"\n[RECORD] Position: ({x}, {y})")
+    try:
+        name_input = input(f"  Name (Enter = '{default_name}'): ").strip()
+        name = name_input if name_input else default_name
+    except (KeyboardInterrupt, EOFError):
+        name = default_name
+
+    with state.lock:
         point = ClickPoint(x, y, name)
         state.points.append(point)
 
     # Auto-speichern
     save_data(state)
 
-    print(f"\n[RECORD] {name} hinzugefügt: ({x}, {y})")
+    print(f"  ✓ '{name}' hinzugefügt!")
     print_status(state)
 
 def handle_undo(state: AutoClickerState) -> None:
