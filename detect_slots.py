@@ -416,9 +416,13 @@ def main():
 
     # Vorschau erstellen
     preview = image.copy()
+    inset = 10  # Gleicher Inset wie beim Speichern
     for i, (x, y, w, h) in enumerate(best_slots):
-        # Rechteck um den Slot
+        # Äußeres Rechteck (erkannte Maske) - grün, 2px
         cv2.rectangle(preview, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        # Inneres Rechteck (tatsächlicher Bereich nach Inset) - gelb, 1px
+        cv2.rectangle(preview, (x + inset, y + inset),
+                      (x + w - inset, y + h - inset), (0, 255, 255), 1)
         # Slot-Nummer
         cv2.putText(preview, str(i + 1), (x + 5, y + 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
@@ -429,7 +433,7 @@ def main():
                        cv2.MARKER_CROSS, 15, 2)
     cv2.imwrite("slots_preview.png", preview)
     print("\n[OK] Vorschau gespeichert: 'slots_preview.png'")
-    print("     (Rotes Kreuz = Klick-Position)")
+    print("     (Grün = erkannt, Gelb = tatsächlicher Bereich, Rot = Klick)")
 
     # Bestätigung
     print("\nSlots übernehmen? (j/n)")
