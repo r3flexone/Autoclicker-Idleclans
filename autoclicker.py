@@ -81,6 +81,7 @@ DEFAULT_CONFIG = {
     "pixel_wait_timeout": 60,           # Timeout in Sekunden für Pixel-Trigger
     "pixel_check_interval": 0.5,        # Wie oft auf Farbe prüfen (in Sekunden, kleiner = öfter)
     "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
+    "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
 }
 
 def load_config() -> dict:
@@ -2702,10 +2703,18 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     # Sammle alle erkannten Items
     found_items = []  # Liste von (slot, item, priority)
 
-    mode_str = "ALLE" if mode == "all" else "BESTES"
-    print(f"\n[SCAN] Scanne {len(config.slots)} Slots für '{scan_name}' (Modus: {mode_str})...")
+    # Scan-Reihenfolge: normal (1,2,3,4) oder reverse (4,3,2,1)
+    slots_to_scan = config.slots
+    if CONFIG.get("scan_reverse", False):
+        slots_to_scan = list(reversed(config.slots))
+        direction = "rückwärts"
+    else:
+        direction = "vorwärts"
 
-    for slot in config.slots:
+    mode_str = "ALLE" if mode == "all" else "BESTES"
+    print(f"\n[SCAN] Scanne {len(slots_to_scan)} Slots für '{scan_name}' ({direction}, Modus: {mode_str})...")
+
+    for slot in slots_to_scan:
         # Screenshot der Scan-Region
         img = take_screenshot(slot.scan_region)
         if img is None:
