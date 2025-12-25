@@ -2530,10 +2530,25 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
             color_counts[rounded] = color_counts.get(rounded, 0) + 1
 
     # Slot-Hintergrundfarbe ausschließen (falls vorhanden)
-    if exclude_color and exclude_color in color_counts:
-        excluded_count = color_counts.pop(exclude_color)
-        color_name = get_color_name(exclude_color)
-        print(f"  → Slot-Hintergrund RGB{exclude_color} ({color_name}) ausgeschlossen ({excluded_count} Pixel)")
+    # Entferne alle Farben die der Slot-Farbe ähnlich sind (mit Toleranz)
+    if exclude_color:
+        # Runde die exclude_color auf 5er-Schritte (wie die anderen Farben)
+        exclude_rounded = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
+
+        # Finde alle ähnlichen Farben (Toleranz 25 = 5 Rundungsschritte)
+        colors_to_remove = []
+        for color in color_counts.keys():
+            if color_distance(color, exclude_rounded) <= 25:
+                colors_to_remove.append(color)
+
+        # Entferne alle ähnlichen Farben
+        total_excluded = 0
+        for color in colors_to_remove:
+            total_excluded += color_counts.pop(color)
+
+        if total_excluded > 0:
+            color_name = get_color_name(exclude_color)
+            print(f"  → Slot-Hintergrund ~RGB{exclude_color} ({color_name}) ausgeschlossen ({total_excluded} Pixel, {len(colors_to_remove)} Farbtöne)")
 
     # Top 5 häufigste Farben
     sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
