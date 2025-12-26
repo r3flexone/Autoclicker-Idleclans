@@ -49,9 +49,7 @@ python autoclicker.py
 | `CTRL+ALT+C` | Alle Punkte löschen |
 | `CTRL+ALT+X` | Factory Reset (ALLES löschen - wie frisch von GitHub) |
 | `CTRL+ALT+E` | Sequenz-Editor öffnen |
-| `CTRL+ALT+O` | Slot-Editor (Slots verwalten, automatisch erkennen) |
-| `CTRL+ALT+I` | Item-Editor (Items erstellen, von Slots lernen) |
-| `CTRL+ALT+N` | Item-Scan Editor (Scans konfigurieren) |
+| `CTRL+ALT+N` | Item-Scan System (Slots, Items, Scans) |
 | `CTRL+ALT+L` | Gespeicherte Sequenz laden |
 | `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
 | `CTRL+ALT+T` | Farb-Analysator |
@@ -61,7 +59,14 @@ python autoclicker.py
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
 | `CTRL+ALT+Q` | Programm beenden |
 
-## Slot-Editor (`CTRL+ALT+O`)
+## Item-Scan System (`CTRL+ALT+N`)
+
+Das Item-Scan System bietet ein Menü mit folgenden Optionen:
+- **[1] Slots bearbeiten** - Bereiche wo Items erscheinen können
+- **[2] Items bearbeiten** - Item-Profile für die Erkennung
+- **[3] Scans bearbeiten** - Slots und Items verknüpfen
+
+### Slot-Editor (Menü → 1)
 
 Verwaltet Bereiche wo Items erscheinen können.
 
@@ -85,7 +90,7 @@ Mit `detect` werden Slots automatisch per Farbe erkannt:
 2. Hintergrundfarbe des Slots angeben
 3. Slots werden automatisch erkannt und nummeriert
 
-## Item-Editor (`CTRL+ALT+I`)
+### Item-Editor (Menü → 2)
 
 Verwaltet Item-Profile für die Erkennung.
 
@@ -200,9 +205,9 @@ STATISTIKEN:
 
 Das Item-Scan System erkennt Items anhand ihrer Marker-Farben:
 
-1. **Slots erstellen** (`CTRL+ALT+O`): Bereiche wo Items erscheinen können
-2. **Items lernen** (`CTRL+ALT+I`): Mit `learn <Nr>` Marker-Farben von Slot scannen
-3. **Scan konfigurieren** (`CTRL+ALT+N`): Slots und Items verknüpfen
+1. **Slots erstellen** (`CTRL+ALT+N` → Menü 1): Bereiche wo Items erscheinen können
+2. **Items lernen** (`CTRL+ALT+N` → Menü 2): Mit `learn <Nr>` Marker-Farben von Slot scannen
+3. **Scan konfigurieren** (`CTRL+ALT+N` → Menü 3): Slots und Items verknüpfen
 4. **In Sequenz nutzen**: `scan <Name>` oder `scan <Name> all`
 
 ### Ablauf

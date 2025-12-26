@@ -3863,8 +3863,19 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                     dist = color_distance(current_color, step.wait_color)
 
                     # Bedingung: Farbe DA (dist <= Toleranz) oder Farbe WEG (dist > Toleranz)
-                    color_matches = dist <= PIXEL_WAIT_TOLERANCE
+                    # Toleranz dynamisch aus Config laden
+                    pixel_tolerance = CONFIG.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
+                    color_matches = dist <= pixel_tolerance
                     condition_met = (not color_matches) if step.wait_until_gone else color_matches
+
+                    # Debug-Ausgabe wenn aktiviert (persistente Ausgabe im Terminal)
+                    if CONFIG.get("debug_detection", False):
+                        current_name = get_color_name(current_color)
+                        elapsed = time.time() - start_time
+                        if step.wait_until_gone:
+                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
+                        else:
+                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
 
                     if condition_met:
                         clear_line()
@@ -3878,16 +3889,10 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                             print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         break
 
-                    # Debug-Ausgabe wenn aktiviert
-                    if DEBUG_DETECTION:
-                        current_name = get_color_name(current_color)
-                        elapsed = time.time() - start_time
-                        clear_line()
-                        if step.wait_until_gone:
-                            print(f"[{phase}] Warte bis WEG... Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
-                        else:
-                            print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
-                        if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
+                    # Wenn Debug aktiv, warte und continue
+                    if CONFIG.get("debug_detection", False):
+                        check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+                        if state.stop_event.wait(check_interval):
                             return False
                         continue
 
@@ -3905,7 +3910,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
-            if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
+            check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+            if state.stop_event.wait(check_interval):
                 return False
 
     elif step.delay_before > 0 or step.delay_max:
@@ -4156,7 +4162,7 @@ def handle_reset(state: AutoClickerState) -> None:
     print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
 
     try:
-        confirm = input("> ").strip()
+        confirm = input("> ").strip().upper()
         if confirm != "JA":
             print("[ABBRUCH] Nichts wurde gelöscht.")
             return
