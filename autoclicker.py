@@ -472,7 +472,7 @@ class Sequence:
 ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
 SLOTS_DIR: str = "slots"            # Ordner für Slots
 ITEMS_DIR: str = "items"            # Ordner für Items
-SCREENSHOTS_DIR: str = "Screenshots" # Ordner für Screenshots
+SCREENSHOTS_DIR: str = os.path.join(ITEMS_DIR, "Screenshots") # Ordner für Screenshots
 SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
 ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
 
