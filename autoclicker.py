@@ -446,13 +446,14 @@ class Sequence:
 # ITEM-SCAN SYSTEM (für Item-Erkennung und Vergleich)
 # =============================================================================
 ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
-SLOTS_DIR: str = "slots"            # Ordner für Slots und Screenshots
-ITEMS_DIR: str = "items"            # Ordner für Items und Screenshots
+SLOTS_DIR: str = "slots"            # Ordner für Slots
+ITEMS_DIR: str = "items"            # Ordner für Items
+SCREENSHOTS_DIR: str = "Screenshots" # Ordner für Screenshots
 SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
 ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
 
 # Ordner erstellen falls nicht vorhanden
-for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR]:
+for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR]:
     os.makedirs(folder, exist_ok=True)
 
 @dataclass
@@ -1651,12 +1652,15 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
         try:
             user_input = input("[Slots] > ").strip().lower()
 
-            if user_input == "fertig" or user_input == "abbruch":
+            if user_input == "fertig":
                 # Speichere mit dem Preset-Namen
                 save_slot_preset(state, preset_name)
                 # Auch als aktive Konfiguration speichern
                 save_global_slots(state)
                 print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
+                return
+            elif user_input == "abbruch":
+                print("\n[ABBRUCH] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -1831,12 +1835,12 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
 
                     # Original Screenshot
-                    screenshot_path = os.path.join(SLOTS_DIR, f"screenshot_{timestamp}.png")
+                    screenshot_path = os.path.join(SCREENSHOTS_DIR, f"screenshot_{timestamp}.png")
                     img.save(screenshot_path)
                     print(f"  Screenshot: {screenshot_path}")
 
                     # Vorschau mit Markierungen, Nummerierung und Klick-Position erstellen
-                    preview_path = os.path.join(SLOTS_DIR, f"preview_{timestamp}.png")
+                    preview_path = os.path.join(SCREENSHOTS_DIR, f"preview_{timestamp}.png")
                     preview = img_bgr.copy()
                     for i, (dx, dy, dw, dh) in enumerate(detected_slots):
                         # Rechtecke zeichnen (grün = erkannter Bereich, gelb = Scan-Bereich mit Inset)
@@ -2161,12 +2165,15 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
         try:
             user_input = input("[Items] > ").strip().lower()
 
-            if user_input == "fertig" or user_input == "abbruch":
+            if user_input == "fertig":
                 # Speichere mit dem Preset-Namen
                 save_item_preset(state, preset_name)
                 # Auch als aktive Konfiguration speichern
                 save_global_items(state)
                 print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
+                return
+            elif user_input == "abbruch":
+                print("\n[ABBRUCH] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -2721,10 +2728,12 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add      - Neuen Slot hinzufügen (Region + Klickpunkt)")
-    print("  del <Nr> - Slot löschen")
-    print("  show     - Alle Slots anzeigen")
-    print("  fertig   - Slots abschließen")
+    print("  add            - Neuen Slot hinzufügen (Region + Klickpunkt)")
+    print("  del <Nr>       - Slot löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-7)")
+    print("  del all        - ALLE Slots löschen")
+    print("  show           - Alle Slots anzeigen")
+    print("  fertig / abbruch")
     print("-" * 60)
 
     while True:
@@ -2734,6 +2743,8 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
             if user_input == "fertig":
                 return slots
+            elif user_input == "abbruch":
+                return slots  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -2819,6 +2830,38 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 print(f"  ✓ {slot_name} hinzugefügt")
                 continue
 
+            elif user_input == "del all":
+                if not slots:
+                    print("  → Keine Slots vorhanden!")
+                    continue
+                confirm = input(f"  {len(slots)} Slot(s) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(slots)
+                    slots.clear()
+                    print(f"  ✓ {count} Slot(s) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-7
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(slots) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slots)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Slot(s) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del slots[start-1:end]
+                        print(f"  ✓ {count} Slot(s) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
+                continue
+
             elif user_input.startswith("del "):
                 try:
                     del_num = int(user_input[4:])
@@ -2853,11 +2896,13 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add       - Neues Item-Profil erstellen")
-    print("  edit <Nr> - Item-Profil bearbeiten")
-    print("  del <Nr>  - Item-Profil löschen")
-    print("  show      - Alle Profile anzeigen")
-    print("  fertig    - Profile abschließen")
+    print("  add            - Neues Item-Profil erstellen")
+    print("  edit <Nr>      - Item-Profil bearbeiten")
+    print("  del <Nr>       - Item-Profil löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-5)")
+    print("  del all        - ALLE Profile löschen")
+    print("  show           - Alle Profile anzeigen")
+    print("  fertig / abbruch")
     print("-" * 60)
 
     while True:
@@ -2869,6 +2914,8 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 # Entferne Farben die bei allen Items gleich sind (Hintergrund)
                 items = remove_common_colors(items)
                 return items
+            elif user_input == "abbruch":
+                return items  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -3017,6 +3064,38 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                         print(f"  → Ungültiges Item! Verfügbar: 1-{len(items)}")
                 except ValueError:
                     print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input == "del all":
+                if not items:
+                    print("  → Keine Items vorhanden!")
+                    continue
+                confirm = input(f"  {len(items)} Item(s) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(items)
+                    items.clear()
+                    print(f"  ✓ {count} Item(s) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-5
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(items) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(items)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Item(s) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del items[start-1:end]
+                        print(f"  ✓ {count} Item(s) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
                 continue
 
             elif user_input.startswith("del "):
@@ -3427,11 +3506,13 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add        - Neue Loop-Phase hinzufügen")
-    print("  edit <Nr>  - Loop-Phase bearbeiten (z.B. 'edit 1')")
-    print("  del <Nr>   - Loop-Phase löschen")
-    print("  show       - Alle Loop-Phasen anzeigen")
-    print("  fertig     - Loop-Phasen abschließen")
+    print("  add            - Neue Loop-Phase hinzufügen")
+    print("  edit <Nr>      - Loop-Phase bearbeiten (z.B. 'edit 1')")
+    print("  del <Nr>       - Loop-Phase löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
+    print("  del all        - ALLE Loop-Phasen löschen")
+    print("  show           - Alle Loop-Phasen anzeigen")
+    print("  fertig / abbruch")
     print("-" * 60)
 
     while True:
@@ -3441,6 +3522,8 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
 
             if user_input == "fertig":
                 return loop_phases
+            elif user_input == "abbruch":
+                return loop_phases  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -3495,6 +3578,38 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                     print("  → Format: edit <Nr>")
                 continue
 
+            elif user_input == "del all":
+                if not loop_phases:
+                    print("  → Keine Loop-Phasen vorhanden!")
+                    continue
+                confirm = input(f"  {len(loop_phases)} Loop-Phase(n) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(loop_phases)
+                    loop_phases.clear()
+                    print(f"  ✓ {count} Loop-Phase(n) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-3
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(loop_phases) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(loop_phases)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Loop-Phase(n) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del loop_phases[start-1:end]
+                        print(f"  ✓ {count} Loop-Phase(n) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
+                continue
+
             elif user_input.startswith("del "):
                 try:
                     del_num = int(user_input[4:])
@@ -3508,7 +3623,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                 continue
 
             else:
-                print("  → Unbekannter Befehl. Nutze: add, edit <Nr>, del <Nr>, show, fertig")
+                print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
             raise
