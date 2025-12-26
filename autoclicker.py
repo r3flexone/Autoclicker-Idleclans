@@ -53,9 +53,25 @@ import json
 import shutil
 import random
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from pathlib import Path
+
+# =============================================================================
+# LOGGING SETUP (muss vor optionalen Imports stehen!)
+# =============================================================================
+# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
+# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
+logger = logging.getLogger("autoclicker")
+logger.setLevel(logging.DEBUG)
+
+# Console Handler mit Format
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
+_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+_console_handler.setFormatter(_console_formatter)
+logger.addHandler(_console_handler)
 
 # Bilderkennung (optional - nur wenn pillow installiert)
 try:
@@ -73,21 +89,6 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
-# =============================================================================
-# LOGGING SETUP
-# =============================================================================
-# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
-# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
-logger = logging.getLogger("autoclicker")
-logger.setLevel(logging.DEBUG)
-
-# Console Handler mit Format
-_console_handler = logging.StreamHandler()
-_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
-_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
-_console_handler.setFormatter(_console_formatter)
-logger.addHandler(_console_handler)
-
 def set_log_level(level: str) -> None:
     """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
     levels = {
@@ -99,6 +100,26 @@ def set_log_level(level: str) -> None:
     if level.upper() in levels:
         _console_handler.setLevel(levels[level.upper()])
         logger.debug(f"Log-Level auf {level.upper()} gesetzt")
+
+
+def sanitize_filename(name: str) -> str:
+    """Bereinigt einen Namen für sichere Dateinamen.
+
+    Entfernt/ersetzt unsichere Zeichen wie ../, \\, :, *, ?, ", <, >, |
+    """
+    # Entferne Path-Traversal-Versuche
+    name = name.replace("..", "").replace("/", "_").replace("\\", "_")
+    # Entferne Windows-unsichere Zeichen
+    name = re.sub(r'[<>:"|?*]', '', name)
+    # Leerzeichen zu Unterstrichen
+    name = name.replace(' ', '_')
+    # Nur alphanumerische Zeichen, Unterstriche und Bindestriche erlauben
+    name = re.sub(r'[^\w\-]', '', name)
+    # Leere Namen verhindern
+    if not name:
+        name = "unnamed"
+    return name.lower()
+
 
 # =============================================================================
 # KONFIGURATION
@@ -121,6 +142,9 @@ DEFAULT_CONFIG = {
     "marker_count": 5,                  # Anzahl Marker-Farben die beim Item-Lernen gespeichert werden
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
     "min_markers_required": 2,          # Nur wenn require_all_markers=False: Mindestanzahl Marker
+    "slot_hsv_tolerance": 25,           # HSV-Toleranz für automatische Slot-Erkennung
+    "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand (für genauere Klick-Position)
+    "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen
 }
 
 def load_config() -> dict:
@@ -575,7 +599,7 @@ def save_data(state: AutoClickerState) -> None:
             ],
             "end_steps": [step_to_dict(s) for s in seq.end_steps]
         }
-        filename = f"{name.replace(' ', '_').lower()}.json"
+        filename = f"{sanitize_filename(name)}.json"
         with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
             json.dump(seq_data, f, indent=2, ensure_ascii=False)
 
@@ -734,7 +758,7 @@ def save_item_scan(config: ItemScanConfig) -> None:
         ]
     }
 
-    filename = f"{config.name.replace(' ', '_').lower()}.json"
+    filename = f"{sanitize_filename(config.name)}.json"
     with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -924,7 +948,8 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
         for name, slot in state.global_slots.items()
     }
 
-    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
@@ -932,7 +957,8 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
 
 def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Lädt ein Slot-Preset."""
-    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
@@ -962,7 +988,8 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
 
 def delete_slot_preset(preset_name: str) -> bool:
     """Löscht ein Slot-Preset."""
-    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
@@ -1004,7 +1031,8 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         for name, item in state.global_items.items()
     }
 
-    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
@@ -1012,7 +1040,8 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
 
 def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Lädt ein Item-Preset."""
-    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
@@ -1042,7 +1071,8 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
 
 def delete_item_preset(preset_name: str) -> bool:
     """Löscht ein Item-Preset."""
-    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
@@ -1445,6 +1475,36 @@ def analyze_and_print_colors(region: tuple = None) -> None:
 
     print("-" * 50)
 
+def get_screen_size() -> tuple[int, int]:
+    """Gibt die Bildschirmgröße zurück (width, height)."""
+    user32 = ctypes.windll.user32
+    return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+
+
+def validate_region(region: tuple, context: str = "Region") -> bool:
+    """Prüft ob eine Region innerhalb der Bildschirmgrenzen liegt.
+
+    Returns True wenn gültig, False wenn außerhalb.
+    """
+    x1, y1, x2, y2 = region
+    screen_w, screen_h = get_screen_size()
+
+    warnings = []
+    if x1 < 0 or y1 < 0:
+        warnings.append(f"Startpunkt ({x1}, {y1}) ist negativ")
+    if x2 > screen_w or y2 > screen_h:
+        warnings.append(f"Endpunkt ({x2}, {y2}) liegt außerhalb des Bildschirms ({screen_w}x{screen_h})")
+    if x2 - x1 < 1 or y2 - y1 < 1:
+        warnings.append(f"Region zu klein ({x2-x1}x{y2-y1})")
+
+    if warnings:
+        print(f"\n  [WARNUNG] {context}:")
+        for w in warnings:
+            print(f"    - {w}")
+        return False
+    return True
+
+
 def select_region() -> Optional[tuple]:
     """
     Lässt den Benutzer eine Region per Maus auswählen.
@@ -1473,7 +1533,15 @@ def select_region() -> Optional[tuple]:
         height = y2 - y1
         print(f"\n  Region: {width}x{height} Pixel ({x1},{y1}) → ({x2},{y2})")
 
-        return (x1, y1, x2, y2)
+        region = (x1, y1, x2, y2)
+
+        # Bounds-Prüfung
+        if not validate_region(region, "Ausgewählte Region"):
+            confirm = input("  Trotzdem fortfahren? (j/n): ").strip().lower()
+            if confirm != "j":
+                return None
+
+        return region
 
     except (KeyboardInterrupt, EOFError):
         print("\n  [ABBRUCH] Keine Region ausgewählt.")
@@ -1755,7 +1823,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                     continue
 
                 hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-                tol = 25
+                tol = CONFIG.get("slot_hsv_tolerance", 25)
                 lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
                 upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
 
@@ -1799,7 +1867,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                 slot_color = [r, g, b]
 
                 # Slots hinzufügen
-                inset = 10
+                inset = CONFIG.get("slot_inset", 10)
                 added = 0
                 start_num = len(state.global_slots) + 1
 
@@ -3181,10 +3249,11 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
         # Runde die exclude_color auf 5er-Schritte (wie die anderen Farben)
         exclude_rounded = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
 
-        # Finde alle ähnlichen Farben (Toleranz 25 = 5 Rundungsschritte)
+        # Finde alle ähnlichen Farben (Toleranz aus Config)
+        slot_color_dist = CONFIG.get("slot_color_distance", 25)
         colors_to_remove = []
         for color in color_counts.keys():
-            if color_distance(color, exclude_rounded) <= 25:
+            if color_distance(color, exclude_rounded) <= slot_color_dist:
                 colors_to_remove.append(color)
 
         # Entferne alle ähnlichen Farben
@@ -3295,21 +3364,30 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         slot_best_priority = 999
 
         for item in config.items:
-            # Prüfe ob Marker-Farben vorhanden sind (optimiert mit NumPy)
+            # Berechne min_required vor der Schleife für Early-Exit
+            if CONFIG.get("require_all_markers", True):
+                min_required = len(item.marker_colors)
+            else:
+                min_required = min(CONFIG.get("min_markers_required", 2), len(item.marker_colors))
+
+            # Prüfe ob Marker-Farben vorhanden sind (mit Early-Exit-Optimierung)
             markers_found = 0
+            markers_missing = 0
+            max_allowed_missing = len(item.marker_colors) - min_required
 
             for marker_color in item.marker_colors:
                 if find_color_in_image(img, marker_color, config.color_tolerance):
                     markers_found += 1
+                    # Early exit: Genug Marker gefunden
+                    if markers_found >= min_required:
+                        break
+                else:
+                    markers_missing += 1
+                    # Early exit: Zu viele Marker fehlen
+                    if markers_missing > max_allowed_missing:
+                        break
 
             # Item erkannt wenn genug Marker-Farben gefunden
-            if CONFIG.get("require_all_markers", True):
-                # ALLE Marker müssen gefunden werden
-                min_required = len(item.marker_colors)
-            else:
-                # Nur Mindestanzahl muss gefunden werden
-                min_required = CONFIG.get("min_markers_required", 2)
-                min_required = min(min_required, len(item.marker_colors))
             if markers_found >= min_required:
                 print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
                 if item.priority < slot_best_priority:
@@ -3426,13 +3504,20 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("\n" + "=" * 60)
     print("  PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)")
     print("=" * 60)
-    start_steps = edit_phase(state, start_steps, "START")
+    result = edit_phase(state, start_steps, "START")
+    if result is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
+    start_steps = result
 
     # Dann LOOP-Phasen bearbeiten (mehrere möglich)
     print("\n" + "=" * 60)
     print("  PHASE 2: LOOP-PHASEN (können mehrere sein)")
     print("=" * 60)
     loop_phases = edit_loop_phases(state, loop_phases)
+    if loop_phases is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
 
     # Gesamt-Zyklen abfragen
     if loop_phases:
@@ -3458,7 +3543,11 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("  PHASE 3: END-SEQUENZ (wird einmal am Ende ausgeführt)")
     print("=" * 60)
     print("\n  (Optional: Aufräumen, Logout, etc.)")
-    end_steps = edit_phase(state, end_steps, "END")
+    result = edit_phase(state, end_steps, "END")
+    if result is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
+    end_steps = result
 
     # Sequenz erstellen und speichern
     new_sequence = Sequence(
@@ -3496,8 +3585,12 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 
-def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> list[LoopPhase]:
-    """Bearbeitet mehrere Loop-Phasen."""
+def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> Optional[list[LoopPhase]]:
+    """Bearbeitet mehrere Loop-Phasen.
+
+    Returns:
+        Liste der Loop-Phasen bei 'fertig', None bei 'abbruch'.
+    """
 
     if loop_phases:
         print(f"\nAktuelle Loop-Phasen ({len(loop_phases)}):")
@@ -3523,7 +3616,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
             if user_input == "fertig":
                 return loop_phases
             elif user_input == "abbruch":
-                return loop_phases  # Gibt aktuelle Liste zurück (Sub-Editor)
+                return None  # Abbruch signalisieren
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -3545,6 +3638,8 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
 
                 print(f"\n  Schritte für {loop_name} hinzufügen:")
                 steps = edit_phase(state, [], loop_name)
+                if steps is None:
+                    return None  # Abbruch durchreichen
 
                 repeat = 1
                 try:
@@ -3564,7 +3659,10 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                     if 1 <= edit_num <= len(loop_phases):
                         lp = loop_phases[edit_num - 1]
                         print(f"\n  Bearbeite {lp.name}:")
-                        lp.steps = edit_phase(state, lp.steps, lp.name)
+                        new_steps = edit_phase(state, lp.steps, lp.name)
+                        if new_steps is None:
+                            return None  # Abbruch durchreichen
+                        lp.steps = new_steps
                         try:
                             repeat_input = input(f"  Wiederholungen (aktuell {lp.repeat}, Enter = behalten): ").strip()
                             if repeat_input:
@@ -3686,8 +3784,12 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     return {}
 
 
-def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> list[SequenceStep]:
-    """Bearbeitet eine Phase (Start oder Loop) der Sequenz."""
+def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
+    """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
+
+    Returns:
+        Liste der Schritte bei 'fertig', None bei 'abbruch'.
+    """
 
     if steps:
         print(f"\nAktuelle {phase_name}-Schritte ({len(steps)}):")
@@ -3727,8 +3829,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             if user_input.lower() == "fertig":
                 return steps
             elif user_input.lower() == "abbruch":
-                print("[ABBRUCH] Sequenz nicht gespeichert.")
-                raise KeyboardInterrupt
+                print("[ABBRUCH] Phase abgebrochen.")
+                return None
             elif user_input.lower() == "":
                 continue
             elif user_input.lower() == "show":
@@ -4264,14 +4366,13 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
                 # Bestätigungs-Klick falls für dieses Item definiert
                 if item.confirm_point is not None:
-                    confirm_ok = False
+                    confirm_pos = None
                     with state.lock:
-                        if item.confirm_point >= 1 and item.confirm_point <= len(state.points):
+                        if 1 <= item.confirm_point <= len(state.points):
                             confirm_pos = state.points[item.confirm_point - 1]
-                            confirm_ok = True
                         else:
                             print(f"\n  [WARNUNG] Bestätigungs-Punkt {item.confirm_point} nicht vorhanden!")
-                    if confirm_ok:
+                    if confirm_pos is not None:
                         if item.confirm_delay > 0:
                             time.sleep(item.confirm_delay)
                         send_click(confirm_pos.x, confirm_pos.y)
