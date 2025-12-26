@@ -1698,7 +1698,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                 print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
 
                 # Farbe für Slot-Erkennung scannen
-                print("\n  Bewege Maus auf den TÜRKISEN SLOT-HINTERGRUND...")
+                print("\n  Bewege Maus auf den SLOT-HINTERGRUND...")
                 input("  ENTER wenn bereit...")
                 mx, my = get_cursor_pos()
 
