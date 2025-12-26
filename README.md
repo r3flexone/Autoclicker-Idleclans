@@ -15,6 +15,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
 - **Automatische Slot-Erkennung**: OpenCV-basierte Erkennung von Item-Slots
 - **Item-Scan System**: Items anhand von Marker-Farben erkennen und priorisieren
+- **Preset-System**: Slots und Items als benannte Presets speichern
 - **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
@@ -23,6 +24,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
+- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
 
 ## Voraussetzungen
 
@@ -74,7 +76,8 @@ Verwaltet Bereiche wo Items erscheinen können. Arbeitet mit **Presets** - wie b
 1. [0] Neues Preset erstellen → Name eingeben
 2. [1-n] Bestehendes Preset bearbeiten
 3. Slots hinzufügen/bearbeiten/löschen
-4. `fertig` → Preset wird automatisch gespeichert
+4. `fertig` → Preset wird gespeichert
+5. `abbruch` → Änderungen werden verworfen
 
 **Befehle im Editor:**
 
@@ -88,13 +91,16 @@ Verwaltet Bereiche wo Items erscheinen können. Arbeitet mit **Presets** - wie b
 | `edit <Nr>` | Slot bearbeiten |
 | `show` | Alle Slots anzeigen |
 | `fertig` | Preset speichern und Editor verlassen |
+| `abbruch` | Änderungen verwerfen und Editor verlassen |
 
 ### Automatische Erkennung
 
-Mit `detect` werden Slots automatisch per Farbe erkannt:
-1. Screenshot aufnehmen oder aus Datei laden
-2. Hintergrundfarbe des Slots angeben
-3. Slots werden automatisch erkannt und nummeriert
+Mit `auto` werden Slots automatisch per Farbe erkannt:
+1. Region markieren (oben-links, unten-rechts)
+2. Screenshot wird erstellt
+3. Hintergrundfarbe des Slots angeben
+4. Slots werden automatisch erkannt und nummeriert
+5. Screenshot und Vorschau werden in `Screenshots/` gespeichert
 
 ### Item-Editor (Menü → 2)
 
@@ -104,7 +110,8 @@ Verwaltet Item-Profile für die Erkennung. Arbeitet mit **Presets** - wie beim S
 1. [0] Neues Preset erstellen → Name eingeben
 2. [1-n] Bestehendes Preset bearbeiten
 3. Items lernen/hinzufügen/bearbeiten/löschen
-4. `fertig` → Preset wird automatisch gespeichert
+4. `fertig` → Preset wird gespeichert
+5. `abbruch` → Änderungen werden verworfen
 
 **Befehle im Editor:**
 
@@ -113,10 +120,12 @@ Verwaltet Item-Profile für die Erkennung. Arbeitet mit **Presets** - wie beim S
 | `learn <Nr>` | Item von Slot Nr. lernen (scannt Marker-Farben) |
 | `add` | Manuell ein Item hinzufügen |
 | `del <Nr>` | Item löschen |
+| `del <Start>-<Ende>` | Mehrere Items löschen (z.B. `del 1-5`) |
 | `del all` | Alle Items löschen |
 | `edit <Nr>` | Item bearbeiten (Name, Priorität, Bestätigung) |
 | `show` | Alle Items anzeigen |
 | `fertig` | Preset speichern und Editor verlassen |
+| `abbruch` | Änderungen verwerfen und Editor verlassen |
 
 ### Item lernen
 
@@ -162,8 +171,8 @@ Eine Sequenz besteht aus drei Phasen:
 | `del <Nr>` | Schritt löschen |
 | `clear` | Alle Schritte löschen |
 | `show` | Aktuelle Schritte anzeigen |
-| `fertig` | Phase abschließen |
-| `abbruch` | Editor abbrechen |
+| `fertig` | Phase abschließen und speichern |
+| `abbruch` | Editor abbrechen (ohne Speichern) |
 
 ### Verfügbare Tasten
 
@@ -276,7 +285,10 @@ Wird beim ersten Start automatisch erstellt:
   "scan_reverse": false,
   "marker_count": 5,
   "require_all_markers": true,
-  "min_markers_required": 2
+  "min_markers_required": 2,
+  "slot_hsv_tolerance": 25,
+  "slot_inset": 10,
+  "slot_color_distance": 25
 }
 ```
 
@@ -291,27 +303,35 @@ Wird beim ersten Start automatisch erstellt:
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
 | `require_all_markers` | Alle Marker müssen gefunden werden (true/false) |
 | `min_markers_required` | Mindestanzahl Marker wenn `require_all_markers: false` |
+| `slot_hsv_tolerance` | HSV-Toleranz für automatische Slot-Erkennung |
+| `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
+| `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
 
 ## Dateistruktur
 
 ```
 Autoclicker-Idleclans/
-├── autoclicker.py      # Hauptprogramm
-├── config.json         # Konfiguration (auto-generiert)
-├── README.md           # Diese Datei
-├── sequences/          # Gespeicherte Sequenzen
-│   ├── points.json     # Aufgenommene Punkte
-│   └── *.json          # Sequenz-Dateien
-├── slots/              # Slot-Definitionen
-│   ├── slots.json      # Gespeicherte Slots
-│   └── *.png           # Screenshots und Vorschauen
-├── items/              # Item-Profile
-│   └── items.json      # Gespeicherte Items
-├── item_scans/         # Item-Scan Konfigurationen
-│   └── *.json          # Scan-Konfigurationen
-└── tools/              # Hilfs-Skripte
-    ├── create_slots.py # Manuelles Slot-Erstellen
-    └── detect_slots.py # Standalone Slot-Erkennung
+├── autoclicker.py          # Hauptprogramm
+├── config.json             # Konfiguration (auto-generiert)
+├── README.md               # Diese Datei
+├── sequences/              # Gespeicherte Sequenzen
+│   ├── points.json         # Aufgenommene Punkte
+│   └── *.json              # Sequenz-Dateien
+├── slots/                  # Slot-Konfigurationen
+│   ├── slots.json          # Aktive Slots
+│   └── presets/            # Slot-Presets
+│       └── *.json          # Benannte Slot-Presets
+├── items/                  # Item-Konfigurationen
+│   ├── items.json          # Aktive Items
+│   └── presets/            # Item-Presets
+│       └── *.json          # Benannte Item-Presets
+├── Screenshots/            # Screenshots und Vorschau-Bilder
+│   ├── screenshot_*.png    # Original-Screenshots
+│   └── preview_*.png       # Vorschau mit Markierungen
+├── item_scans/             # Item-Scan Konfigurationen
+│   └── *.json              # Scan-Konfigurationen
+└── configs/                # Config-Presets
+    └── *.json              # Gespeicherte Konfigurationen
 ```
 
 ## Technische Details
@@ -325,6 +345,21 @@ Autoclicker-Idleclans/
 - Thread-basierte Ausführung
 - JSON-Persistenz
 - Multi-Monitor Unterstützung
+- Sichere Dateinamen (Path-Traversal-Schutz)
+- Bounds-Checking für Bildschirmregionen
+
+## Changelog
+
+### Neueste Änderungen
+
+- **Preset-System**: Slots und Items werden als benannte Presets gespeichert
+- **fertig vs abbruch**: `fertig` speichert, `abbruch` verwirft Änderungen
+- **Screenshots-Ordner**: Alle Screenshots landen jetzt in `Screenshots/`
+- **Konsistente Befehle**: `del all`, `del <Nr>-<Nr>` in allen Editoren
+- **Performance**: Early-Exit bei Marker-Erkennung
+- **Sicherheit**: Path-Traversal-Schutz für Dateinamen
+- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
+- **Konfigurierbar**: Neue Optionen für Slot-Erkennung
 
 ## Lizenz
 
