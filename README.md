@@ -68,20 +68,26 @@ Das Item-Scan System bietet ein Menü mit folgenden Optionen:
 
 ### Slot-Editor (Menü → 1)
 
-Verwaltet Bereiche wo Items erscheinen können.
+Verwaltet Bereiche wo Items erscheinen können. Arbeitet mit **Presets** - wie beim Sequenz-Editor wird am Anfang nach einem Namen gefragt.
 
-### Befehle
+**Ablauf:**
+1. [0] Neues Preset erstellen → Name eingeben
+2. [1-n] Bestehendes Preset bearbeiten
+3. Slots hinzufügen/bearbeiten/löschen
+4. `fertig` → Preset wird automatisch gespeichert
+
+**Befehle im Editor:**
 
 | Befehl | Beschreibung |
 |--------|--------------|
-| `detect` | Automatische Slot-Erkennung mit OpenCV |
+| `auto` | Automatische Slot-Erkennung mit OpenCV |
 | `add` | Manuell einen Slot hinzufügen |
 | `del <Nr>` | Slot löschen |
 | `del <Start>-<Ende>` | Mehrere Slots löschen (z.B. `del 1-7`) |
 | `del all` | Alle Slots löschen |
 | `edit <Nr>` | Slot bearbeiten |
-| `list` | Alle Slots anzeigen |
-| `exit` | Editor verlassen |
+| `show` | Alle Slots anzeigen |
+| `fertig` | Preset speichern und Editor verlassen |
 
 ### Automatische Erkennung
 
@@ -92,9 +98,15 @@ Mit `detect` werden Slots automatisch per Farbe erkannt:
 
 ### Item-Editor (Menü → 2)
 
-Verwaltet Item-Profile für die Erkennung.
+Verwaltet Item-Profile für die Erkennung. Arbeitet mit **Presets** - wie beim Sequenz-Editor wird am Anfang nach einem Namen gefragt.
 
-### Befehle
+**Ablauf:**
+1. [0] Neues Preset erstellen → Name eingeben
+2. [1-n] Bestehendes Preset bearbeiten
+3. Items lernen/hinzufügen/bearbeiten/löschen
+4. `fertig` → Preset wird automatisch gespeichert
+
+**Befehle im Editor:**
 
 | Befehl | Beschreibung |
 |--------|--------------|
@@ -103,8 +115,8 @@ Verwaltet Item-Profile für die Erkennung.
 | `del <Nr>` | Item löschen |
 | `del all` | Alle Items löschen |
 | `edit <Nr>` | Item bearbeiten (Name, Priorität, Bestätigung) |
-| `list` | Alle Items anzeigen |
-| `exit` | Editor verlassen |
+| `show` | Alle Items anzeigen |
+| `fertig` | Preset speichern und Editor verlassen |
 
 ### Item lernen
 

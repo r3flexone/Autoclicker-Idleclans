@@ -105,6 +105,7 @@ def set_log_level(level: str) -> None:
 # =============================================================================
 CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
+CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 
 # Standard-Konfiguration (wird von config.json überschrieben)
 DEFAULT_CONFIG = {
@@ -880,6 +881,175 @@ def load_global_items(state: AutoClickerState) -> None:
         logger.error(f"Items laden fehlgeschlagen: {e}")
 
 # =============================================================================
+# SLOT UND ITEM PRESETS
+# =============================================================================
+SLOT_PRESETS_DIR: str = os.path.join(SLOTS_DIR, "presets")
+ITEM_PRESETS_DIR: str = os.path.join(ITEMS_DIR, "presets")
+
+# Preset-Ordner erstellen
+for folder in [SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+def list_slot_presets() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Slot-Presets auf."""
+    preset_dir = Path(SLOT_PRESETS_DIR)
+    if not preset_dir.exists():
+        return []
+    presets = []
+    for f in preset_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = f.stem
+                count = len(data)
+                presets.append((name, f, count))
+        except Exception:
+            pass
+    return presets
+
+def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Speichert aktuelle Slots als Preset."""
+    if not state.global_slots:
+        print("[FEHLER] Keine Slots vorhanden zum Speichern!")
+        return False
+
+    data = {
+        name: {
+            "name": slot.name,
+            "scan_region": list(slot.scan_region),
+            "click_pos": list(slot.click_pos),
+            "slot_color": list(slot.slot_color) if slot.slot_color else None
+        }
+        for name, slot in state.global_slots.items()
+    }
+
+    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
+    return True
+
+def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Lädt ein Slot-Preset."""
+    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        with state.lock:
+            state.global_slots.clear()
+            for name, s in data.items():
+                slot_color = tuple(s["slot_color"]) if s.get("slot_color") else None
+                state.global_slots[name] = ItemSlot(
+                    name=s["name"],
+                    scan_region=tuple(s["scan_region"]),
+                    click_pos=tuple(s["click_pos"]),
+                    slot_color=slot_color
+                )
+
+        # Auch in aktive Datei speichern
+        save_global_slots(state)
+        print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
+        return True
+    except Exception as e:
+        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        return False
+
+def delete_slot_preset(preset_name: str) -> bool:
+    """Löscht ein Slot-Preset."""
+    filepath = Path(SLOT_PRESETS_DIR) / f"{preset_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+    filepath.unlink()
+    print(f"[DELETE] Slot-Preset '{preset_name}' gelöscht")
+    return True
+
+def list_item_presets() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Item-Presets auf."""
+    preset_dir = Path(ITEM_PRESETS_DIR)
+    if not preset_dir.exists():
+        return []
+    presets = []
+    for f in preset_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = f.stem
+                count = len(data)
+                presets.append((name, f, count))
+        except Exception:
+            pass
+    return presets
+
+def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Speichert aktuelle Items als Preset."""
+    if not state.global_items:
+        print("[FEHLER] Keine Items vorhanden zum Speichern!")
+        return False
+
+    data = {
+        name: {
+            "name": item.name,
+            "marker_colors": [list(c) for c in item.marker_colors],
+            "priority": item.priority,
+            "confirm_point": item.confirm_point,
+            "confirm_delay": item.confirm_delay
+        }
+        for name, item in state.global_items.items()
+    }
+
+    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
+    return True
+
+def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Lädt ein Item-Preset."""
+    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        with state.lock:
+            state.global_items.clear()
+            for name, i in data.items():
+                state.global_items[name] = ItemProfile(
+                    name=i["name"],
+                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                    priority=i.get("priority", 99),
+                    confirm_point=i.get("confirm_point"),
+                    confirm_delay=i.get("confirm_delay", 0.5)
+                )
+
+        # Auch in aktive Datei speichern
+        save_global_items(state)
+        print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
+        return True
+    except Exception as e:
+        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        return False
+
+def delete_item_preset(preset_name: str) -> bool:
+    """Löscht ein Item-Preset."""
+    filepath = Path(ITEM_PRESETS_DIR) / f"{preset_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+    filepath.unlink()
+    print(f"[DELETE] Item-Preset '{preset_name}' gelöscht")
+    return True
+
+# =============================================================================
 # HILFSFUNKTIONEN
 # =============================================================================
 def get_cursor_pos() -> tuple[int, int]:
@@ -1367,7 +1537,7 @@ def print_points(state: AutoClickerState) -> None:
 # GLOBALER SLOT-EDITOR
 # =============================================================================
 def run_global_slot_editor(state: AutoClickerState) -> None:
-    """Editor für globale Slot-Definitionen."""
+    """Editor für globale Slot-Definitionen - wie Sequenz-Editor mit Preset-Auswahl."""
     print("\n" + "=" * 60)
     print("  SLOT-EDITOR")
     print("=" * 60)
@@ -1375,6 +1545,86 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
         return
+
+    # Verfügbare Slot-Presets laden
+    available_presets = list_slot_presets()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neues Slot-Preset erstellen")
+
+    if available_presets:
+        print("\nBestehende Slot-Presets bearbeiten:")
+        for i, (name, path, count) in enumerate(available_presets):
+            print(f"  [{i+1}] {name} ({count} Slots)")
+        print("\n  del <Nr> - Preset löschen")
+
+    print("\nAuswahl (oder 'abbruch'):")
+
+    # Preset-Auswahl
+    preset_name = None
+    while True:
+        try:
+            choice = input("> ").strip().lower()
+
+            if choice == "abbruch":
+                print("[ABBRUCH] Editor beendet.")
+                return
+
+            # Löschen-Befehl
+            if choice.startswith("del "):
+                try:
+                    del_num = int(choice[4:])
+                    if 1 <= del_num <= len(available_presets):
+                        name, path, count = available_presets[del_num - 1]
+                        confirm = input(f"Preset '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            delete_slot_preset(name)
+                            # Liste aktualisieren
+                            available_presets = list_slot_presets()
+                            print("\nAktualisierte Liste:")
+                            print("  [0] Neues Slot-Preset erstellen")
+                            for i, (n, p, c) in enumerate(available_presets):
+                                print(f"  [{i+1}] {n} ({c} Slots)")
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültiges Preset! Verfügbar: 1-{len(available_presets)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                # Neues Preset erstellen
+                preset_name = input("\nName des Slot-Presets: ").strip()
+                if not preset_name:
+                    preset_name = f"Slots_{int(time.time())}"
+                # Slots für neues Preset leeren
+                with state.lock:
+                    state.global_slots.clear()
+                break
+            elif 1 <= choice_num <= len(available_presets):
+                # Bestehendes Preset bearbeiten
+                preset_name, path, count = available_presets[choice_num - 1]
+                load_slot_preset(state, preset_name)
+                break
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
+            return
+
+    # Jetzt den eigentlichen Editor mit dem gewählten Preset starten
+    print(f"\n--- Bearbeite Slot-Preset: {preset_name} ---")
+    edit_slot_preset(state, preset_name)
+
+
+def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
+    """Bearbeitet ein Slot-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
     # Aktuelle Slots anzeigen
     with state.lock:
@@ -1402,7 +1652,11 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             user_input = input("[Slots] > ").strip().lower()
 
             if user_input == "fertig" or user_input == "abbruch":
+                # Speichere mit dem Preset-Namen
+                save_slot_preset(state, preset_name)
+                # Auch als aktive Konfiguration speichern
                 save_global_slots(state)
+                print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
                 return
             elif user_input == "":
                 continue
@@ -1593,7 +1847,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 except Exception as e:
                     print(f"  [WARNUNG] Screenshots speichern: {e}")
 
-                save_global_slots(state)
+                # Slots werden am Ende beim "fertig" gespeichert
                 continue
 
             elif user_input == "add":
@@ -1752,7 +2006,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
+            # Speichere mit dem Preset-Namen
+            save_slot_preset(state, preset_name)
             save_global_slots(state)
+            print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
             return
 
 
@@ -1760,7 +2017,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
 # GLOBALER ITEM-EDITOR
 # =============================================================================
 def run_global_item_editor(state: AutoClickerState) -> None:
-    """Editor für globale Item-Definitionen."""
+    """Editor für globale Item-Definitionen - wie Sequenz-Editor mit Preset-Auswahl."""
     print("\n" + "=" * 60)
     print("  ITEM-EDITOR")
     print("=" * 60)
@@ -1768,6 +2025,86 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
         return
+
+    # Verfügbare Item-Presets laden
+    available_presets = list_item_presets()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neues Item-Preset erstellen")
+
+    if available_presets:
+        print("\nBestehende Item-Presets bearbeiten:")
+        for i, (name, path, count) in enumerate(available_presets):
+            print(f"  [{i+1}] {name} ({count} Items)")
+        print("\n  del <Nr> - Preset löschen")
+
+    print("\nAuswahl (oder 'abbruch'):")
+
+    # Preset-Auswahl
+    preset_name = None
+    while True:
+        try:
+            choice = input("> ").strip().lower()
+
+            if choice == "abbruch":
+                print("[ABBRUCH] Editor beendet.")
+                return
+
+            # Löschen-Befehl
+            if choice.startswith("del "):
+                try:
+                    del_num = int(choice[4:])
+                    if 1 <= del_num <= len(available_presets):
+                        name, path, count = available_presets[del_num - 1]
+                        confirm = input(f"Preset '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            delete_item_preset(name)
+                            # Liste aktualisieren
+                            available_presets = list_item_presets()
+                            print("\nAktualisierte Liste:")
+                            print("  [0] Neues Item-Preset erstellen")
+                            for i, (n, p, c) in enumerate(available_presets):
+                                print(f"  [{i+1}] {n} ({c} Items)")
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültiges Preset! Verfügbar: 1-{len(available_presets)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                # Neues Preset erstellen
+                preset_name = input("\nName des Item-Presets: ").strip()
+                if not preset_name:
+                    preset_name = f"Items_{int(time.time())}"
+                # Items für neues Preset leeren
+                with state.lock:
+                    state.global_items.clear()
+                break
+            elif 1 <= choice_num <= len(available_presets):
+                # Bestehendes Preset bearbeiten
+                preset_name, path, count = available_presets[choice_num - 1]
+                load_item_preset(state, preset_name)
+                break
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
+            return
+
+    # Jetzt den eigentlichen Editor mit dem gewählten Preset starten
+    print(f"\n--- Bearbeite Item-Preset: {preset_name} ---")
+    edit_item_preset(state, preset_name)
+
+
+def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
+    """Bearbeitet ein Item-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
     # Aktuelle Items anzeigen
     with state.lock:
@@ -1802,7 +2139,11 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             user_input = input("[Items] > ").strip().lower()
 
             if user_input == "fertig" or user_input == "abbruch":
+                # Speichere mit dem Preset-Namen
+                save_item_preset(state, preset_name)
+                # Auch als aktive Konfiguration speichern
                 save_global_items(state)
+                print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
                 return
             elif user_input == "":
                 continue
@@ -2061,7 +2402,10 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
+            # Speichere mit dem Preset-Namen
+            save_item_preset(state, preset_name)
             save_global_items(state)
+            print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
             return
 
 
