@@ -1835,13 +1835,28 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                     img.save(screenshot_path)
                     print(f"  Screenshot: {screenshot_path}")
 
-                    # Vorschau mit Markierungen erstellen
+                    # Vorschau mit Markierungen und Nummerierung erstellen
                     preview_path = os.path.join(SLOTS_DIR, f"preview_{timestamp}.png")
                     preview = img_bgr.copy()
-                    for dx, dy, dw, dh in detected_slots:
+                    for i, (dx, dy, dw, dh) in enumerate(detected_slots):
+                        # Rechtecke zeichnen
                         cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
                         cv2_save.rectangle(preview, (dx + inset, dy + inset),
                                           (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
+                        # Slot-Nummer hinzufügen
+                        slot_num_text = str(start_num + i)
+                        font = cv2_save.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.7
+                        thickness = 2
+                        # Textgröße berechnen für Zentrierung
+                        (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
+                        text_x = dx + (dw - text_w) // 2
+                        text_y = dy + (dh + text_h) // 2
+                        # Schwarzer Hintergrund für bessere Lesbarkeit
+                        cv2_save.rectangle(preview, (text_x - 3, text_y - text_h - 3),
+                                          (text_x + text_w + 3, text_y + 3), (0, 0, 0), -1)
+                        # Weiße Nummer
+                        cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
                     cv2_save.imwrite(preview_path, preview)
                     print(f"  Vorschau: {preview_path}")
                 except Exception as e:
