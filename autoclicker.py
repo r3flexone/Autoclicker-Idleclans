@@ -1835,26 +1835,34 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                     img.save(screenshot_path)
                     print(f"  Screenshot: {screenshot_path}")
 
-                    # Vorschau mit Markierungen und Nummerierung erstellen
+                    # Vorschau mit Markierungen, Nummerierung und Klick-Position erstellen
                     preview_path = os.path.join(SLOTS_DIR, f"preview_{timestamp}.png")
                     preview = img_bgr.copy()
                     for i, (dx, dy, dw, dh) in enumerate(detected_slots):
-                        # Rechtecke zeichnen
+                        # Rechtecke zeichnen (grün = erkannter Bereich, gelb = Scan-Bereich mit Inset)
                         cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
                         cv2_save.rectangle(preview, (dx + inset, dy + inset),
                                           (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
-                        # Slot-Nummer hinzufügen
+
+                        # Klick-Position markieren (rotes Kreuz in der Mitte)
+                        click_x = dx + dw // 2
+                        click_y = dy + dh // 2
+                        cross_size = 8
+                        cv2_save.line(preview, (click_x - cross_size, click_y), (click_x + cross_size, click_y), (0, 0, 255), 2)
+                        cv2_save.line(preview, (click_x, click_y - cross_size), (click_x, click_y + cross_size), (0, 0, 255), 2)
+
+                        # Slot-Nummer hinzufügen (oben links im Slot)
                         slot_num_text = str(start_num + i)
                         font = cv2_save.FONT_HERSHEY_SIMPLEX
-                        font_scale = 0.7
+                        font_scale = 0.6
                         thickness = 2
-                        # Textgröße berechnen für Zentrierung
-                        (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
-                        text_x = dx + (dw - text_w) // 2
-                        text_y = dy + (dh + text_h) // 2
+                        # Text oben links positionieren
+                        text_x = dx + 5
+                        text_y = dy + 20
                         # Schwarzer Hintergrund für bessere Lesbarkeit
-                        cv2_save.rectangle(preview, (text_x - 3, text_y - text_h - 3),
-                                          (text_x + text_w + 3, text_y + 3), (0, 0, 0), -1)
+                        (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
+                        cv2_save.rectangle(preview, (text_x - 2, text_y - text_h - 2),
+                                          (text_x + text_w + 2, text_y + 2), (0, 0, 0), -1)
                         # Weiße Nummer
                         cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
                     cv2_save.imwrite(preview_path, preview)
