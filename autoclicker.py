@@ -5166,11 +5166,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         else:
                             msg = "Farbe erkannt!"
                         if CONFIG.get("debug_detection", False):
-                            # Debug: neue Zeile, nicht überschreiben
+                            # Debug: keine Zeilenüberschreibung
                             if step.wait_only:
-                                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
                             else:
-                                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         else:
                             # Normal: Zeile überschreiben
                             clear_line()
