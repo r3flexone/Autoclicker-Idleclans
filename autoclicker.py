@@ -1011,6 +1011,154 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
     return updated_scans
 
 
+def sync_scans_with_global_items(state: AutoClickerState) -> None:
+    """Synchronisiert alle Scan-Konfigurationen mit den globalen Items.
+
+    - Aktualisiert category, priority, template etc. aus global_items
+    - Fragt bei unbekannten Items nach was zu tun ist
+    """
+    scan_dir = Path(ITEM_SCANS_DIR)
+
+    if not scan_dir.exists():
+        print("\n[SYNC] Keine Scan-Konfigurationen vorhanden.")
+        return
+
+    scan_files = list(scan_dir.glob("*.json"))
+    if not scan_files:
+        print("\n[SYNC] Keine Scan-Konfigurationen vorhanden.")
+        return
+
+    if not state.global_items:
+        print("\n[SYNC] Keine globalen Items vorhanden.")
+        return
+
+    print("\n" + "=" * 60)
+    print("  SYNC: Scan-Konfigurationen mit globalen Items abgleichen")
+    print("=" * 60)
+    print(f"\n  Gefunden: {len(scan_files)} Scan(s), {len(state.global_items)} globale Items")
+
+    total_updated = 0
+    total_removed = 0
+    total_skipped = 0
+
+    for scan_file in scan_files:
+        try:
+            with open(scan_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            scan_name = data.get("name", scan_file.stem)
+            items = data.get("items", [])
+
+            if not items:
+                continue
+
+            print(f"\n  [{scan_name}] {len(items)} Items prüfen...")
+
+            modified = False
+            items_to_keep = []
+
+            for item in items:
+                item_name = item.get("name", "")
+
+                # Suche in globalen Items
+                if item_name in state.global_items:
+                    global_item = state.global_items[item_name]
+
+                    # Prüfe auf Unterschiede
+                    changes = []
+                    if item.get("category") != global_item.category:
+                        old_cat = item.get("category", "None")
+                        changes.append(f"category: {old_cat} → {global_item.category}")
+                        item["category"] = global_item.category
+
+                    if item.get("priority") != global_item.priority:
+                        changes.append(f"priority: {item.get('priority')} → {global_item.priority}")
+                        item["priority"] = global_item.priority
+
+                    if item.get("template") != global_item.template:
+                        old_tpl = item.get("template", "None")
+                        changes.append(f"template: {old_tpl} → {global_item.template}")
+                        item["template"] = global_item.template
+
+                    if item.get("min_confidence") != global_item.min_confidence:
+                        item["min_confidence"] = global_item.min_confidence
+                        changes.append("min_confidence")
+
+                    if item.get("confirm_point") != global_item.confirm_point:
+                        item["confirm_point"] = global_item.confirm_point
+                        changes.append("confirm_point")
+
+                    if item.get("confirm_delay") != global_item.confirm_delay:
+                        item["confirm_delay"] = global_item.confirm_delay
+
+                    if changes:
+                        print(f"    ✓ {item_name}: {', '.join(changes)}")
+                        modified = True
+                        total_updated += 1
+
+                    items_to_keep.append(item)
+
+                else:
+                    # Item nicht in globalen Items gefunden
+                    print(f"\n    ⚠ '{item_name}' nicht in globalen Items!")
+                    print(f"      Template: {item.get('template', 'keins')}")
+
+                    # Zeige ähnliche globale Items
+                    similar = [n for n in state.global_items.keys()
+                               if item_name.lower() in n.lower() or n.lower() in item_name.lower()]
+
+                    if similar:
+                        print(f"      Ähnliche: {', '.join(similar)}")
+
+                    print("      Optionen:")
+                    print("        [Enter] = Behalten (unverändert)")
+                    print("        [d]     = Aus Scan entfernen")
+                    print("        [Name]  = Durch globales Item ersetzen")
+
+                    choice = input("      > ").strip()
+
+                    if choice.lower() == "d":
+                        print(f"      → '{item_name}' entfernt")
+                        modified = True
+                        total_removed += 1
+                    elif choice and choice in state.global_items:
+                        # Ersetze durch gewähltes Item
+                        global_item = state.global_items[choice]
+                        item["name"] = global_item.name
+                        item["category"] = global_item.category
+                        item["priority"] = global_item.priority
+                        item["template"] = global_item.template
+                        item["min_confidence"] = global_item.min_confidence
+                        item["confirm_point"] = global_item.confirm_point
+                        item["confirm_delay"] = global_item.confirm_delay
+                        # marker_colors behalten wir vom Original
+                        print(f"      → Ersetzt durch '{choice}'")
+                        items_to_keep.append(item)
+                        modified = True
+                        total_updated += 1
+                    else:
+                        # Behalten
+                        items_to_keep.append(item)
+                        total_skipped += 1
+                        print("      → Behalten (unverändert)")
+
+            if modified:
+                data["items"] = items_to_keep
+                with open(scan_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                print(f"    → {scan_name} gespeichert!")
+
+        except Exception as e:
+            print(f"  [FEHLER] {scan_file.name}: {e}")
+
+    print("\n" + "-" * 60)
+    print(f"  SYNC abgeschlossen:")
+    print(f"    Aktualisiert: {total_updated}")
+    print(f"    Entfernt:     {total_removed}")
+    print(f"    Übersprungen: {total_skipped}")
+    print("-" * 60)
+
+
 def load_global_items(state: AutoClickerState) -> None:
     """Lädt alle globalen Items."""
     if not Path(ITEMS_FILE).exists():
@@ -2930,6 +3078,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
     print(f"\n  [1] Slots bearbeiten     ({slot_count} vorhanden)")
     print(f"  [2] Items bearbeiten     ({item_count} vorhanden)")
     print(f"  [3] Scans bearbeiten     ({scan_count} vorhanden)")
+    print(f"  [4] SYNC - Scans mit Items abgleichen")
     print("\n  [0] Abbrechen")
 
     try:
@@ -2940,6 +3089,10 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
             run_global_item_editor(state)
         elif choice == "3":
             run_item_scan_editor(state)
+        elif choice == "4":
+            sync_scans_with_global_items(state)
+            # Scans neu laden nach Sync
+            load_all_item_scans(state)
         elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
             return
         else:
