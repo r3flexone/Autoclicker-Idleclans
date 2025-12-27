@@ -2701,7 +2701,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "✓" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'fertig'")
     while True:
         try:
             inp = input("[Slots] > ").strip().lower()
@@ -2715,6 +2715,22 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 print("  ✓ Auswahl gelöscht")
             elif inp == "show":
                 print(f"\nAusgewählt: {', '.join(selected_slot_names) if selected_slot_names else '(keine)'}")
+            elif "-" in inp:
+                # Bereich: 1-5
+                try:
+                    parts = inp.split("-")
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if 1 <= start <= len(slot_list) and 1 <= end <= len(slot_list):
+                        for num in range(min(start, end), max(start, end) + 1):
+                            name = slot_list[num - 1]
+                            if name not in selected_slot_names:
+                                selected_slot_names.append(name)
+                        print(f"  + Slots {start}-{end} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(slot_list)}")
+                except (ValueError, IndexError):
+                    print("  → Format: <Von>-<Bis> (z.B. 1-5)")
             else:
                 try:
                     num = int(inp)
@@ -2747,7 +2763,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "✓" if name in selected_item_names else " "
         print(f"  [{selected}] {i+1}. {available_items[name]}")
 
-    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'fertig'")
     while True:
         try:
             inp = input("[Items] > ").strip().lower()
@@ -2761,6 +2777,22 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 print("  ✓ Auswahl gelöscht")
             elif inp == "show":
                 print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
+            elif "-" in inp:
+                # Bereich: 1-5
+                try:
+                    parts = inp.split("-")
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if 1 <= start <= len(item_list) and 1 <= end <= len(item_list):
+                        for num in range(min(start, end), max(start, end) + 1):
+                            name = item_list[num - 1]
+                            if name not in selected_item_names:
+                                selected_item_names.append(name)
+                        print(f"  + Items {start}-{end} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(item_list)}")
+                except (ValueError, IndexError):
+                    print("  → Format: <Von>-<Bis> (z.B. 1-5)")
             else:
                 try:
                     num = int(inp)
