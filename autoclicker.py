@@ -3868,9 +3868,6 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
             print(f"[DEBUG] Scanne {slot.name}...")
 
         # Prüfe alle Item-Profile für diesen Slot
-        slot_best_item = None
-        slot_best_priority = 999
-
         for item in config.items:
             item_matched = False
             match_info = ""
@@ -3924,16 +3921,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
                     status = "✓" if item_matched else "✗"
                     print(f"[DEBUG]   {status} {item.name}: {markers_found}/{len(item.marker_colors)} Marker (min {min_required})")
 
-            # Item erkannt?
+            # Item erkannt? → Sofort hinzufügen und zum nächsten Slot
+            # (Ein Slot enthält maximal 1 Item, keine Prioritäts-Konkurrenz)
             if item_matched:
-                print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {match_info})")
-                if item.priority < slot_best_priority:
-                    slot_best_priority = item.priority
-                    slot_best_item = item
-
-        # Merke das beste Item für diesen Slot
-        if slot_best_item:
-            found_items.append((slot, slot_best_item, slot_best_priority))
+                print(f"  → {slot.name}: {item.name} erkannt ({match_info})")
+                found_items.append((slot, item, item.priority))
+                break  # Nächster Slot - dieses Item ist gefunden
 
     if not found_items:
         print("[SCAN] Kein Item erkannt.")
