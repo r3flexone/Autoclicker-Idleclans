@@ -170,7 +170,14 @@ def load_config() -> dict:
                 # Merge mit Default-Config (falls neue Optionen hinzugefügt wurden)
                 config = DEFAULT_CONFIG.copy()
                 config.update(loaded)
-                print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
+
+                # Prüfe ob neue Optionen hinzugefügt wurden
+                missing_keys = set(DEFAULT_CONFIG.keys()) - set(loaded.keys())
+                if missing_keys:
+                    save_config(config)
+                    print(f"[CONFIG] Geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}")
+                else:
+                    print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
                 return config
         except (json.JSONDecodeError, IOError) as e:
             print(f"[WARNUNG] Config konnte nicht geladen werden: {e}")
