@@ -1748,22 +1748,22 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  del <Nr>-<Nr>    - Bereich löschen (z.B. del 1-7)")
     print("  del all          - ALLE Slots löschen")
     print("  show             - Alle Slots anzeigen")
-    print("  fertig / abbruch")
+    print("  done / cancel")
     print("-" * 60)
 
     while True:
         try:
             user_input = input("[Slots] > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 # Speichere mit dem Preset-Namen
                 save_slot_preset(state, preset_name)
                 # Auch als aktive Konfiguration speichern
                 save_global_slots(state)
                 print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
                 return
-            elif user_input == "abbruch":
-                print("\n[ABBRUCH] Änderungen verworfen!")
+            elif user_input == "cancel":
+                print("\n[CANCEL] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -2261,22 +2261,22 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  del <Nr>         - Item löschen")
     print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
-    print("  fertig / abbruch")
+    print("  done / cancel")
     print("-" * 60)
 
     while True:
         try:
             user_input = input("[Items] > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 # Speichere mit dem Preset-Namen
                 save_item_preset(state, preset_name)
                 # Auch als aktive Konfiguration speichern
                 save_global_items(state)
                 print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
                 return
-            elif user_input == "abbruch":
-                print("\n[ABBRUCH] Änderungen verworfen!")
+            elif user_input == "cancel":
+                print("\n[CANCEL] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -2701,12 +2701,14 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "✓" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'fertig'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel'")
     while True:
         try:
             inp = input("[Slots] > ").strip().lower()
-            if inp == "fertig":
+            if inp == "done":
                 break
+            elif inp == "cancel":
+                return
             elif inp == "all":
                 selected_slot_names = list(slot_list)
                 print(f"  ✓ Alle {len(slot_list)} Slots ausgewählt")
@@ -2763,12 +2765,14 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "✓" if name in selected_item_names else " "
         print(f"  [{selected}] {i+1}. {available_items[name]}")
 
-    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'fertig'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel'")
     while True:
         try:
             inp = input("[Items] > ").strip().lower()
-            if inp == "fertig":
+            if inp == "done":
                 break
+            elif inp == "cancel":
+                return
             elif inp == "all":
                 selected_item_names = list(item_list)
                 print(f"  ✓ Alle {len(item_list)} Items ausgewählt")
@@ -2868,7 +2872,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-7)")
     print("  del all        - ALLE Slots löschen")
     print("  show           - Alle Slots anzeigen")
-    print("  fertig / abbruch")
+    print("  done / cancel")
     print("-" * 60)
 
     while True:
@@ -2876,9 +2880,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
             prompt = f"[SLOTS: {len(slots)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 return slots
-            elif user_input == "abbruch":
+            elif user_input == "cancel":
                 return slots  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
@@ -3037,7 +3041,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-5)")
     print("  del all        - ALLE Profile löschen")
     print("  show           - Alle Profile anzeigen")
-    print("  fertig / abbruch")
+    print("  done / cancel")
     print("-" * 60)
 
     while True:
@@ -3045,11 +3049,11 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
             prompt = f"[ITEMS: {len(items)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 # Entferne Farben die bei allen Items gleich sind (Hintergrund)
                 items = remove_common_colors(items)
                 return items
-            elif user_input == "abbruch":
+            elif user_input == "cancel":
                 return items  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
@@ -3672,7 +3676,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
     print("  del all        - ALLE Loop-Phasen löschen")
     print("  show           - Alle Loop-Phasen anzeigen")
-    print("  fertig / abbruch")
+    print("  done / cancel")
     print("-" * 60)
 
     while True:
@@ -3680,9 +3684,9 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
             prompt = f"[LOOPS: {len(loop_phases)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 return loop_phases
-            elif user_input == "abbruch":
+            elif user_input == "cancel":
                 return None  # Abbruch signalisieren
             elif user_input == "":
                 continue
@@ -3885,7 +3889,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
     print("  del <Nr>          - Schritt löschen")
-    print("  clear / show / fertig / abbruch")
+    print("  clear / show / done / cancel")
     print("-" * 60)
 
     while True:
@@ -3893,10 +3897,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             prompt = f"[{phase_name}: {len(steps)}]"
             user_input = input(f"{prompt} > ").strip()
 
-            if user_input.lower() == "fertig":
+            if user_input.lower() == "done":
                 return steps
-            elif user_input.lower() == "abbruch":
-                print("[ABBRUCH] Phase abgebrochen.")
+            elif user_input.lower() == "cancel":
+                print("[CANCEL] Phase abgebrochen.")
                 return None
             elif user_input.lower() == "":
                 continue
