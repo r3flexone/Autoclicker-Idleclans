@@ -2901,7 +2901,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
     """Bearbeitet eine Item-Scan Konfiguration (verknüpft globale Slots + Items)."""
 
-    # Prüfe ob globale Slots und Items vorhanden sind
+    # Prüfe ob globale Slots vorhanden sind
     with state.lock:
         available_slots = dict(state.global_slots)
         available_items = dict(state.global_items)
@@ -2911,10 +2911,10 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         print("         Erstelle zuerst Slots im Slot-Editor (Option 1)")
         return
 
+    # Items sind optional - können im Scan-Editor erstellt werden
     if not available_items:
-        print("\n[FEHLER] Keine globalen Items vorhanden!")
-        print("         Erstelle zuerst Items im Item-Editor (Option 2)")
-        return
+        print("\n[INFO] Noch keine Items vorhanden.")
+        print("       Du kannst sie gleich per Template erstellen!")
 
     if existing:
         print(f"\n--- Bearbeite Scan: {existing.name} ---")
@@ -2995,36 +2995,172 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
         return
 
-    # Schritt 2: Items auswählen
+    # Schritt 2: Items auswählen oder erstellen
     print("\n" + "=" * 60)
-    print("  SCHRITT 2: ITEMS AUSWÄHLEN")
+    print("  SCHRITT 2: ITEMS AUSWÄHLEN / ERSTELLEN")
     print("=" * 60)
+
+    # Zeige verfügbare Templates
+    templates = list(Path(TEMPLATES_DIR).glob("*.png")) if Path(TEMPLATES_DIR).exists() else []
+    if templates:
+        print(f"\nVerfügbare Templates ({len(templates)}):")
+        for t in sorted(templates)[:10]:  # Max 10 anzeigen
+            print(f"    {t.name}")
+        if len(templates) > 10:
+            print(f"    ... und {len(templates) - 10} weitere")
+
+    # Aktualisiere available_items
+    with state.lock:
+        available_items = dict(state.global_items)
+
     print("\nVerfügbare Items:")
     item_list = list(available_items.keys())
-    for i, name in enumerate(item_list):
-        selected = "✓" if name in selected_item_names else " "
-        print(f"  [{selected}] {i+1}. {available_items[name]}")
+    if item_list:
+        for i, name in enumerate(item_list):
+            selected = "✓" if name in selected_item_names else " "
+            print(f"  [{selected}] {i+1}. {available_items[name]}")
+    else:
+        print("  (Keine Items - erstelle welche mit 'new')")
 
-    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel'")
+    print("\n" + "-" * 40)
+    print("Befehle:")
+    print("  <Nr>              - Item auswählen/abwählen")
+    print("  <Von>-<Bis>       - Bereich auswählen (z.B. 1-5)")
+    print("  all | clear       - Alle auswählen / Auswahl löschen")
+    print("  new <Slot-Nr>     - Neues Item per Template von Slot erstellen")
+    print("  done | cancel")
+    print("-" * 40)
+
     while True:
         try:
-            inp = input("[Items] > ").strip().lower()
-            if inp == "done":
+            inp = input("[Items] > ").strip()
+            inp_lower = inp.lower()
+
+            if inp_lower == "done":
                 break
-            elif inp == "cancel":
+            elif inp_lower == "cancel":
                 return
-            elif inp == "all":
+            elif inp_lower == "all":
                 selected_item_names = list(item_list)
                 print(f"  ✓ Alle {len(item_list)} Items ausgewählt")
-            elif inp == "clear":
+            elif inp_lower == "clear":
                 selected_item_names = []
                 print("  ✓ Auswahl gelöscht")
-            elif inp == "show":
+            elif inp_lower == "show":
                 print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
-            elif "-" in inp:
+
+            elif inp_lower.startswith("new"):
+                # Neues Item per Template erstellen
+                if not OPENCV_AVAILABLE:
+                    print("  → OpenCV nicht installiert! (pip install opencv-python)")
+                    continue
+
+                # Slot-Nummer parsen
+                slot_num = None
+                if inp_lower.startswith("new "):
+                    try:
+                        slot_num = int(inp[4:])
+                    except ValueError:
+                        pass
+
+                if slot_num is None:
+                    print(f"\n  Von welchem Slot Screenshot machen? (1-{len(slot_list)})")
+                    try:
+                        slot_num = int(input("  Slot-Nr: ").strip())
+                    except ValueError:
+                        print("  → Ungültige Eingabe!")
+                        continue
+
+                if slot_num < 1 or slot_num > len(slot_list):
+                    print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
+                    continue
+
+                # Screenshot vom Slot machen
+                slot_name = slot_list[slot_num - 1]
+                slot = available_slots[slot_name]
+                print(f"\n  Mache Screenshot von {slot_name}...")
+
+                template_img = take_screenshot(slot.scan_region)
+                if not template_img:
+                    print("  → Screenshot fehlgeschlagen!")
+                    continue
+
+                # Item-Name abfragen
+                item_name = input("  Item-Name: ").strip()
+                if not item_name:
+                    item_name = f"Item_{len(item_list) + 1}"
+
+                # Prüfen ob Name schon existiert
+                if item_name in available_items:
+                    print(f"  → '{item_name}' existiert bereits!")
+                    continue
+
+                # Template speichern
+                safe_name = sanitize_filename(item_name)
+                template_file = f"{safe_name}.png"
+                template_path = Path(TEMPLATES_DIR) / template_file
+                template_img.save(template_path)
+
+                # Priorität
+                priority = len(item_list) + 1
+                try:
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    if prio_input:
+                        priority = max(1, int(prio_input))
+                except ValueError:
+                    pass
+
+                # Konfidenz
+                min_confidence = 0.8
+                try:
+                    conf_input = input("  Min. Konfidenz % (Enter=80): ").strip()
+                    if conf_input:
+                        min_confidence = max(0.1, min(1.0, float(conf_input) / 100))
+                except ValueError:
+                    pass
+
+                # Bestätigungs-Klick?
+                confirm_point = None
+                confirm_delay = 0.5
+                confirm_input = input("  Bestätigungs-Punkt Nr (Enter=Nein): ").strip()
+                if confirm_input:
+                    try:
+                        confirm_point = int(confirm_input)
+                        if confirm_point >= 1:
+                            delay_input = input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
+                            if delay_input:
+                                confirm_delay = float(delay_input)
+                    except ValueError:
+                        confirm_point = None
+
+                # Item erstellen
+                new_item = ItemProfile(
+                    name=item_name,
+                    marker_colors=[],
+                    priority=priority,
+                    confirm_point=confirm_point,
+                    confirm_delay=confirm_delay,
+                    template=template_file,
+                    min_confidence=min_confidence
+                )
+
+                # Global speichern
+                with state.lock:
+                    state.global_items[item_name] = new_item
+                save_global_items(state)
+
+                # Listen aktualisieren
+                available_items[item_name] = new_item
+                item_list.append(item_name)
+                selected_item_names.append(item_name)
+
+                print(f"  ✓ Item '{item_name}' erstellt mit Template '{template_file}' ({min_confidence:.0%})")
+                print(f"  ✓ Automatisch zum Scan hinzugefügt")
+
+            elif "-" in inp_lower and not inp_lower.startswith("new"):
                 # Bereich: 1-5
                 try:
-                    parts = inp.split("-")
+                    parts = inp_lower.split("-")
                     start = int(parts[0])
                     end = int(parts[1])
                     if 1 <= start <= len(item_list) and 1 <= end <= len(item_list):
