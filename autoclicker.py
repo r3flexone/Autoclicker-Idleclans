@@ -975,6 +975,42 @@ def shift_category_priorities(state: AutoClickerState, category: str) -> int:
 
     return shifted
 
+
+def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[str] = None) -> int:
+    """Aktualisiert ein Item in allen Scan-Konfigurationen.
+
+    Returns: Anzahl der aktualisierten Scans.
+    """
+    updated_scans = 0
+    scan_dir = Path(ITEM_SCANS_DIR)
+
+    if not scan_dir.exists():
+        return 0
+
+    for scan_file in scan_dir.glob("*.json"):
+        try:
+            with open(scan_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            modified = False
+            for item in data.get("items", []):
+                if item.get("name") == old_name:
+                    item["name"] = new_name
+                    if new_template:
+                        item["template"] = new_template
+                    modified = True
+
+            if modified:
+                with open(scan_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                updated_scans += 1
+
+        except Exception as e:
+            print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
+
+    return updated_scans
+
+
 def load_global_items(state: AutoClickerState) -> None:
     """Lädt alle globalen Items."""
     if not Path(ITEMS_FILE).exists():
@@ -2724,6 +2760,12 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                             del state.global_items[old_name]
                             state.global_items[new_name] = item
                             save_global_items(state)
+
+                            # Auch in allen Scan-Konfigurationen aktualisieren
+                            updated_scans = update_item_in_scans(old_name, new_name, item.template)
+                            if updated_scans > 0:
+                                print(f"  ✓ {updated_scans} Scan-Konfiguration(en) aktualisiert")
+
                             print(f"  ✓ Item umbenannt: '{old_name}' → '{new_name}' (gespeichert)")
                         else:
                             print(f"  → Ungültiges Item! Verfügbar: 1-{len(item_names)}")
