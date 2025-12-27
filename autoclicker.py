@@ -953,6 +953,28 @@ def save_global_items(state: AutoClickerState) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
 
+
+def shift_category_priorities(state: AutoClickerState, category: str) -> int:
+    """Verschiebt alle Items einer Kategorie um +1 in der Priorität.
+
+    Returns: Anzahl der verschobenen Items.
+    """
+    if not category:
+        return 0
+
+    shifted = 0
+    with state.lock:
+        for item in state.global_items.values():
+            if item.category == category:
+                item.priority += 1
+                shifted += 1
+
+    if shifted > 0:
+        save_global_items(state)
+        print(f"  → {shifted} Item(s) in Kategorie '{category}' nach hinten verschoben")
+
+    return shifted
+
 def load_global_items(state: AutoClickerState) -> None:
     """Lädt alle globalen Items."""
     if not Path(ITEMS_FILE).exists():
@@ -2405,15 +2427,29 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         print(f"  → Item '{item_name}' existiert bereits!")
                         continue
 
-                # Priorität
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
+                print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
+                category = input("  Kategorie (Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
                     if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Abgebrochen")
                         continue
                     if prio_input:
-                        priority = max(1, int(prio_input))
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
                 except ValueError:
                     pass
 
@@ -2448,11 +2484,6 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                     pass
                     except ValueError:
                         print("  → Keine gültige Zahl, keine Bestätigung")
-
-                # Kategorie abfragen (für Prioritäts-Vergleich)
-                print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
-                print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
-                category = input("  Kategorie (Enter = keine): ").strip() or None
 
                 # Item erstellen und speichern
                 item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
@@ -2518,15 +2549,27 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         print(f"  → Item '{item_name}' existiert bereits!")
                         continue
 
-                # Priorität
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'cancel'): ").strip()
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}, 'cancel'): ").strip()
                     if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Item-Erstellung abgebrochen")
                         continue
                     if prio_input:
-                        priority = max(1, int(prio_input))
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
                 except ValueError:
                     pass
 
@@ -2554,9 +2597,6 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                     pass
                     except ValueError:
                         pass
-
-                # Kategorie abfragen
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
 
                 item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
                 with state.lock:
@@ -3207,12 +3247,24 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 template_path = Path(TEMPLATES_DIR) / template_file
                 template_img.save(template_path)
 
-                # Priorität
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
                     if prio_input:
-                        priority = max(1, int(prio_input))
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
                 except ValueError:
                     pass
 
@@ -3224,9 +3276,6 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                         min_confidence = max(0.1, min(1.0, float(conf_input) / 100))
                 except ValueError:
                     pass
-
-                # Kategorie (für Prioritäts-Vergleich)
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
 
                 # Bestätigungs-Klick?
                 confirm_point = None
@@ -3562,6 +3611,9 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 if not item_name:
                     item_name = f"Item {item_num}"
 
+                # Kategorie zuerst
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
                 # Priorität
                 priority = 1
                 try:
@@ -3627,9 +3679,6 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                     confirm_delay = 0.5
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
-
-                # Kategorie abfragen
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
 
                 item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
                 items.append(item)
