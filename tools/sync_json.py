@@ -56,6 +56,13 @@ def load_global_slots() -> dict:
         return {}
 
 
+def normalize_confirm_point(cp):
+    """Normalisiert confirm_point: [x, y] Liste behalten, alte int-Werte -> None."""
+    if cp and isinstance(cp, list) and len(cp) == 2:
+        return cp  # Gueltige Koordinaten
+    return None  # Alte int-Werte oder ungueltige Daten -> None
+
+
 def sync_global_items(items: dict) -> int:
     """Speichert Items mit korrekter Feldordnung."""
     if not items:
@@ -68,7 +75,7 @@ def sync_global_items(items: dict) -> int:
             "marker_colors": item.get("marker_colors", []),
             "category": item.get("category"),
             "priority": item.get("priority", 1),
-            "confirm_point": item.get("confirm_point"),
+            "confirm_point": normalize_confirm_point(item.get("confirm_point")),
             "confirm_delay": item.get("confirm_delay", 0.5),
             "template": item.get("template"),
             "min_confidence": item.get("min_confidence", 0.8)
@@ -122,7 +129,7 @@ def sync_item_presets() -> int:
                     "marker_colors": item_data.get("marker_colors", []),
                     "category": item_data.get("category"),
                     "priority": item_data.get("priority", 1),
-                    "confirm_point": item_data.get("confirm_point"),
+                    "confirm_point": normalize_confirm_point(item_data.get("confirm_point")),
                     "confirm_delay": item_data.get("confirm_delay", 0.5),
                     "template": item_data.get("template"),
                     "min_confidence": item_data.get("min_confidence", 0.8)
@@ -261,7 +268,7 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
                     "marker_colors": item.get("marker_colors", []),
                     "category": item.get("category"),
                     "priority": item.get("priority", 1),
-                    "confirm_point": item.get("confirm_point"),
+                    "confirm_point": normalize_confirm_point(item.get("confirm_point")),
                     "confirm_delay": item.get("confirm_delay", 0.5),
                     "template": item.get("template"),
                     "min_confidence": item.get("min_confidence", 0.8)

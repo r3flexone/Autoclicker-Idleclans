@@ -530,7 +530,7 @@ class ItemProfile:
     # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
     category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
     priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
-    confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
+    confirm_point: Optional[tuple] = None  # (x, y) Koordinaten für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
@@ -544,7 +544,7 @@ class ItemProfile:
             if len(self.marker_colors) > 3:
                 colors_str += f" (+{len(self.marker_colors)-3})"
             template_str = colors_str if colors_str else "keine Marker"
-        confirm_str = f" → Punkt {self.confirm_point}" if self.confirm_point else ""
+        confirm_str = f" → ({self.confirm_point[0]},{self.confirm_point[1]})" if self.confirm_point else ""
         category_str = f" [{self.category}]" if self.category else ""
         return f"[P{self.priority}]{category_str} {self.name}: {template_str}{confirm_str}"
 
@@ -811,7 +811,7 @@ def save_item_scan(config: ItemScanConfig) -> None:
                 "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
                 "category": item.category,
                 "priority": item.priority,
-                "confirm_point": item.confirm_point,
+                "confirm_point": list(item.confirm_point) if item.confirm_point else None,
                 "confirm_delay": item.confirm_delay,
                 "template": item.template,
                 "min_confidence": item.min_confidence
@@ -847,12 +847,18 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             items = []
             for i in data.get("items", []):
+                # confirm_point: kann [x,y] Liste sein oder None
+                cp = i.get("confirm_point")
+                if cp and isinstance(cp, list) and len(cp) == 2:
+                    cp = tuple(cp)
+                else:
+                    cp = None  # Alte int-Werte ignorieren
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                     category=i.get("category"),
                     priority=i.get("priority", 1),
-                    confirm_point=i.get("confirm_point"),
+                    confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
                     min_confidence=i.get("min_confidence", 0.8)
@@ -942,7 +948,7 @@ def save_global_items(state: AutoClickerState) -> None:
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "category": item.category,
             "priority": item.priority,
-            "confirm_point": item.confirm_point,
+            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
             "min_confidence": item.min_confidence
@@ -1019,12 +1025,18 @@ def load_global_items(state: AutoClickerState) -> None:
         with open(ITEMS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         for name, i in data.items():
+            # confirm_point: kann [x,y] Liste sein oder None
+            cp = i.get("confirm_point")
+            if cp and isinstance(cp, list) and len(cp) == 2:
+                cp = tuple(cp)
+            else:
+                cp = None  # Alte int-Werte ignorieren
             state.global_items[name] = ItemProfile(
                 name=i["name"],
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                 category=i.get("category"),
                 priority=i.get("priority", 1),
-                confirm_point=i.get("confirm_point"),
+                confirm_point=cp,
                 confirm_delay=i.get("confirm_delay", 0.5),
                 template=i.get("template"),
                 min_confidence=i.get("min_confidence", 0.8)
@@ -1155,7 +1167,7 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "category": item.category,
             "priority": item.priority,
-            "confirm_point": item.confirm_point,
+            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
             "min_confidence": item.min_confidence
@@ -1185,12 +1197,18 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         with state.lock:
             state.global_items.clear()
             for name, i in data.items():
+                # confirm_point: kann [x,y] Liste sein oder None
+                cp = i.get("confirm_point")
+                if cp and isinstance(cp, list) and len(cp) == 2:
+                    cp = tuple(cp)
+                else:
+                    cp = None  # Alte int-Werte ignorieren
                 state.global_items[name] = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                     category=i.get("category"),
                     priority=i.get("priority", 1),
-                    confirm_point=i.get("confirm_point"),
+                    confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
                     min_confidence=i.get("min_confidence", 0.8)
@@ -2508,16 +2526,17 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                     continue
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            confirm_point = None
-                        else:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     pass
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         print("  → Keine gültige Zahl, keine Bestätigung")
 
@@ -2551,7 +2570,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 with state.lock:
                     state.global_items[item_name] = item
 
-                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
                 template_str = f" + Template" if item.template else ""
                 print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
                 continue
@@ -2621,23 +2640,24 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja): ").strip()
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            confirm_point = None
-                        else:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     pass
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         pass
 
                 item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
-                confirm_str = f" → Punkt {confirm_point}" if confirm_point else ""
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]})" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
                 print(f"  ✓ Item '{item_name}'{cat_str} hinzugefügt!{confirm_str}")
                 continue
@@ -2682,19 +2702,23 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                     item.marker_colors = new_colors
 
                             # Bestätigung
-                            current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                            current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
                             confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-Nr=setzen, 0=entfernen, Enter=behalten): ").strip()
                             if confirm_input == "0":
                                 item.confirm_point = None
                             elif confirm_input:
                                 try:
-                                    item.confirm_point = int(confirm_input)
-                                    delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
-                                    if delay_input:
-                                        try:
-                                            item.confirm_delay = float(delay_input)
-                                        except ValueError:
-                                            pass
+                                    point_nr = int(confirm_input)
+                                    if point_nr >= 1 and point_nr <= len(state.points):
+                                        item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                        delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                        if delay_input:
+                                            try:
+                                                item.confirm_delay = float(delay_input)
+                                            except ValueError:
+                                                pass
+                                    else:
+                                        print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                                 except ValueError:
                                     pass
 
@@ -3325,13 +3349,16 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 confirm_input = input("  Bestätigungs-Punkt Nr (Enter=Nein): ").strip()
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point >= 1:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
                             if delay_input:
                                 confirm_delay = float(delay_input)
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
-                        confirm_point = None
+                        pass
 
                 # Item erstellen
                 new_item = ItemProfile(
@@ -3707,24 +3734,23 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     continue
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            print("  → Ungültiger Punkt, Bestätigung übersprungen")
-                            confirm_point = None
-                        else:
-                            # Wartezeit vor Bestätigung
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     confirm_delay = 0.5
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
 
                 item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 items.append(item)
-                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
                 print(f"  ✓ {item_name}{cat_str} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
                 continue
@@ -3763,20 +3789,24 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 item.marker_colors = new_colors
 
                         # Bestätigung bearbeiten
-                        current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                        current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
                         confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
                         if confirm_input == "0":
                             item.confirm_point = None
                             print("  → Bestätigung entfernt")
                         elif confirm_input:
                             try:
-                                item.confirm_point = int(confirm_input)
-                                delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
-                                if delay_input:
-                                    try:
-                                        item.confirm_delay = float(delay_input)
-                                    except ValueError:
-                                        pass
+                                point_nr = int(confirm_input)
+                                if point_nr >= 1 and point_nr <= len(state.points):
+                                    item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                    delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                    if delay_input:
+                                        try:
+                                            item.confirm_delay = float(delay_input)
+                                        except ValueError:
+                                            pass
+                                else:
+                                    print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                             except ValueError:
                                 pass
 
@@ -5144,26 +5174,18 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                     state.total_clicks += 1
                     state.items_found += 1
 
-                # Bestätigungs-Klick falls für dieses Item definiert
+                # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
+                    confirm_x, confirm_y = item.confirm_point
                     if CONFIG.get("debug_detection", False):
-                        print(f"[DEBUG] Item hat confirm_point={item.confirm_point}, confirm_delay={item.confirm_delay}")
-                    confirm_pos = None
+                        print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
+                    if item.confirm_delay > 0:
+                        time.sleep(item.confirm_delay)
+                    send_click(confirm_x, confirm_y)
+                    if CONFIG.get("debug_detection", False):
+                        print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                     with state.lock:
-                        if 1 <= item.confirm_point <= len(state.points):
-                            confirm_pos = state.points[item.confirm_point - 1]
-                        else:
-                            print(f"\n  [WARNUNG] Bestätigungs-Punkt {item.confirm_point} nicht vorhanden!")
-                    if confirm_pos is not None:
-                        if CONFIG.get("debug_detection", False):
-                            print(f"[DEBUG] Warte {item.confirm_delay}s für Bestätigung bei ({confirm_pos.x}, {confirm_pos.y})")
-                        if item.confirm_delay > 0:
-                            time.sleep(item.confirm_delay)
-                        send_click(confirm_pos.x, confirm_pos.y)
-                        if CONFIG.get("debug_detection", False):
-                            print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
-                        with state.lock:
-                            state.total_clicks += 1
+                        state.total_clicks += 1
 
                 # 1 Sekunde Pause nach jedem Klick
                 time.sleep(1.0)
