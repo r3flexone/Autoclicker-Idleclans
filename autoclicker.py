@@ -89,6 +89,15 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
+# OpenCV für Template Matching (optional)
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    logger.warning("OpenCV nicht installiert. Template Matching deaktiviert.")
+    logger.warning("Installieren mit: pip install opencv-python")
+
 def set_log_level(level: str) -> None:
     """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
     levels = {
@@ -502,28 +511,36 @@ ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
 SLOTS_DIR: str = "slots"            # Ordner für Slots
 ITEMS_DIR: str = "items"            # Ordner für Items
 SCREENSHOTS_DIR: str = os.path.join(SLOTS_DIR, "Screenshots") # Ordner für Screenshots
+TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")     # Ordner für Item-Templates
 SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
 ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
 
 # Ordner erstellen falls nicht vorhanden
-for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR]:
+for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR, TEMPLATES_DIR]:
     os.makedirs(folder, exist_ok=True)
 
 @dataclass
 class ItemProfile:
-    """Ein Item-Typ mit Marker-Farben und Priorität."""
+    """Ein Item-Typ mit Marker-Farben und/oder Template-Matching."""
     name: str
     marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
     priority: int = 99  # 1 = beste, höher = schlechter
     confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
+    # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
+    template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
+    min_confidence: float = 0.8  # Mindest-Konfidenz für Template-Match (0.0-1.0)
 
     def __str__(self) -> str:
-        colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
-        if len(self.marker_colors) > 3:
-            colors_str += f" (+{len(self.marker_colors)-3})"
+        if self.template:
+            template_str = f"Template: {self.template} (≥{self.min_confidence:.0%})"
+        else:
+            colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
+            if len(self.marker_colors) > 3:
+                colors_str += f" (+{len(self.marker_colors)-3})"
+            template_str = colors_str if colors_str else "keine Marker"
         confirm_str = f" → Punkt {self.confirm_point}" if self.confirm_point else ""
-        return f"[P{self.priority}] {self.name}: {colors_str}{confirm_str}"
+        return f"[P{self.priority}] {self.name}: {template_str}{confirm_str}"
 
 @dataclass
 class ItemSlot:
@@ -784,10 +801,12 @@ def save_item_scan(config: ItemScanConfig) -> None:
         "items": [
             {
                 "name": item.name,
-                "marker_colors": [list(c) for c in item.marker_colors],
+                "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
                 "priority": item.priority,
                 "confirm_point": item.confirm_point,
-                "confirm_delay": item.confirm_delay
+                "confirm_delay": item.confirm_delay,
+                "template": item.template,
+                "min_confidence": item.min_confidence
             }
             for item in config.items
         ]
@@ -825,7 +844,9 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                     priority=i.get("priority", 99),
                     confirm_point=i.get("confirm_point"),
-                    confirm_delay=i.get("confirm_delay", 0.5)
+                    confirm_delay=i.get("confirm_delay", 0.5),
+                    template=i.get("template"),
+                    min_confidence=i.get("min_confidence", 0.8)
                 )
                 items.append(item)
 
@@ -909,10 +930,12 @@ def save_global_items(state: AutoClickerState) -> None:
     data = {
         name: {
             "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors],
+            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "priority": item.priority,
             "confirm_point": item.confirm_point,
-            "confirm_delay": item.confirm_delay
+            "confirm_delay": item.confirm_delay,
+            "template": item.template,
+            "min_confidence": item.min_confidence
         }
         for name, item in state.global_items.items()
     }
@@ -933,7 +956,9 @@ def load_global_items(state: AutoClickerState) -> None:
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                 priority=i.get("priority", 99),
                 confirm_point=i.get("confirm_point"),
-                confirm_delay=i.get("confirm_delay", 0.5)
+                confirm_delay=i.get("confirm_delay", 0.5),
+                template=i.get("template"),
+                min_confidence=i.get("min_confidence", 0.8)
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
@@ -1058,10 +1083,12 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     data = {
         name: {
             "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors],
+            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "priority": item.priority,
             "confirm_point": item.confirm_point,
-            "confirm_delay": item.confirm_delay
+            "confirm_delay": item.confirm_delay,
+            "template": item.template,
+            "min_confidence": item.min_confidence
         }
         for name, item in state.global_items.items()
     }
@@ -1093,7 +1120,9 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
                     priority=i.get("priority", 99),
                     confirm_point=i.get("confirm_point"),
-                    confirm_delay=i.get("confirm_delay", 0.5)
+                    confirm_delay=i.get("confirm_delay", 0.5),
+                    template=i.get("template"),
+                    min_confidence=i.get("min_confidence", 0.8)
                 )
 
         # Auch in aktive Datei speichern
@@ -1259,6 +1288,60 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
                 if color_distance(pixel, target_color) <= tolerance:
                     return True
         return False
+
+def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = 0.8) -> tuple:
+    """
+    Sucht ein Template-Bild im gegebenen Bild mittels OpenCV Template Matching.
+
+    Args:
+        img: PIL Image (Suchbereich)
+        template_name: Dateiname des Templates (in items/templates/)
+        min_confidence: Mindest-Konfidenz für Match (0.0-1.0)
+
+    Returns:
+        (match_found: bool, confidence: float, position: tuple or None)
+        position ist (x, y) relativ zum Suchbereich
+    """
+    if not OPENCV_AVAILABLE:
+        logger.warning("OpenCV nicht verfügbar für Template Matching")
+        return (False, 0.0, None)
+
+    if not NUMPY_AVAILABLE:
+        logger.warning("NumPy nicht verfügbar für Template Matching")
+        return (False, 0.0, None)
+
+    # Template-Pfad erstellen
+    template_path = os.path.join(TEMPLATES_DIR, template_name)
+    if not os.path.exists(template_path):
+        logger.error(f"Template nicht gefunden: {template_path}")
+        return (False, 0.0, None)
+
+    try:
+        # PIL-Bild zu OpenCV-Format konvertieren (RGB -> BGR)
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+        # Template laden
+        template_cv = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        if template_cv is None:
+            logger.error(f"Konnte Template nicht laden: {template_path}")
+            return (False, 0.0, None)
+
+        # Template Matching mit TM_CCOEFF_NORMED (beste Methode für farbige Bilder)
+        result = cv2.matchTemplate(img_cv, template_cv, cv2.TM_CCOEFF_NORMED)
+
+        # Bestes Match finden
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        # max_val ist die Konfidenz (0.0 - 1.0)
+        if max_val >= min_confidence:
+            # Position ist obere linke Ecke des Matches
+            return (True, max_val, max_loc)
+        else:
+            return (False, max_val, None)
+
+    except Exception as e:
+        logger.error(f"Template Matching Fehler: {e}")
+        return (False, 0.0, None)
 
 def get_color_name(rgb: tuple) -> str:
     """Gibt einen ungefähren Farbnamen für RGB zurück."""
@@ -2261,6 +2344,8 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  del <Nr>         - Item löschen")
     print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
+    print("  template <Nr>    - Template für Item setzen/entfernen")
+    print("  templates        - Verfügbare Templates anzeigen")
     print("  done | cancel")
     print("-" * 60)
 
@@ -2388,11 +2473,37 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
                 # Item erstellen und speichern
                 item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+
+                # Optional: Auch als Template speichern?
+                if OPENCV_AVAILABLE:
+                    save_template = input("  Auch als Template speichern? (j/n, Enter=n): ").strip().lower()
+                    if save_template == "j":
+                        # Screenshot der Scan-Region als Template speichern
+                        template_img = take_screenshot(selected_slot.scan_region)
+                        if template_img:
+                            safe_name = sanitize_filename(item_name)
+                            template_file = f"{safe_name}.png"
+                            template_path = Path(TEMPLATES_DIR) / template_file
+                            template_img.save(template_path)
+                            item.template = template_file
+
+                            # Konfidenz abfragen
+                            conf_input = input(f"  Min. Konfidenz für Template (Enter=80%): ").strip()
+                            if conf_input:
+                                try:
+                                    conf = float(conf_input.replace("%", "")) / 100
+                                    item.min_confidence = max(0.1, min(1.0, conf))
+                                except ValueError:
+                                    pass
+
+                            print(f"  ✓ Template gespeichert: {template_file}")
+
                 with state.lock:
                     state.global_items[item_name] = item
 
                 confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
-                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}")
+                template_str = f" + Template" if item.template else ""
+                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
                 continue
 
             elif user_input == "del all":
@@ -2529,6 +2640,135 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                             print(f"  → Ungültiges Item!")
                 except ValueError:
                     print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input == "templates":
+                # Zeige verfügbare Templates
+                if not Path(TEMPLATES_DIR).exists():
+                    print("  → Keine Templates vorhanden")
+                    continue
+                templates = list(Path(TEMPLATES_DIR).glob("*.png"))
+                if not templates:
+                    print("  → Keine Templates vorhanden")
+                    print(f"    (Ordner: {TEMPLATES_DIR})")
+                else:
+                    print(f"\n  Verfügbare Templates ({len(templates)}):")
+                    for t in sorted(templates):
+                        print(f"    - {t.name}")
+                continue
+
+            elif user_input.startswith("template "):
+                try:
+                    item_num = int(user_input[9:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= item_num <= len(item_names):
+                            name = item_names[item_num - 1]
+                            item = state.global_items[name]
+
+                            # Verfügbare Templates anzeigen
+                            templates = list(Path(TEMPLATES_DIR).glob("*.png")) if Path(TEMPLATES_DIR).exists() else []
+                            if templates:
+                                print(f"\n  Verfügbare Templates:")
+                                for i, t in enumerate(sorted(templates)):
+                                    print(f"    {i+1}. {t.name}")
+
+                            current = item.template if item.template else "Keins"
+                            print(f"\n  Item: {item.name}")
+                            print(f"  Aktuelles Template: {current}")
+                            print(f"  Aktuelle Konfidenz: {item.min_confidence:.0%}")
+
+                            print("\n  Optionen:")
+                            print("    <Dateiname.png> - Template setzen")
+                            print("    <Nr>            - Template aus Liste wählen")
+                            print("    capture         - Screenshot als Template speichern")
+                            print("    remove          - Template entfernen")
+                            print("    Enter           - Abbrechen")
+
+                            template_input = input("  Template: ").strip()
+                            if not template_input:
+                                continue
+
+                            if template_input.lower() == "remove":
+                                item.template = None
+                                print("  ✓ Template entfernt!")
+                            elif template_input.lower() == "capture":
+                                # Screenshot-Region abfragen
+                                with state.lock:
+                                    slot_list = list(state.global_slots.values())
+                                if slot_list:
+                                    print(f"\n  Screenshot von:")
+                                    print("    0. Freie Region wählen")
+                                    for i, slot in enumerate(slot_list):
+                                        print(f"    {i+1}. {slot.name}")
+                                    try:
+                                        slot_choice = input("  Auswahl: ").strip()
+                                        if slot_choice == "0":
+                                            region = select_screen_region()
+                                        else:
+                                            slot_idx = int(slot_choice) - 1
+                                            if 0 <= slot_idx < len(slot_list):
+                                                region = slot_list[slot_idx].scan_region
+                                            else:
+                                                print("  → Ungültiger Slot!")
+                                                continue
+                                    except ValueError:
+                                        region = select_screen_region()
+                                else:
+                                    region = select_screen_region()
+
+                                if region:
+                                    # Screenshot machen
+                                    img = take_screenshot(region)
+                                    if img:
+                                        # Dateiname
+                                        safe_name = sanitize_filename(item.name)
+                                        template_file = f"{safe_name}.png"
+                                        template_path = Path(TEMPLATES_DIR) / template_file
+                                        img.save(template_path)
+                                        item.template = template_file
+
+                                        # Konfidenz abfragen
+                                        conf_input = input(f"  Min. Konfidenz (Enter=80%): ").strip()
+                                        if conf_input:
+                                            try:
+                                                conf = float(conf_input.replace("%", "")) / 100
+                                                item.min_confidence = max(0.1, min(1.0, conf))
+                                            except ValueError:
+                                                pass
+
+                                        print(f"  ✓ Template gespeichert: {template_file}")
+                                    else:
+                                        print("  → Screenshot fehlgeschlagen!")
+                            else:
+                                # Dateiname oder Nummer
+                                try:
+                                    template_num = int(template_input)
+                                    if 1 <= template_num <= len(templates):
+                                        item.template = sorted(templates)[template_num - 1].name
+                                    else:
+                                        print("  → Ungültige Nummer!")
+                                        continue
+                                except ValueError:
+                                    # Direkter Dateiname
+                                    if not template_input.endswith(".png"):
+                                        template_input += ".png"
+                                    item.template = template_input
+
+                                # Konfidenz abfragen
+                                conf_input = input(f"  Min. Konfidenz (aktuell {item.min_confidence:.0%}, Enter=behalten): ").strip()
+                                if conf_input:
+                                    try:
+                                        conf = float(conf_input.replace("%", "")) / 100
+                                        item.min_confidence = max(0.1, min(1.0, conf))
+                                    except ValueError:
+                                        pass
+
+                                print(f"  ✓ Template gesetzt: {item.template} (≥{item.min_confidence:.0%})")
+                        else:
+                            print(f"  → Ungültiges Item!")
+                except ValueError:
+                    print("  → Format: template <Nr>")
                 continue
 
             else:
@@ -3435,32 +3675,51 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         slot_best_priority = 999
 
         for item in config.items:
-            # Berechne min_required vor der Schleife für Early-Exit
-            if CONFIG.get("require_all_markers", True):
-                min_required = len(item.marker_colors)
-            else:
-                min_required = min(CONFIG.get("min_markers_required", 2), len(item.marker_colors))
+            item_matched = False
+            match_info = ""
 
-            # Prüfe ob Marker-Farben vorhanden sind (mit Early-Exit-Optimierung)
-            markers_found = 0
-            markers_missing = 0
-            max_allowed_missing = len(item.marker_colors) - min_required
-
-            for marker_color in item.marker_colors:
-                if find_color_in_image(img, marker_color, config.color_tolerance):
-                    markers_found += 1
-                    # Early exit: Genug Marker gefunden
-                    if markers_found >= min_required:
-                        break
+            # Methode 1: Template Matching (wenn Template definiert)
+            if item.template:
+                if not OPENCV_AVAILABLE:
+                    print(f"  [WARNUNG] OpenCV nicht verfügbar für Template '{item.template}'")
+                    continue
+                matched, confidence, pos = match_template_in_image(img, item.template, item.min_confidence)
+                if matched:
+                    item_matched = True
+                    match_info = f"Template {confidence:.0%}"
+            # Methode 2: Marker-Farben (Fallback oder wenn kein Template)
+            elif item.marker_colors:
+                # Berechne min_required vor der Schleife für Early-Exit
+                if CONFIG.get("require_all_markers", True):
+                    min_required = len(item.marker_colors)
                 else:
-                    markers_missing += 1
-                    # Early exit: Zu viele Marker fehlen
-                    if markers_missing > max_allowed_missing:
-                        break
+                    min_required = min(CONFIG.get("min_markers_required", 2), len(item.marker_colors))
 
-            # Item erkannt wenn genug Marker-Farben gefunden
-            if markers_found >= min_required:
-                print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
+                # Prüfe ob Marker-Farben vorhanden sind (mit Early-Exit-Optimierung)
+                markers_found = 0
+                markers_missing = 0
+                max_allowed_missing = len(item.marker_colors) - min_required
+
+                for marker_color in item.marker_colors:
+                    if find_color_in_image(img, marker_color, config.color_tolerance):
+                        markers_found += 1
+                        # Early exit: Genug Marker gefunden
+                        if markers_found >= min_required:
+                            break
+                    else:
+                        markers_missing += 1
+                        # Early exit: Zu viele Marker fehlen
+                        if markers_missing > max_allowed_missing:
+                            break
+
+                # Item erkannt wenn genug Marker-Farben gefunden
+                if markers_found >= min_required:
+                    item_matched = True
+                    match_info = f"{markers_found}/{len(item.marker_colors)} Marker"
+
+            # Item erkannt?
+            if item_matched:
+                print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {match_info})")
                 if item.priority < slot_best_priority:
                     slot_best_priority = item.priority
                     slot_best_item = item
