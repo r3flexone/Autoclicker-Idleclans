@@ -2429,7 +2429,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         continue
 
                 # Priorität
-                priority = item_num
+                priority = 1
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
                     if prio_input.lower() == "abbruch":
@@ -2537,7 +2537,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         continue
 
                 # Priorität
-                priority = item_num
+                priority = 1
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
                     if prio_input.lower() == "abbruch":
@@ -3160,7 +3160,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 template_img.save(template_path)
 
                 # Priorität
-                priority = len(item_list) + 1
+                priority = 1
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
                     if prio_input:
@@ -3510,7 +3510,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     item_name = f"Item {item_num}"
 
                 # Priorität
-                priority = len(items) + 1
+                priority = 1
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
                     if prio_input.lower() == "abbruch":
