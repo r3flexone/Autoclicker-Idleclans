@@ -1748,7 +1748,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  del <Nr>-<Nr>    - Bereich löschen (z.B. del 1-7)")
     print("  del all          - ALLE Slots löschen")
     print("  show             - Alle Slots anzeigen")
-    print("  done / cancel")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -2261,7 +2261,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  del <Nr>         - Item löschen")
     print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
-    print("  done / cancel")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -2872,7 +2872,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-7)")
     print("  del all        - ALLE Slots löschen")
     print("  show           - Alle Slots anzeigen")
-    print("  done / cancel")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -3041,7 +3041,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-5)")
     print("  del all        - ALLE Profile löschen")
     print("  show           - Alle Profile anzeigen")
-    print("  done / cancel")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -3676,7 +3676,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
     print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
     print("  del all        - ALLE Loop-Phasen löschen")
     print("  show           - Alle Loop-Phasen anzeigen")
-    print("  done / cancel")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -3889,7 +3889,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
     print("  del <Nr>          - Schritt löschen")
-    print("  clear / show / done / cancel")
+    print("  clear | show | done | cancel")
     print("-" * 60)
 
     while True:
