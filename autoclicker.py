@@ -4270,6 +4270,9 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
                          total_steps: int, message: str) -> bool:
     """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
     remaining = seconds
+    debug_active = CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False)
+    last_remaining = -1  # Track um doppelte Ausgaben zu vermeiden
+
     while remaining > 0:
         # Check stop
         if state.stop_event.is_set():
@@ -4278,16 +4281,26 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         # Check skip
         if state.skip_event.is_set():
             state.skip_event.clear()
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            if debug_active:
+                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            else:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
             return True
 
         # Check pause
         if not wait_while_paused(state, message):
             return False
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+        # Ausgabe nur wenn sich remaining geändert hat (weniger Spam bei Debug)
+        current_remaining = int(remaining)
+        if current_remaining != last_remaining:
+            if debug_active:
+                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+            else:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+            last_remaining = current_remaining
 
         wait_time = min(1.0, remaining)
         if state.stop_event.wait(wait_time):
@@ -4473,15 +4486,23 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                             print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
 
                     if condition_met:
-                        clear_line()
                         if step.wait_until_gone:
                             msg = "Farbe weg!"
                         else:
                             msg = "Farbe erkannt!"
-                        if step.wait_only:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                        if CONFIG.get("debug_detection", False):
+                            # Debug: neue Zeile, nicht überschreiben
+                            if step.wait_only:
+                                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                            else:
+                                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         else:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                            # Normal: Zeile überschreiben
+                            clear_line()
+                            if step.wait_only:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                            else:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         break
 
                     # Wenn Debug aktiv, warte und continue
@@ -4495,15 +4516,20 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             if elapsed >= timeout:
                 # Timeout erreicht - Else-Aktion ausführen falls vorhanden
                 if step.else_action:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                    if CONFIG.get("debug_detection", False):
+                        print(f"\n[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                    else:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
                     return execute_else_action(state, step, phase, step_num, total_steps)
                 print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
                 state.stop_event.set()  # Stoppt die ganze Sequenz
                 return False
 
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
+            # Status-Ausgabe (nur wenn NICHT im debug_detection Modus, da dort bereits ausgegeben)
+            if not CONFIG.get("debug_detection", False):
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
             check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
             if state.stop_event.wait(check_interval):
@@ -4526,8 +4552,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
+        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
         return True
 
     # === PHASE 2: Klick ausführen ===
@@ -4545,8 +4574,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         with state.lock:
             state.total_clicks += 1
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
 
         if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
             print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
