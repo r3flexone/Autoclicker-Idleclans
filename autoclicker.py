@@ -2901,19 +2901,76 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
     """Bearbeitet eine Item-Scan Konfiguration (verknüpft globale Slots + Items)."""
 
+    # === SCHRITT 0: Presets auswählen ===
+    print("\n" + "=" * 60)
+    print("  PRESETS AUSWÄHLEN")
+    print("=" * 60)
+
+    # Slot-Presets anzeigen
+    slot_presets = list_slot_presets()
+    print("\nSlot-Presets:")
+    if slot_presets:
+        for i, (name, path, count) in enumerate(slot_presets):
+            print(f"  [{i+1}] {name} ({count} Slots)")
+    print("  [0] Aktuelle Slots verwenden")
+
+    # Slot-Preset auswählen
+    while True:
+        try:
+            slot_choice = input("\nSlot-Preset wählen (Enter=0): ").strip()
+            if not slot_choice or slot_choice == "0":
+                break
+            slot_num = int(slot_choice)
+            if 1 <= slot_num <= len(slot_presets):
+                preset_name, _, _ = slot_presets[slot_num - 1]
+                load_slot_preset(state, preset_name)
+                break
+            else:
+                print(f"  → Ungültig! 0-{len(slot_presets)}")
+        except ValueError:
+            print("  → Bitte eine Nummer eingeben!")
+        except (KeyboardInterrupt, EOFError):
+            return
+
+    # Item-Presets anzeigen
+    item_presets = list_item_presets()
+    print("\nItem-Presets:")
+    if item_presets:
+        for i, (name, path, count) in enumerate(item_presets):
+            print(f"  [{i+1}] {name} ({count} Items)")
+    print("  [0] Aktuelle Items verwenden / Keine (neu erstellen)")
+
+    # Item-Preset auswählen
+    while True:
+        try:
+            item_choice = input("\nItem-Preset wählen (Enter=0): ").strip()
+            if not item_choice or item_choice == "0":
+                break
+            item_num = int(item_choice)
+            if 1 <= item_num <= len(item_presets):
+                preset_name, _, _ = item_presets[item_num - 1]
+                load_item_preset(state, preset_name)
+                break
+            else:
+                print(f"  → Ungültig! 0-{len(item_presets)}")
+        except ValueError:
+            print("  → Bitte eine Nummer eingeben!")
+        except (KeyboardInterrupt, EOFError):
+            return
+
     # Prüfe ob globale Slots vorhanden sind
     with state.lock:
         available_slots = dict(state.global_slots)
         available_items = dict(state.global_items)
 
     if not available_slots:
-        print("\n[FEHLER] Keine globalen Slots vorhanden!")
+        print("\n[FEHLER] Keine Slots im gewählten Preset!")
         print("         Erstelle zuerst Slots im Slot-Editor (Option 1)")
         return
 
     # Items sind optional - können im Scan-Editor erstellt werden
     if not available_items:
-        print("\n[INFO] Noch keine Items vorhanden.")
+        print("\n[INFO] Keine Items im gewählten Preset.")
         print("       Du kannst sie gleich per Template erstellen!")
 
     if existing:
