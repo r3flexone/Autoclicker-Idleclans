@@ -418,7 +418,8 @@ class SequenceStep:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
         if self.item_scan:
-            mode_str = "ALLE Items" if self.item_scan_mode == "all" else "bestes Item"
+            mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
+            mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
@@ -3883,11 +3884,12 @@ def remove_common_colors(items: list) -> list:
 # =============================================================================
 # ITEM-SCAN AUSFÜHRUNG
 # =============================================================================
-def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best") -> list[tuple]:
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all") -> list[tuple]:
     """
     Führt einen Item-Scan aus.
-    mode="best": Gibt nur die Klick-Position des besten Items zurück
-    mode="all": Gibt alle Klick-Positionen mit erkannten Items zurück
+    mode="all": Bestes Item pro Kategorie (Standard)
+    mode="best": Nur das eine beste Item insgesamt
+    mode="every": Alle gefundenen Items (keine Filterung, für Duplikate)
     Returns Liste von ((x, y), ItemProfile) Tupeln (leer wenn nichts gefunden)
     """
     with state.lock:
@@ -3911,7 +3913,8 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     else:
         direction = "vorwärts"
 
-    mode_str = "ALLE" if mode == "all" else "BESTES"
+    mode_names = {"all": "ALLE (pro Kategorie)", "best": "BESTES", "every": "JEDES (keine Filter)"}
+    mode_str = mode_names.get(mode, mode)
     print(f"\n[SCAN] Scanne {len(slots_to_scan)} Slots für '{scan_name}' ({direction}, Modus: {mode_str})...")
 
     for slot in slots_to_scan:
@@ -3987,6 +3990,11 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     if not found_items:
         print("[SCAN] Kein Item erkannt.")
         return []
+
+    # Modus "every": Alle Treffer ohne Filterung (für Spiele mit Duplikaten)
+    if mode == "every":
+        print(f"[SCAN] {len(found_items)} Item(s) gefunden - klicke alle (ohne Filter)!")
+        return [(slot.click_pos, item) for slot, item, priority in found_items]
 
     # Gruppiere nach Kategorie und behalte nur das beste pro Kategorie
     # Kategorie = item.category oder item.name (falls keine Kategorie gesetzt)
@@ -4418,8 +4426,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
-    print("  scan <Name>       - Item-Scan: klicke BESTES Item")
-    print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
+    print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
+    print("  scan <Name> best  - Item-Scan: nur 1 Item total")
+    print("  scan <Name> every - Item-Scan: alle Treffer (für Duplikate)")
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
     print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
     print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
@@ -4508,21 +4517,22 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
-                # Format: "scan <Name> [best] [else ...]"
+                # Format: "scan <Name> [all|best|every] [else ...]"
                 scan_parts = user_input[5:].strip().split()
                 if not scan_parts:
-                    print("  → Format: scan <Name> [best] [else skip|<Nr>|key <Taste>]")
-                    print("    Standard: bestes Item pro Kategorie")
-                    print("    'best': nur 1 Item total (das absolute Beste)")
+                    print("  → Format: scan <Name> [all|best|every] [else ...]")
+                    print("    all:   bestes Item pro Kategorie (Standard)")
+                    print("    best:  nur 1 Item total (das absolute Beste)")
+                    print("    every: alle Treffer ohne Filter (für Duplikate)")
                     continue
 
                 scan_name = scan_parts[0]
                 scan_mode = "all"  # Standard: bestes pro Kategorie
                 else_data = {}
 
-                # Parse den Rest (best und/oder else)
+                # Parse den Rest (Modus und/oder else)
                 rest_parts = scan_parts[1:]
-                if rest_parts and rest_parts[0].lower() in ("best", "all"):
+                if rest_parts and rest_parts[0].lower() in ("best", "all", "every"):
                     scan_mode = rest_parts[0].lower()
                     rest_parts = rest_parts[1:]
 

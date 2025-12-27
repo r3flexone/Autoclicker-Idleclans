@@ -210,7 +210,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
 | `scan <Name>` | Item-Scan ausführen (bestes pro Kategorie) |
 | `scan <Name> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
+| `scan <Name> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
 | `... else skip` | Bei Fehlschlag überspringen |
+| `... else restart` | Bei Fehlschlag Sequenz neu starten |
 | `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
 | `learn <Name>` | Neuen Punkt erstellen (direkt im Editor) |
@@ -277,12 +279,20 @@ Das Item-Scan System erkennt Items anhand ihrer Marker-Farben oder Templates:
 2. **Items lernen** (`CTRL+ALT+N` → Menü 2): Mit `learn <Nr>` Marker-Farben + Template scannen
 3. **Kategorien zuweisen**: Items gruppieren (z.B. "Hosen", "Jacken")
 4. **Scan konfigurieren** (`CTRL+ALT+N` → Menü 3): Slots und Items verknüpfen
-5. **In Sequenz nutzen**: `scan <Name>` oder `scan <Name> best`
+5. **In Sequenz nutzen**: `scan <Name>`, `scan <Name> best` oder `scan <Name> every`
 
-### Ablauf
+### Scan-Modi
 
-- `scan items` → Scannt alle Slots, klickt das **beste Item pro Kategorie**
-- `scan items best` → Scannt alle Slots, klickt nur **1 Item total** (das absolute Beste)
+| Modus | Beschreibung |
+|-------|-------------|
+| `scan items` | Bestes Item pro Kategorie (Standard) |
+| `scan items best` | Nur 1 Item total (das absolute Beste) |
+| `scan items every` | Alle Treffer ohne Filter (für Duplikate) |
+
+**Wann welchen Modus?**
+- **all** (Standard): Für Spiele wo jedes Item nur 1x im Inventar erscheint
+- **best**: Wenn nur das allerbeste Item geklickt werden soll
+- **every**: Für Spiele wo dasselbe Item in mehreren Slots liegen kann
 
 ### Beispiel mit Kategorien
 
@@ -417,6 +427,7 @@ Autoclicker-Idleclans/
 
 ### Neueste Änderungen
 
+- **Scan-Modus "every"**: Alle Treffer ohne Filter klicken (für Spiele mit Duplikaten)
 - **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
 - **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
 - **Template-Matching**: Items per Screenshot erkennen (OpenCV)
