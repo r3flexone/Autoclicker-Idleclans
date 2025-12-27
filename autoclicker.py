@@ -5233,10 +5233,10 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
         if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
-            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         else:
             clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         return True
 
     # === PHASE 2: Klick ausführen ===
