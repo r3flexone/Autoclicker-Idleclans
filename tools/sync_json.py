@@ -19,10 +19,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.parent
 ITEMS_DIR = SCRIPT_DIR / "items"
 SLOTS_DIR = SCRIPT_DIR / "slots"
+SEQUENCES_DIR = SCRIPT_DIR / "sequences"
 ITEM_SCANS_DIR = SCRIPT_DIR / "item_scans"
 ITEMS_FILE = ITEMS_DIR / "items.json"
 SLOTS_FILE = SLOTS_DIR / "slots.json"
-POINTS_FILE = SCRIPT_DIR / "points.json"
+POINTS_FILE = SEQUENCES_DIR / "points.json"  # Punkte sind in sequences/
 ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
 
 # Globale Punkte-Liste
