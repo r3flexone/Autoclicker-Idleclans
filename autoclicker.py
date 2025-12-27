@@ -129,23 +129,33 @@ SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
 CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 
 # Standard-Konfiguration (wird von config.json überschrieben)
+# Die Reihenfolge hier bestimmt die Reihenfolge in der gespeicherten config.json
 DEFAULT_CONFIG = {
+    # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
     "max_total_clicks": None,           # None = unendlich
-    "failsafe_enabled": True,           # Fail-Safe aktivieren
+
+    # === SICHERHEIT ===
+    "failsafe_enabled": True,           # Fail-Safe: Maus in Ecke stoppt alles
+
+    # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
-    "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Schwankungen erlaubt)
-    "pixel_wait_timeout": 300,          # Timeout in Sekunden für Pixel-Trigger (5 Min)
-    "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
-    "debug_detection": False,           # Debug-Ausgaben für Farb-Erkennung (persistent, nicht überschrieben)
-    "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
-    "marker_count": 5,                  # Anzahl Marker-Farben die beim Item-Lernen gespeichert werden
-    "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
-    "min_markers_required": 2,          # Nur wenn require_all_markers=False: Mindestanzahl Marker
-    "slot_hsv_tolerance": 25,           # HSV-Toleranz für automatische Slot-Erkennung
-    "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand (für genauere Klick-Position)
-    "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen
-    "debug_mode": False,                # True = zeige Debug-Ausgaben für Schritte
+    "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
+    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
+    "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
+
+    # === ITEM-SCAN EINSTELLUNGEN ===
+    "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
+    "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
+    "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden
+    "min_markers_required": 2,          # Minimum Marker (nur wenn require_all_markers=False)
+    "slot_hsv_tolerance": 25,           # HSV-Toleranz für Slot-Erkennung
+    "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand
+    "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss
+
+    # === DEBUG-EINSTELLUNGEN ===
+    "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
+    "debug_detection": False,           # Alle Ausgaben persistent (nicht überschrieben)
 }
 
 def load_config() -> dict:
@@ -172,10 +182,20 @@ def load_config() -> dict:
     return DEFAULT_CONFIG.copy()
 
 def save_config(config: dict) -> None:
-    """Speichert Konfiguration in config.json."""
+    """Speichert Konfiguration in config.json (in sortierter Reihenfolge)."""
     try:
+        # Sortiere nach DEFAULT_CONFIG Reihenfolge, dann unbekannte Keys am Ende
+        ordered_config = {}
+        for key in DEFAULT_CONFIG:
+            if key in config:
+                ordered_config[key] = config[key]
+        # Füge unbekannte Keys am Ende hinzu (falls vorhanden)
+        for key in config:
+            if key not in ordered_config:
+                ordered_config[key] = config[key]
+
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+            json.dump(ordered_config, f, indent=2, ensure_ascii=False)
     except IOError as e:
         print(f"[FEHLER] Config konnte nicht gespeichert werden: {e}")
 
