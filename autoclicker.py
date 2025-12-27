@@ -156,6 +156,7 @@ DEFAULT_CONFIG = {
     # === DEBUG-EINSTELLUNGEN ===
     "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
     "debug_detection": False,           # Alle Ausgaben persistent (nicht überschrieben)
+    "show_pixel_position": False,       # Maus kurz zum Prüf-Pixel bewegen beim Start
 }
 
 def load_config() -> dict:
@@ -4464,6 +4465,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
                                         "Vor Farbprüfung"):
                 return False
+
+        # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
+        if CONFIG.get("show_pixel_position", False):
+            set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
+            time.sleep(0.3)  # Kurz anzeigen wo geprüft wird
 
         # Warten auf Farbe an Pixel-Position (oder warten bis Farbe WEG ist)
         timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
