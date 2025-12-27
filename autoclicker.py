@@ -1605,35 +1605,6 @@ def analyze_and_print_colors(region: tuple = None) -> None:
 
     print("-" * 50)
 
-def get_screen_size() -> tuple[int, int]:
-    """Gibt die Bildschirmgröße zurück (width, height)."""
-    user32 = ctypes.windll.user32
-    return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-
-
-def validate_region(region: tuple, context: str = "Region") -> bool:
-    """Prüft ob eine Region innerhalb der Bildschirmgrenzen liegt.
-
-    Returns True wenn gültig, False wenn außerhalb.
-    """
-    x1, y1, x2, y2 = region
-    screen_w, screen_h = get_screen_size()
-
-    warnings = []
-    if x1 < 0 or y1 < 0:
-        warnings.append(f"Startpunkt ({x1}, {y1}) ist negativ")
-    if x2 > screen_w or y2 > screen_h:
-        warnings.append(f"Endpunkt ({x2}, {y2}) liegt außerhalb des Bildschirms ({screen_w}x{screen_h})")
-    if x2 - x1 < 1 or y2 - y1 < 1:
-        warnings.append(f"Region zu klein ({x2-x1}x{y2-y1})")
-
-    if warnings:
-        print(f"\n  [WARNUNG] {context}:")
-        for w in warnings:
-            print(f"    - {w}")
-        return False
-    return True
-
 
 def select_region() -> Optional[tuple]:
     """
@@ -1664,13 +1635,6 @@ def select_region() -> Optional[tuple]:
         print(f"\n  Region: {width}x{height} Pixel ({x1},{y1}) → ({x2},{y2})")
 
         region = (x1, y1, x2, y2)
-
-        # Bounds-Prüfung
-        if not validate_region(region, "Ausgewählte Region"):
-            confirm = input("  Trotzdem fortfahren? (j/n): ").strip().lower()
-            if confirm != "j":
-                return None
-
         return region
 
     except (KeyboardInterrupt, EOFError):
