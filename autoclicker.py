@@ -145,6 +145,7 @@ DEFAULT_CONFIG = {
     "slot_hsv_tolerance": 25,           # HSV-Toleranz für automatische Slot-Erkennung
     "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand (für genauere Klick-Position)
     "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen
+    "debug_mode": False,                # True = zeige Debug-Ausgaben für Schritte
 }
 
 def load_config() -> dict:
@@ -637,11 +638,17 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     if wait_color:
                         wait_color = tuple(int(v) for v in wait_color)
                     # Unterstütze beide Formate: delay_before (neu) und delay_after (alt)
-                    delay = s.get("delay_before", s.get("delay_after", 0))
+                    # None-Check: s.get() returned None wenn Wert null ist oder Key fehlt
+                    delay_raw = s.get("delay_before")
+                    if delay_raw is None:
+                        delay_raw = s.get("delay_after")
+                    if delay_raw is None:
+                        delay_raw = 0
+                    delay_max_raw = s.get("delay_max")
                     step = SequenceStep(
                         x=s.get("x", 0),
                         y=s.get("y", 0),
-                        delay_before=delay,
+                        delay_before=float(delay_raw),
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
                         wait_color=wait_color,
@@ -649,7 +656,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         item_scan=s.get("item_scan"),
                         item_scan_mode=s.get("item_scan_mode", "best"),
                         wait_only=s.get("wait_only", False),
-                        delay_max=s.get("delay_max"),
+                        delay_max=float(delay_max_raw) if delay_max_raw is not None else None,
                         key_press=s.get("key_press"),
                         else_action=s.get("else_action"),
                         else_x=s.get("else_x", 0),
@@ -4346,6 +4353,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         state.stop_event.set()
         return False
 
+    # Debug: Zeige Schritt-Details
+    if CONFIG.get("debug_mode", False):
+        print(f"\n  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
+              f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
+
     # === SONDERFALL: Item-Scan Schritt ===
     if step.item_scan:
         mode = step.item_scan_mode
@@ -4500,9 +4512,14 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     elif step.delay_before > 0 or step.delay_max:
         # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
         actual_delay = step.get_actual_delay()
+        if CONFIG.get("debug_mode", False):
+            print(f"\n  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
         action = "Warten" if step.wait_only else "Klicke in"
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
             return False
+    else:
+        if CONFIG.get("debug_mode", False):
+            print(f"\n  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
 
     if state.stop_event.is_set():
         return False
@@ -4571,6 +4588,15 @@ def sequence_worker(state: AutoClickerState) -> None:
             print("[FEHLER] Sequenz ist leer!")
             state.is_running = False
             return
+
+        # Debug: Zeige alle Schritte
+        if CONFIG.get("debug_mode", False):
+            print("\n[DEBUG] Geladene Sequenz-Schritte:")
+            for i, step in enumerate(sequence.start_steps):
+                print(f"  START[{i+1}]: {step.name or 'unnamed'} delay={step.delay_before}s pos=({step.x},{step.y})")
+            for lp in sequence.loop_phases:
+                for i, step in enumerate(lp.steps):
+                    print(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'} delay={step.delay_before}s pos=({step.x},{step.y})")
 
         # Statistiken zurücksetzen
         state.total_clicks = 0
