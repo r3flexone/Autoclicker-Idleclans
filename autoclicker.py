@@ -4589,14 +4589,22 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
-        # Debug: Zeige alle Schritte
+        # Debug: Zeige alle Schritte (mit Rahmen damit es nicht überschrieben wird)
         if CONFIG.get("debug_mode", False):
-            print("\n[DEBUG] Geladene Sequenz-Schritte:")
+            print("\n" + "=" * 60)
+            print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
+            print("-" * 60)
             for i, step in enumerate(sequence.start_steps):
-                print(f"  START[{i+1}]: {step.name or 'unnamed'} delay={step.delay_before}s pos=({step.x},{step.y})")
+                print(f"  START[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s | wait_only={step.wait_only}")
             for lp in sequence.loop_phases:
+                print(f"  --- {lp.name} (x{lp.repeat}) ---")
                 for i, step in enumerate(lp.steps):
-                    print(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'} delay={step.delay_before}s pos=({step.x},{step.y})")
+                    print(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s | wait_only={step.wait_only}")
+            for i, step in enumerate(sequence.end_steps):
+                print(f"  END[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s")
+            print("=" * 60)
+            print("[DEBUG] Drücke Enter zum Starten...")
+            input()  # Warte auf Bestätigung damit man die Werte sehen kann
 
         # Statistiken zurücksetzen
         state.total_clicks = 0
