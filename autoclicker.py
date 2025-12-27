@@ -809,12 +809,12 @@ def save_item_scan(config: ItemScanConfig) -> None:
             {
                 "name": item.name,
                 "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+                "category": item.category,
                 "priority": item.priority,
                 "confirm_point": item.confirm_point,
                 "confirm_delay": item.confirm_delay,
                 "template": item.template,
-                "min_confidence": item.min_confidence,
-                "category": item.category
+                "min_confidence": item.min_confidence
             }
             for item in config.items
         ]
@@ -940,12 +940,12 @@ def save_global_items(state: AutoClickerState) -> None:
         name: {
             "name": item.name,
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+            "category": item.category,
             "priority": item.priority,
             "confirm_point": item.confirm_point,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
-            "min_confidence": item.min_confidence,
-            "category": item.category
+            "min_confidence": item.min_confidence
         }
         for name, item in state.global_items.items()
     }
@@ -1117,12 +1117,12 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         name: {
             "name": item.name,
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+            "category": item.category,
             "priority": item.priority,
             "confirm_point": item.confirm_point,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
-            "min_confidence": item.min_confidence,
-            "category": item.category
+            "min_confidence": item.min_confidence
         }
         for name, item in state.global_items.items()
     }
