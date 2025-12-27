@@ -4443,11 +4443,15 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
         scan_results = execute_item_scan(state, step.item_scan, mode)
+        if CONFIG.get("debug_detection", False):
+            print(f"[DEBUG] scan_results = {scan_results}")
         if scan_results:
             # Klicke alle gefundenen Positionen
             for i, (pos, item) in enumerate(scan_results):
                 if state.stop_event.is_set():
                     return False
+                if CONFIG.get("debug_detection", False):
+                    print(f"[DEBUG] Klicke Item '{item.name}' bei ({pos[0]}, {pos[1]})")
                 send_click(pos[0], pos[1])
                 with state.lock:
                     state.total_clicks += 1
@@ -4455,6 +4459,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
                 # Bestätigungs-Klick falls für dieses Item definiert
                 if item.confirm_point is not None:
+                    if CONFIG.get("debug_detection", False):
+                        print(f"[DEBUG] Item hat confirm_point={item.confirm_point}, confirm_delay={item.confirm_delay}")
                     confirm_pos = None
                     with state.lock:
                         if 1 <= item.confirm_point <= len(state.points):
@@ -4462,9 +4468,13 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         else:
                             print(f"\n  [WARNUNG] Bestätigungs-Punkt {item.confirm_point} nicht vorhanden!")
                     if confirm_pos is not None:
+                        if CONFIG.get("debug_detection", False):
+                            print(f"[DEBUG] Warte {item.confirm_delay}s für Bestätigung bei ({confirm_pos.x}, {confirm_pos.y})")
                         if item.confirm_delay > 0:
                             time.sleep(item.confirm_delay)
                         send_click(confirm_pos.x, confirm_pos.y)
+                        if CONFIG.get("debug_detection", False):
+                            print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                         with state.lock:
                             state.total_clicks += 1
 
