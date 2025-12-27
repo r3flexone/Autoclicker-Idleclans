@@ -27,7 +27,11 @@ SLOTS_DIR = SCRIPT_DIR / "slots"
 ITEM_SCANS_DIR = SCRIPT_DIR / "item_scans"
 ITEMS_FILE = ITEMS_DIR / "items.json"
 SLOTS_FILE = SLOTS_DIR / "slots.json"
+POINTS_FILE = SCRIPT_DIR / "points.json"
 ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
+
+# Globale Variable fuer geladene Punkte
+POINTS = []
 
 
 def load_global_items() -> dict:
@@ -56,11 +60,51 @@ def load_global_slots() -> dict:
         return {}
 
 
+def load_points() -> list:
+    """Laedt die Punkte aus points.json."""
+    if not POINTS_FILE.exists():
+        return []
+
+    try:
+        with open(POINTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # Format: Liste von [x, y] oder {"x": x, "y": y}
+        points = []
+        for p in data:
+            if isinstance(p, list) and len(p) == 2:
+                points.append(p)
+            elif isinstance(p, dict) and "x" in p and "y" in p:
+                points.append([p["x"], p["y"]])
+        return points
+    except Exception as e:
+        print(f"[FEHLER] Points laden: {e}")
+        return []
+
+
 def normalize_confirm_point(cp):
-    """Normalisiert confirm_point: [x, y] Liste behalten, alte int-Werte -> None."""
+    """Normalisiert confirm_point:
+    - [x, y] Liste behalten
+    - int (Punkt-Nr) -> Koordinaten aus POINTS laden
+    - None/ungueltig -> None
+    """
+    global POINTS
+
+    # Bereits Koordinaten-Format
     if cp and isinstance(cp, list) and len(cp) == 2:
-        return cp  # Gueltige Koordinaten
-    return None  # Alte int-Werte oder ungueltige Daten -> None
+        return cp
+
+    # Alte int-Werte -> Koordinaten aus points.json
+    if cp and isinstance(cp, int):
+        point_nr = cp
+        if 1 <= point_nr <= len(POINTS):
+            coords = POINTS[point_nr - 1]
+            print(f"      Punkt {point_nr} -> ({coords[0]}, {coords[1]})")
+            return coords
+        else:
+            print(f"      Punkt {point_nr} existiert nicht (max: {len(POINTS)}) -> None")
+            return None
+
+    return None
 
 
 def sync_global_items(items: dict) -> int:
@@ -289,10 +333,16 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
 
 
 def main():
+    global POINTS
+
     print("\n" + "=" * 60)
     print("  SYNC: Alle JSON-Dateien aktualisieren")
     print("=" * 60)
     print(f"\n  Arbeitsverzeichnis: {SCRIPT_DIR}")
+
+    # Punkte laden (fuer confirm_point Konvertierung)
+    POINTS = load_points()
+    print(f"  Punkte geladen: {len(POINTS)}")
 
     # 1. Global Items laden und sync
     global_items = load_global_items()
