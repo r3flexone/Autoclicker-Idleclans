@@ -137,7 +137,7 @@ DEFAULT_CONFIG = {
     "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Schwankungen erlaubt)
     "pixel_wait_timeout": 300,          # Timeout in Sekunden für Pixel-Trigger (5 Min)
     "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
-    "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
+    "debug_detection": False,           # Debug-Ausgaben für Farb-Erkennung (persistent, nicht überschrieben)
     "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
     "marker_count": 5,                  # Anzahl Marker-Farben die beim Item-Lernen gespeichert werden
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
