@@ -14,9 +14,8 @@ Reihenfolge (Global -> Unterordner):
 4. Slots global    (slots/slots.json)
 5. Items global    (items/items.json)
 6. Scans global    (item_scans/*.json)
-7. Config presets  (configs/*.json)
-8. Slot presets    (slots/presets/*.json)
-9. Item presets    (items/presets/*.json)
+7. Slot presets    (slots/presets/*.json)
+8. Item presets    (items/presets/*.json)
 """
 
 import json
@@ -29,7 +28,6 @@ SCRIPT_DIR = Path(__file__).parent.parent
 
 # Config
 CONFIG_FILE = SCRIPT_DIR / "config.json"
-CONFIGS_DIR = SCRIPT_DIR / "configs"
 
 # Sequences/Points
 SEQUENCES_DIR = SCRIPT_DIR / "sequences"
@@ -223,44 +221,6 @@ def sync_config() -> tuple[int, int]:
 
     save_json(CONFIG_FILE, updated)
     return 1, fixes
-
-
-def sync_config_presets() -> tuple[int, int]:
-    """Synchronisiert configs/*.json."""
-    if not CONFIGS_DIR.exists():
-        return 0, 0
-
-    presets = list(CONFIGS_DIR.glob("*.json"))
-    total_count = 0
-    total_fixes = 0
-
-    for preset_file in presets:
-        data = load_json_safe(preset_file)
-        if not data or not isinstance(data, dict):
-            continue
-
-        fixes = 0
-        updated = {}
-
-        for key, default in CONFIG_DEFAULTS.items():
-            if key in data:
-                updated[key] = data[key]
-            else:
-                updated[key] = default
-                fixes += 1
-
-        for key in data:
-            if key not in updated:
-                updated[key] = data[key]
-
-        if fixes > 0:
-            print(f"    {preset_file.name}: {fixes} Felder ergaenzt")
-            total_fixes += fixes
-
-        save_json(preset_file, updated)
-        total_count += 1
-
-    return total_count, total_fixes
 
 
 # ==============================================================================
@@ -719,7 +679,7 @@ def main():
     print("\n  === GLOBALE DATEIEN ===")
 
     # 1. Config (global)
-    print(f"\n  [1/9] Config...")
+    print(f"\n  [1/8] Config...")
     count, fixes = sync_config()
     if fixes:
         print(f"        {fixes} Felder ergaenzt/korrigiert")
@@ -727,12 +687,12 @@ def main():
         print("        OK")
 
     # 2. Points (laedt auch POINTS fuer spaeter)
-    print(f"\n  [2/9] Points...")
+    print(f"\n  [2/8] Points...")
     count, fixes = sync_points()
     print(f"        {count} Punkte geladen")
 
     # 3. Sequences
-    print(f"\n  [3/9] Sequences...")
+    print(f"\n  [3/8] Sequences...")
     count, fixes = sync_sequences()
     if count:
         print(f"        {count} Sequenz(en), {fixes} Korrekturen")
@@ -740,7 +700,7 @@ def main():
         print("        - keine vorhanden")
 
     # 4. Slots (global)
-    print(f"\n  [4/9] Slots global...")
+    print(f"\n  [4/8] Slots global...")
     count, fixes = sync_global_slots()
     if count:
         print(f"        {count} Slots, {fixes} Korrekturen")
@@ -748,7 +708,7 @@ def main():
         print("        - keine vorhanden")
 
     # 5. Items (global)
-    print(f"\n  [5/9] Items global...")
+    print(f"\n  [5/8] Items global...")
     count, fixes = sync_global_items()
     if count:
         print(f"        {count} Items, {fixes} Korrekturen")
@@ -756,7 +716,7 @@ def main():
         print("        - keine vorhanden")
 
     # 6. Scans (global)
-    print(f"\n  [6/9] Scans global...")
+    print(f"\n  [6/8] Scans global...")
     global_items = load_json_safe(ITEMS_FILE) or {}
 
     if global_items:
@@ -767,24 +727,16 @@ def main():
 
     print("\n  === UNTERORDNER (PRESETS) ===")
 
-    # 7. Config presets
-    print(f"\n  [7/9] Config presets...")
-    count, fixes = sync_config_presets()
-    if count:
-        print(f"        {count} Preset(s), {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
-
-    # 8. Slot presets
-    print(f"\n  [8/9] Slot presets...")
+    # 7. Slot presets
+    print(f"\n  [7/8] Slot presets...")
     count, fixes = sync_slot_presets()
     if count:
         print(f"        {count} Preset(s), {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 9. Item presets
-    print(f"\n  [9/9] Item presets...")
+    # 8. Item presets
+    print(f"\n  [8/8] Item presets...")
     count, fixes = sync_item_presets()
     if count:
         print(f"        {count} Preset(s), {fixes} Korrekturen")
