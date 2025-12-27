@@ -527,14 +527,14 @@ class ItemProfile:
     """Ein Item-Typ mit Marker-Farben und/oder Template-Matching."""
     name: str
     marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
+    # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
+    category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
     priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
     confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
     min_confidence: float = 0.8  # Mindest-Konfidenz für Template-Match (0.0-1.0)
-    # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
-    category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
 
     def __str__(self) -> str:
         if self.template:
@@ -850,12 +850,12 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                    category=i.get("category"),
                     priority=i.get("priority", 1),
                     confirm_point=i.get("confirm_point"),
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8),
-                    category=i.get("category")
+                    min_confidence=i.get("min_confidence", 0.8)
                 )
                 items.append(item)
 
@@ -986,12 +986,12 @@ def load_global_items(state: AutoClickerState) -> None:
             state.global_items[name] = ItemProfile(
                 name=i["name"],
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                category=i.get("category"),
                 priority=i.get("priority", 1),
                 confirm_point=i.get("confirm_point"),
                 confirm_delay=i.get("confirm_delay", 0.5),
                 template=i.get("template"),
-                min_confidence=i.get("min_confidence", 0.8),
-                category=i.get("category")
+                min_confidence=i.get("min_confidence", 0.8)
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
@@ -1152,12 +1152,12 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
                 state.global_items[name] = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                    category=i.get("category"),
                     priority=i.get("priority", 1),
                     confirm_point=i.get("confirm_point"),
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8),
-                    category=i.get("category")
+                    min_confidence=i.get("min_confidence", 0.8)
                 )
 
         # Auch in aktive Datei speichern
@@ -2486,7 +2486,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         print("  → Keine gültige Zahl, keine Bestätigung")
 
                 # Item erstellen und speichern
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
 
                 # Optional: Auch als Template speichern?
                 if OPENCV_AVAILABLE:
@@ -2598,7 +2598,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                     except ValueError:
                         pass
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
                 confirm_str = f" → Punkt {confirm_point}" if confirm_point else ""
@@ -3295,12 +3295,12 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 new_item = ItemProfile(
                     name=item_name,
                     marker_colors=[],
+                    category=category,
                     priority=priority,
                     confirm_point=confirm_point,
                     confirm_delay=confirm_delay,
                     template=template_file,
-                    min_confidence=min_confidence,
-                    category=category
+                    min_confidence=min_confidence
                 )
 
                 # Global speichern
@@ -3680,7 +3680,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 items.append(item)
                 confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
