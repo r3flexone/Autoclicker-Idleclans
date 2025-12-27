@@ -25,6 +25,7 @@ ITEMS_FILE = ITEMS_DIR / "items.json"
 SLOTS_FILE = SLOTS_DIR / "slots.json"
 POINTS_FILE = SEQUENCES_DIR / "points.json"  # Punkte sind in sequences/
 ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
+SLOT_PRESETS_DIR = SLOTS_DIR / "presets"
 
 # Globale Punkte-Liste
 POINTS = []
@@ -343,6 +344,44 @@ def sync_item_presets() -> tuple[int, int]:
 
 
 # ==============================================================================
+# SLOT PRESET SYNC
+# ==============================================================================
+def sync_slot_presets() -> tuple[int, int]:
+    """Synchronisiert alle Slot-Presets."""
+    if not SLOT_PRESETS_DIR.exists():
+        return 0, 0
+
+    presets = list(SLOT_PRESETS_DIR.glob("*.json"))
+    total_count = 0
+    total_fixes = 0
+
+    for preset_file in presets:
+        data = load_json_safe(preset_file)
+        if not data or not isinstance(data, dict):
+            continue
+
+        updated = {}
+        fixes_in_file = 0
+
+        for name, slot in data.items():
+            if not isinstance(slot, dict):
+                continue
+
+            fixed, fixes = sync_slot(name, slot)
+            updated[name] = fixed
+            fixes_in_file += len(fixes)
+
+        if fixes_in_file > 0:
+            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
+            total_fixes += fixes_in_file
+
+        save_json(preset_file, updated)
+        total_count += 1
+
+    return total_count, total_fixes
+
+
+# ==============================================================================
 # SCAN CONFIG SYNC
 # ==============================================================================
 def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
@@ -489,7 +528,7 @@ def main():
     print(f"  Punkte geladen: {len(POINTS)}")
 
     # 1. Global Items
-    print(f"\n  [1/4] Global Items...")
+    print(f"\n  [1/5] Global Items...")
     count, fixes = sync_global_items()
     if count:
         print(f"        {count} Items, {fixes} Korrekturen")
@@ -497,7 +536,7 @@ def main():
         print("        - keine vorhanden")
 
     # 2. Global Slots
-    print(f"\n  [2/4] Global Slots...")
+    print(f"\n  [2/5] Global Slots...")
     count, fixes = sync_global_slots()
     if count:
         print(f"        {count} Slots, {fixes} Korrekturen")
@@ -505,15 +544,23 @@ def main():
         print("        - keine vorhanden")
 
     # 3. Item-Presets
-    print(f"\n  [3/4] Item-Presets...")
+    print(f"\n  [3/5] Item-Presets...")
     count, fixes = sync_item_presets()
     if count:
         print(f"        {count} Presets, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 4. Scan-Configs
-    print(f"\n  [4/4] Scan-Konfigurationen...")
+    # 4. Slot-Presets
+    print(f"\n  [4/5] Slot-Presets...")
+    count, fixes = sync_slot_presets()
+    if count:
+        print(f"        {count} Presets, {fixes} Korrekturen")
+    else:
+        print("        - keine vorhanden")
+
+    # 5. Scan-Configs
+    print(f"\n  [5/5] Scan-Konfigurationen...")
 
     # Globale Items nochmal laden (nach Sync aktualisiert)
     global_items = load_json_safe(ITEMS_FILE) or {}
