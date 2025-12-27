@@ -2656,7 +2656,6 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
                             # Template umbenennen falls vorhanden
                             old_template = item.template
-                            new_template = None
                             if old_template:
                                 old_template_path = Path(TEMPLATES_DIR) / old_template
                                 # Neuer Template-Name basierend auf Item-Name
@@ -2664,20 +2663,27 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                 new_template = f"{safe_name}.png"
                                 new_template_path = Path(TEMPLATES_DIR) / new_template
 
+                                # Template-Pfad im Item IMMER aktualisieren
+                                item.template = new_template
+
+                                # Versuche auch die Datei umzubenennen
                                 if old_template_path.exists():
                                     try:
                                         old_template_path.rename(new_template_path)
                                         print(f"  ✓ Template umbenannt: {old_template} → {new_template}")
-                                        item.template = new_template
                                     except Exception as e:
-                                        print(f"  → Template-Umbenennung fehlgeschlagen: {e}")
-                                        print(f"    Template bleibt: {old_template}")
+                                        print(f"  → Template-Datei Umbenennung fehlgeschlagen: {e}")
+                                        print(f"    Template-Pfad aktualisiert: {new_template}")
+                                else:
+                                    print(f"  → Template-Datei nicht gefunden: {old_template}")
+                                    print(f"    Template-Pfad aktualisiert: {new_template}")
 
                             # Item umbenennen
                             item.name = new_name
                             del state.global_items[old_name]
                             state.global_items[new_name] = item
-                            print(f"  ✓ Item umbenannt: '{old_name}' → '{new_name}'")
+                            save_global_items(state)
+                            print(f"  ✓ Item umbenannt: '{old_name}' → '{new_name}' (gespeichert)")
                         else:
                             print(f"  → Ungültiges Item! Verfügbar: 1-{len(item_names)}")
                 except ValueError:
