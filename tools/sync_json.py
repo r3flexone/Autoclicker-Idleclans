@@ -2,26 +2,21 @@
 """
 Sync-Tool für Autoclicker JSON-Dateien.
 
-Synchronisiert alle JSON-Dateien auf den aktuellen Code-Stand:
-- Global Items: Feldordnung, fehlende Felder ergänzen
-- Global Slots: Feldordnung aktualisieren
-- Scan-Configs: Items mit globalen Items abgleichen
-- Item-Presets: Feldordnung aktualisieren
+Bringt alle JSON-Dateien auf den aktuellen Code-Stand:
+- Fehlende Felder mit Standardwerten ergaenzen
+- Alte Formate konvertieren (z.B. confirm_point int -> [x,y])
+- Feldordnung korrigieren
+- Scan-Configs mit globalen Items abgleichen
 
-Die Master-Dateien sind:
-- items/items.json     (alle Items)
-- slots/slots.json     (alle Slots)
-- points.json          (Klick-Punkte)
-
-Scan-Configs kopieren Teile aus den Master-Dateien.
+Standardwerte werden automatisch eingetragen.
+Nur bei unklaren Faellen wird nachgefragt.
 """
 
 import json
-import os
 from pathlib import Path
 
 # Pfade (relativ zum Hauptverzeichnis)
-SCRIPT_DIR = Path(__file__).parent.parent  # Eine Ebene höher als tools/
+SCRIPT_DIR = Path(__file__).parent.parent
 ITEMS_DIR = SCRIPT_DIR / "items"
 SLOTS_DIR = SCRIPT_DIR / "slots"
 ITEM_SCANS_DIR = SCRIPT_DIR / "item_scans"
@@ -30,171 +25,329 @@ SLOTS_FILE = SLOTS_DIR / "slots.json"
 POINTS_FILE = SCRIPT_DIR / "points.json"
 ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
 
-# Globale Variable fuer geladene Punkte
+# Globale Punkte-Liste
 POINTS = []
 
+# ==============================================================================
+# STANDARDWERTE - Werden verwendet wenn Feld fehlt oder ungueltig
+# ==============================================================================
+ITEM_DEFAULTS = {
+    "marker_colors": [],
+    "category": None,
+    "priority": 1,
+    "confirm_point": None,
+    "confirm_delay": 0.5,
+    "template": None,
+    "min_confidence": 0.8
+}
 
-def load_global_items() -> dict:
-    """Lädt die globalen Items aus items.json."""
-    if not ITEMS_FILE.exists():
-        return {}
+SLOT_DEFAULTS = {
+    "scan_region": None,
+    "click_pos": None,
+    "slot_color": None
+}
 
+SCAN_DEFAULTS = {
+    "color_tolerance": 40,
+    "slots": [],
+    "items": []
+}
+
+
+# ==============================================================================
+# HILFSFUNKTIONEN
+# ==============================================================================
+def load_json_safe(filepath: Path) -> dict | list | None:
+    """Laedt JSON sicher, gibt None bei Fehler."""
+    if not filepath.exists():
+        return None
     try:
-        with open(ITEMS_FILE, "r", encoding="utf-8") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        print(f"[FEHLER] Items laden: {e}")
-        return {}
+        print(f"  [FEHLER] {filepath.name}: {e}")
+        return None
 
 
-def load_global_slots() -> dict:
-    """Lädt die globalen Slots aus slots.json."""
-    if not SLOTS_FILE.exists():
-        return {}
-
-    try:
-        with open(SLOTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"[FEHLER] Slots laden: {e}")
-        return {}
+def save_json(filepath: Path, data, indent=2):
+    """Speichert JSON mit korrekter Kodierung."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=indent, ensure_ascii=False)
 
 
 def load_points() -> list:
-    """Laedt die Punkte aus points.json."""
-    if not POINTS_FILE.exists():
+    """Laedt Punkte aus points.json."""
+    data = load_json_safe(POINTS_FILE)
+    if not data:
         return []
 
-    try:
-        with open(POINTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # Format: Liste von [x, y] oder {"x": x, "y": y}
-        points = []
-        for p in data:
-            if isinstance(p, list) and len(p) == 2:
-                points.append(p)
-            elif isinstance(p, dict) and "x" in p and "y" in p:
-                points.append([p["x"], p["y"]])
-        return points
-    except Exception as e:
-        print(f"[FEHLER] Points laden: {e}")
-        return []
+    points = []
+    for p in data:
+        if isinstance(p, list) and len(p) == 2:
+            points.append(p)
+        elif isinstance(p, dict) and "x" in p and "y" in p:
+            points.append([p["x"], p["y"]])
+    return points
 
 
-def normalize_confirm_point(cp):
-    """Normalisiert confirm_point:
-    - [x, y] Liste behalten
-    - int (Punkt-Nr) -> Koordinaten aus POINTS laden
-    - None/ungueltig -> None
+def convert_confirm_point(cp, item_name=""):
+    """Konvertiert confirm_point in korrektes Format.
+
+    - [x, y] Liste -> behalten
+    - int (Punkt-Nr) -> Koordinaten aus POINTS
+    - Alles andere -> None
     """
-    global POINTS
-
-    # Bereits Koordinaten-Format
-    if cp and isinstance(cp, list) and len(cp) == 2:
+    # Bereits korrekt
+    if isinstance(cp, list) and len(cp) == 2:
         return cp
 
-    # Alte int-Werte -> Koordinaten aus points.json
-    if cp and isinstance(cp, int):
-        point_nr = cp
-        if 1 <= point_nr <= len(POINTS):
-            coords = POINTS[point_nr - 1]
-            print(f"      Punkt {point_nr} -> ({coords[0]}, {coords[1]})")
+    # Alte int-Werte konvertieren
+    if isinstance(cp, int) and cp >= 1:
+        if cp <= len(POINTS):
+            coords = POINTS[cp - 1]
+            print(f"      {item_name}: Punkt {cp} -> ({coords[0]}, {coords[1]})")
             return coords
         else:
-            print(f"      Punkt {point_nr} existiert nicht (max: {len(POINTS)}) -> None")
+            print(f"      {item_name}: Punkt {cp} existiert nicht -> None")
             return None
 
     return None
 
 
-def sync_global_items(items: dict) -> int:
-    """Speichert Items mit korrekter Feldordnung."""
-    if not items:
-        return 0
-
-    updated_data = {}
-    for name, item in items.items():
-        updated_data[name] = {
-            "name": item.get("name", name),
-            "marker_colors": item.get("marker_colors", []),
-            "category": item.get("category"),
-            "priority": item.get("priority", 1),
-            "confirm_point": normalize_confirm_point(item.get("confirm_point")),
-            "confirm_delay": item.get("confirm_delay", 0.5),
-            "template": item.get("template"),
-            "min_confidence": item.get("min_confidence", 0.8)
-        }
-
-    ITEMS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(ITEMS_FILE, "w", encoding="utf-8") as f:
-        json.dump(updated_data, f, indent=2, ensure_ascii=False)
-
-    return len(updated_data)
+def normalize_color(color):
+    """Stellt sicher dass Farbe als Liste gespeichert wird."""
+    if color is None:
+        return None
+    if isinstance(color, (list, tuple)) and len(color) >= 3:
+        return list(color[:3])
+    return None
 
 
-def sync_global_slots(slots: dict) -> int:
-    """Speichert Slots mit korrekter Feldordnung."""
-    if not slots:
-        return 0
-
-    updated_data = {}
-    for name, slot in slots.items():
-        updated_data[name] = {
-            "name": slot.get("name", name),
-            "scan_region": slot.get("scan_region"),
-            "click_pos": slot.get("click_pos"),
-            "slot_color": slot.get("slot_color")
-        }
-
-    SLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(SLOTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(updated_data, f, indent=2, ensure_ascii=False)
-
-    return len(updated_data)
+def normalize_region(region):
+    """Stellt sicher dass Region als Liste [x1,y1,x2,y2] gespeichert wird."""
+    if region is None:
+        return None
+    if isinstance(region, (list, tuple)) and len(region) >= 4:
+        return list(region[:4])
+    return None
 
 
-def sync_item_presets() -> int:
-    """Aktualisiert alle Item-Presets auf korrekte Feldordnung."""
+def normalize_pos(pos):
+    """Stellt sicher dass Position als Liste [x,y] gespeichert wird."""
+    if pos is None:
+        return None
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+        return list(pos[:2])
+    return None
+
+
+# ==============================================================================
+# ITEM SYNC
+# ==============================================================================
+def sync_item(name: str, item: dict) -> tuple[dict, list]:
+    """Synchronisiert ein einzelnes Item.
+
+    Returns: (fixed_item, list_of_fixes)
+    """
+    fixes = []
+
+    # Name muss vorhanden sein
+    if not item.get("name"):
+        item["name"] = name
+        fixes.append("name ergaenzt")
+
+    # Marker-Colors normalisieren
+    mc = item.get("marker_colors", [])
+    if not isinstance(mc, list):
+        mc = []
+        fixes.append("marker_colors repariert")
+    else:
+        mc = [normalize_color(c) for c in mc if normalize_color(c)]
+
+    # Priority muss >= 1 sein
+    priority = item.get("priority")
+    if not isinstance(priority, int) or priority < 1:
+        priority = ITEM_DEFAULTS["priority"]
+        fixes.append(f"priority -> {priority}")
+
+    # confirm_point konvertieren
+    old_cp = item.get("confirm_point")
+    new_cp = convert_confirm_point(old_cp, name)
+    if old_cp is not None and old_cp != new_cp:
+        if new_cp:
+            fixes.append(f"confirm_point konvertiert")
+        else:
+            fixes.append(f"confirm_point geloescht (ungueltig)")
+
+    # confirm_delay
+    delay = item.get("confirm_delay")
+    if not isinstance(delay, (int, float)) or delay < 0:
+        delay = ITEM_DEFAULTS["confirm_delay"]
+        fixes.append(f"confirm_delay -> {delay}")
+
+    # min_confidence
+    conf = item.get("min_confidence")
+    if not isinstance(conf, (int, float)) or not (0 < conf <= 1):
+        conf = ITEM_DEFAULTS["min_confidence"]
+        fixes.append(f"min_confidence -> {conf}")
+
+    # Item mit korrekter Feldordnung aufbauen
+    fixed = {
+        "name": name,
+        "marker_colors": mc,
+        "category": item.get("category"),  # None ist OK
+        "priority": priority,
+        "confirm_point": new_cp,
+        "confirm_delay": delay,
+        "template": item.get("template"),  # None ist OK
+        "min_confidence": conf
+    }
+
+    return fixed, fixes
+
+
+def sync_global_items() -> tuple[int, int]:
+    """Synchronisiert items/items.json.
+
+    Returns: (count, fixes_count)
+    """
+    data = load_json_safe(ITEMS_FILE)
+    if not data:
+        return 0, 0
+
+    if not isinstance(data, dict):
+        print("    [FEHLER] items.json ist kein Dictionary!")
+        return 0, 0
+
+    updated = {}
+    total_fixes = 0
+
+    for name, item in data.items():
+        if not isinstance(item, dict):
+            print(f"    [WARNUNG] '{name}' uebersprungen (kein Dictionary)")
+            continue
+
+        fixed, fixes = sync_item(name, item)
+        updated[name] = fixed
+
+        if fixes:
+            total_fixes += len(fixes)
+            print(f"    {name}: {', '.join(fixes)}")
+
+    save_json(ITEMS_FILE, updated)
+    return len(updated), total_fixes
+
+
+# ==============================================================================
+# SLOT SYNC
+# ==============================================================================
+def sync_slot(name: str, slot: dict) -> tuple[dict, list]:
+    """Synchronisiert einen einzelnen Slot."""
+    fixes = []
+
+    # Name
+    if not slot.get("name"):
+        slot["name"] = name
+        fixes.append("name ergaenzt")
+
+    # scan_region normalisieren
+    region = normalize_region(slot.get("scan_region"))
+    if slot.get("scan_region") and not region:
+        fixes.append("scan_region repariert")
+
+    # click_pos normalisieren
+    pos = normalize_pos(slot.get("click_pos"))
+    if slot.get("click_pos") and not pos:
+        fixes.append("click_pos repariert")
+
+    # slot_color normalisieren
+    color = normalize_color(slot.get("slot_color"))
+
+    fixed = {
+        "name": name,
+        "scan_region": region,
+        "click_pos": pos,
+        "slot_color": color
+    }
+
+    return fixed, fixes
+
+
+def sync_global_slots() -> tuple[int, int]:
+    """Synchronisiert slots/slots.json."""
+    data = load_json_safe(SLOTS_FILE)
+    if not data:
+        return 0, 0
+
+    if not isinstance(data, dict):
+        print("    [FEHLER] slots.json ist kein Dictionary!")
+        return 0, 0
+
+    updated = {}
+    total_fixes = 0
+
+    for name, slot in data.items():
+        if not isinstance(slot, dict):
+            print(f"    [WARNUNG] '{name}' uebersprungen")
+            continue
+
+        fixed, fixes = sync_slot(name, slot)
+        updated[name] = fixed
+
+        if fixes:
+            total_fixes += len(fixes)
+            print(f"    {name}: {', '.join(fixes)}")
+
+    save_json(SLOTS_FILE, updated)
+    return len(updated), total_fixes
+
+
+# ==============================================================================
+# PRESET SYNC
+# ==============================================================================
+def sync_item_presets() -> tuple[int, int]:
+    """Synchronisiert alle Item-Presets."""
     if not ITEM_PRESETS_DIR.exists():
-        return 0
+        return 0, 0
 
     presets = list(ITEM_PRESETS_DIR.glob("*.json"))
-    count = 0
+    total_count = 0
+    total_fixes = 0
 
     for preset_file in presets:
-        try:
-            with open(preset_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        data = load_json_safe(preset_file)
+        if not data or not isinstance(data, dict):
+            continue
 
-            updated_data = {}
-            for name, item_data in data.items():
-                updated_data[name] = {
-                    "name": item_data.get("name", name),
-                    "marker_colors": item_data.get("marker_colors", []),
-                    "category": item_data.get("category"),
-                    "priority": item_data.get("priority", 1),
-                    "confirm_point": normalize_confirm_point(item_data.get("confirm_point")),
-                    "confirm_delay": item_data.get("confirm_delay", 0.5),
-                    "template": item_data.get("template"),
-                    "min_confidence": item_data.get("min_confidence", 0.8)
-                }
+        updated = {}
+        fixes_in_file = 0
 
-            with open(preset_file, "w", encoding="utf-8") as f:
-                json.dump(updated_data, f, indent=2, ensure_ascii=False)
+        for name, item in data.items():
+            if not isinstance(item, dict):
+                continue
 
-            print(f"    {preset_file.name}")
-            count += 1
-        except Exception as e:
-            print(f"    [FEHLER] {preset_file.name}: {e}")
+            fixed, fixes = sync_item(name, item)
+            updated[name] = fixed
+            fixes_in_file += len(fixes)
 
-    return count
+        if fixes_in_file > 0:
+            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
+            total_fixes += fixes_in_file
+
+        save_json(preset_file, updated)
+        total_count += 1
+
+    return total_count, total_fixes
 
 
+# ==============================================================================
+# SCAN CONFIG SYNC
+# ==============================================================================
 def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
     """Synchronisiert Scan-Configs mit globalen Items.
 
-    Returns:
-        Tuple (updated, removed, skipped)
+    Returns: (updated, auto_fixed, user_input_needed)
     """
     if not ITEM_SCANS_DIR.exists():
         return 0, 0, 0
@@ -204,184 +357,171 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
         return 0, 0, 0
 
     total_updated = 0
-    total_removed = 0
-    total_skipped = 0
+    total_fixed = 0
+    total_user_input = 0
 
     for scan_file in scan_files:
-        try:
-            with open(scan_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        data = load_json_safe(scan_file)
+        if not data or not isinstance(data, dict):
+            continue
 
-            scan_name = data.get("name", scan_file.stem)
-            items = data.get("items", [])
+        scan_name = data.get("name", scan_file.stem)
 
-            if not items:
+        # Name sicherstellen
+        if not data.get("name"):
+            data["name"] = scan_file.stem
+
+        # color_tolerance mit Default
+        if "color_tolerance" not in data:
+            data["color_tolerance"] = SCAN_DEFAULTS["color_tolerance"]
+
+        # Slots normalisieren
+        slots = data.get("slots", [])
+        if isinstance(slots, list):
+            fixed_slots = []
+            for i, slot in enumerate(slots):
+                if isinstance(slot, dict):
+                    name = slot.get("name", f"Slot {i+1}")
+                    fixed, _ = sync_slot(name, slot)
+                    fixed_slots.append(fixed)
+            data["slots"] = fixed_slots
+
+        # Items verarbeiten
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            items = []
+
+        fixed_items = []
+        file_fixes = 0
+
+        print(f"\n  [{scan_name}]")
+
+        for item in items:
+            if not isinstance(item, dict):
                 continue
 
-            print(f"\n  [{scan_name}] {len(items)} Items prüfen...")
+            item_name = item.get("name", "")
 
-            modified = False
-            items_to_keep = []
+            # Item in globalen Items?
+            if item_name and item_name in global_items:
+                global_item = global_items[item_name]
 
-            for item in items:
-                item_name = item.get("name", "")
+                # Werte aus globalem Item uebernehmen
+                changes = []
 
-                if item_name in global_items:
-                    global_item = global_items[item_name]
+                for field in ["category", "priority", "template", "min_confidence",
+                              "confirm_point", "confirm_delay"]:
+                    if item.get(field) != global_item.get(field):
+                        item[field] = global_item.get(field)
+                        changes.append(field)
 
-                    # Prüfe auf Unterschiede
-                    changes = []
-                    if item.get("category") != global_item.get("category"):
-                        old_cat = item.get("category", "None")
-                        changes.append(f"category: {old_cat} -> {global_item.get('category')}")
-                        item["category"] = global_item.get("category")
+                if changes:
+                    print(f"    {item_name}: {', '.join(changes)} aktualisiert")
+                    total_updated += 1
 
-                    if item.get("priority") != global_item.get("priority"):
-                        changes.append(f"priority: {item.get('priority')} -> {global_item.get('priority')}")
-                        item["priority"] = global_item.get("priority")
+                # Item normalisieren
+                fixed, fixes = sync_item(item_name, item)
+                # marker_colors aus Original behalten (scan-spezifisch)
+                fixed["marker_colors"] = item.get("marker_colors", [])
+                fixed_items.append(fixed)
+                file_fixes += len(fixes)
 
-                    if item.get("template") != global_item.get("template"):
-                        old_tpl = item.get("template", "None")
-                        changes.append(f"template: {old_tpl} -> {global_item.get('template')}")
-                        item["template"] = global_item.get("template")
+            elif item_name:
+                # Item nicht in globalen Items - User fragen
+                print(f"\n    ! '{item_name}' nicht in globalen Items")
 
-                    if item.get("min_confidence") != global_item.get("min_confidence"):
-                        item["min_confidence"] = global_item.get("min_confidence")
-                        changes.append("min_confidence")
+                # Aehnliche suchen
+                similar = [n for n in global_items.keys()
+                          if item_name.lower() in n.lower() or n.lower() in item_name.lower()]
+                if similar:
+                    print(f"      Aehnliche: {', '.join(similar[:5])}")
 
-                    if item.get("confirm_point") != global_item.get("confirm_point"):
-                        item["confirm_point"] = global_item.get("confirm_point")
-                        changes.append("confirm_point")
+                print("      [Enter]=behalten, [d]=loeschen, [Name]=ersetzen")
+                choice = input("      > ").strip()
 
-                    if item.get("confirm_delay") != global_item.get("confirm_delay"):
-                        item["confirm_delay"] = global_item.get("confirm_delay")
-
-                    if changes:
-                        print(f"    + {item_name}: {', '.join(changes)}")
-                        modified = True
-                        total_updated += 1
-
-                    items_to_keep.append(item)
-
+                if choice.lower() == "d":
+                    print(f"      -> geloescht")
+                    total_user_input += 1
+                elif choice in global_items:
+                    # Durch globales Item ersetzen
+                    global_item = global_items[choice]
+                    fixed, _ = sync_item(choice, dict(global_item))
+                    fixed["marker_colors"] = item.get("marker_colors", [])
+                    fixed_items.append(fixed)
+                    print(f"      -> ersetzt durch '{choice}'")
+                    total_user_input += 1
+                    total_updated += 1
                 else:
-                    # Item nicht in globalen Items
-                    print(f"\n    ! '{item_name}' nicht in globalen Items!")
-                    print(f"      Template: {item.get('template', 'keins')}")
+                    # Behalten aber normalisieren
+                    fixed, fixes = sync_item(item_name, item)
+                    fixed_items.append(fixed)
+                    file_fixes += len(fixes)
+                    print(f"      -> behalten")
 
-                    # Zeige ähnliche Items
-                    similar = [n for n in global_items.keys()
-                              if item_name.lower() in n.lower() or n.lower() in item_name.lower()]
+        data["items"] = fixed_items
+        total_fixed += file_fixes
 
-                    if similar:
-                        print(f"      Aehnliche: {', '.join(similar)}")
+        # Speichern mit korrekter Struktur
+        save_json(scan_file, {
+            "name": data["name"],
+            "color_tolerance": data.get("color_tolerance", SCAN_DEFAULTS["color_tolerance"]),
+            "slots": data.get("slots", []),
+            "items": data["items"]
+        })
 
-                    print("      Optionen:")
-                    print("        [Enter] = Behalten (unveraendert)")
-                    print("        [d]     = Aus Scan entfernen")
-                    print("        [Name]  = Durch globales Item ersetzen")
-
-                    choice = input("      > ").strip()
-
-                    if choice.lower() == "d":
-                        print(f"      -> '{item_name}' entfernt")
-                        modified = True
-                        total_removed += 1
-                    elif choice and choice in global_items:
-                        global_item = global_items[choice]
-                        item["name"] = global_item.get("name")
-                        item["category"] = global_item.get("category")
-                        item["priority"] = global_item.get("priority")
-                        item["template"] = global_item.get("template")
-                        item["min_confidence"] = global_item.get("min_confidence")
-                        item["confirm_point"] = global_item.get("confirm_point")
-                        item["confirm_delay"] = global_item.get("confirm_delay")
-                        print(f"      -> Ersetzt durch '{choice}'")
-                        items_to_keep.append(item)
-                        modified = True
-                        total_updated += 1
-                    else:
-                        items_to_keep.append(item)
-                        total_skipped += 1
-                        print("      -> Behalten (unveraendert)")
-
-            # Items mit korrekter Feldordnung neu aufbauen
-            rebuilt_items = []
-            for item in items_to_keep:
-                rebuilt_item = {
-                    "name": item.get("name"),
-                    "marker_colors": item.get("marker_colors", []),
-                    "category": item.get("category"),
-                    "priority": item.get("priority", 1),
-                    "confirm_point": normalize_confirm_point(item.get("confirm_point")),
-                    "confirm_delay": item.get("confirm_delay", 0.5),
-                    "template": item.get("template"),
-                    "min_confidence": item.get("min_confidence", 0.8)
-                }
-                rebuilt_items.append(rebuilt_item)
-
-            data["items"] = rebuilt_items
-            with open(scan_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-
-            if modified:
-                print(f"    -> {scan_name} gespeichert!")
-
-        except Exception as e:
-            print(f"  [FEHLER] {scan_file.name}: {e}")
-
-    return total_updated, total_removed, total_skipped
+    return total_updated, total_fixed, total_user_input
 
 
+# ==============================================================================
+# MAIN
+# ==============================================================================
 def main():
     global POINTS
 
     print("\n" + "=" * 60)
-    print("  SYNC: Alle JSON-Dateien aktualisieren")
+    print("  SYNC-TOOL: JSON-Dateien aktualisieren")
     print("=" * 60)
-    print(f"\n  Arbeitsverzeichnis: {SCRIPT_DIR}")
+    print(f"\n  Verzeichnis: {SCRIPT_DIR}")
 
     # Punkte laden (fuer confirm_point Konvertierung)
     POINTS = load_points()
     print(f"  Punkte geladen: {len(POINTS)}")
 
-    # 1. Global Items laden und sync
-    global_items = load_global_items()
-    print(f"\n  [1/4] Global Items ({len(global_items)})...")
-    if global_items:
-        count = sync_global_items(global_items)
-        print(f"        + Feldordnung aktualisiert ({count} Items)")
+    # 1. Global Items
+    print(f"\n  [1/4] Global Items...")
+    count, fixes = sync_global_items()
+    if count:
+        print(f"        {count} Items, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 2. Global Slots laden und sync
-    global_slots = load_global_slots()
-    print(f"\n  [2/4] Global Slots ({len(global_slots)})...")
-    if global_slots:
-        count = sync_global_slots(global_slots)
-        print(f"        + Feldordnung aktualisiert ({count} Slots)")
+    # 2. Global Slots
+    print(f"\n  [2/4] Global Slots...")
+    count, fixes = sync_global_slots()
+    if count:
+        print(f"        {count} Slots, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 3. Item-Presets sync
+    # 3. Item-Presets
     print(f"\n  [3/4] Item-Presets...")
-    preset_count = sync_item_presets()
-    if preset_count:
-        print(f"        + {preset_count} Preset(s) aktualisiert")
+    count, fixes = sync_item_presets()
+    if count:
+        print(f"        {count} Presets, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 4. Scan-Configs sync
+    # 4. Scan-Configs
     print(f"\n  [4/4] Scan-Konfigurationen...")
-    if global_items:
-        updated, removed, skipped = sync_scan_configs(global_items)
 
-        print("\n" + "-" * 60)
-        print(f"  Scan-Sync Ergebnis:")
-        print(f"    Aktualisiert: {updated}")
-        print(f"    Entfernt:     {removed}")
-        print(f"    Uebersprungen: {skipped}")
+    # Globale Items nochmal laden (nach Sync aktualisiert)
+    global_items = load_json_safe(ITEMS_FILE) or {}
+
+    if global_items:
+        updated, fixed, user = sync_scan_configs(global_items)
+        print(f"\n        Aktualisiert: {updated}, Auto-Fixes: {fixed}, User-Input: {user}")
     else:
-        print("        - Keine globalen Items zum Abgleich")
+        print("        - Keine Items zum Abgleich")
 
     print("\n" + "=" * 60)
     print("  SYNC abgeschlossen!")
@@ -395,5 +535,7 @@ if __name__ == "__main__":
         print("\n[ABBRUCH]")
     except Exception as e:
         print(f"\n[FEHLER] {e}")
+        import traceback
+        traceback.print_exc()
 
     input("\nENTER zum Beenden...")
