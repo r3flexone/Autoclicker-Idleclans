@@ -5132,15 +5132,19 @@ def register_hotkeys() -> bool:
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
 
-    success = True
+    failed = []
     for hk_id, vk, name in hotkeys:
         if not user32.RegisterHotKey(None, hk_id, modifiers, vk):
-            print(f"[FEHLER] Hotkey nicht registriert: {name}")
-            success = False
-        else:
-            print(f"  ✓ {name}")
+            failed.append(name)
 
-    return success
+    # Nur Fehler anzeigen
+    if failed:
+        print("[FEHLER] Folgende Hotkeys konnten nicht registriert werden:")
+        for name in failed:
+            print(f"  ✗ {name}")
+        return False
+
+    return True
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
@@ -5209,11 +5213,10 @@ def main() -> int:
     load_global_items(state)
     load_all_item_scans(state)
 
-    # Hotkeys registrieren
-    print("Registriere Hotkeys...")
+    # Hotkeys registrieren (zeigt nur Fehler an)
     if not register_hotkeys():
         logger.warning("Nicht alle Hotkeys registriert.")
-    print()
+        print()
 
     print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
     print_status(state)
