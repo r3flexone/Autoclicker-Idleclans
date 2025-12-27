@@ -3864,6 +3864,9 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         if img is None:
             continue
 
+        if CONFIG.get("debug_detection", False):
+            print(f"[DEBUG] Scanne {slot.name}...")
+
         # Prüfe alle Item-Profile für diesen Slot
         slot_best_item = None
         slot_best_priority = 999
@@ -3878,6 +3881,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
                     print(f"  [WARNUNG] OpenCV nicht verfügbar für Template '{item.template}'")
                     continue
                 matched, confidence, pos = match_template_in_image(img, item.template, item.min_confidence)
+
+                if CONFIG.get("debug_detection", False):
+                    status = "✓" if matched else "✗"
+                    threshold_info = f"≥{item.min_confidence:.0%}" if not matched else ""
+                    print(f"[DEBUG]   {status} {item.name}: {confidence:.0%} {threshold_info}")
+
                 if matched:
                     item_matched = True
                     match_info = f"Template {confidence:.0%}"
@@ -3910,6 +3919,10 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
                 if markers_found >= min_required:
                     item_matched = True
                     match_info = f"{markers_found}/{len(item.marker_colors)} Marker"
+
+                if CONFIG.get("debug_detection", False):
+                    status = "✓" if item_matched else "✗"
+                    print(f"[DEBUG]   {status} {item.name}: {markers_found}/{len(item.marker_colors)} Marker (min {min_required})")
 
             # Item erkannt?
             if item_matched:
