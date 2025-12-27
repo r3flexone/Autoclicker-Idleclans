@@ -1320,8 +1320,9 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
         # PIL-Bild zu OpenCV-Format konvertieren (RGB -> BGR)
         img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-        # Template laden
-        template_cv = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        # Template laden (mit Unicode-Pfad-Unterstützung für Windows)
+        # cv2.imread hat Probleme mit Umlauten (ü, ä, ö) - daher imdecode verwenden
+        template_cv = cv2.imdecode(np.fromfile(template_path, dtype=np.uint8), cv2.IMREAD_COLOR)
         if template_cv is None:
             logger.error(f"Konnte Template nicht laden: {template_path}")
             return (False, 0.0, None)
