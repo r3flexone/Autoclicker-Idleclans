@@ -6,33 +6,104 @@ Bringt alle JSON-Dateien auf den aktuellen Code-Stand:
 - Fehlende Felder mit Standardwerten ergaenzen
 - Alte Formate konvertieren (z.B. confirm_point int -> [x,y])
 - Feldordnung korrigieren
-- Scan-Configs mit globalen Items abgleichen
 
-Standardwerte werden automatisch eingetragen.
-Nur bei unklaren Faellen wird nachgefragt.
+Reihenfolge:
+1. Config          (config.json + configs/*.json)
+2. Points          (sequences/points.json)
+3. Sequences       (sequences/*.json)
+4. Slots           (slots/slots.json + slots/presets/*.json)
+5. Items           (items/items.json + items/presets/*.json)
+6. Scan-Configs    (item_scans/*.json)
 """
 
 import json
 from pathlib import Path
 
-# Pfade (relativ zum Hauptverzeichnis)
+# ==============================================================================
+# PFADE
+# ==============================================================================
 SCRIPT_DIR = Path(__file__).parent.parent
-ITEMS_DIR = SCRIPT_DIR / "items"
-SLOTS_DIR = SCRIPT_DIR / "slots"
+
+# Config
+CONFIG_FILE = SCRIPT_DIR / "config.json"
+CONFIGS_DIR = SCRIPT_DIR / "configs"
+
+# Sequences/Points
 SEQUENCES_DIR = SCRIPT_DIR / "sequences"
-ITEM_SCANS_DIR = SCRIPT_DIR / "item_scans"
-ITEMS_FILE = ITEMS_DIR / "items.json"
+POINTS_FILE = SEQUENCES_DIR / "points.json"
+
+# Slots
+SLOTS_DIR = SCRIPT_DIR / "slots"
 SLOTS_FILE = SLOTS_DIR / "slots.json"
-POINTS_FILE = SEQUENCES_DIR / "points.json"  # Punkte sind in sequences/
-ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
 SLOT_PRESETS_DIR = SLOTS_DIR / "presets"
 
-# Globale Punkte-Liste
+# Items
+ITEMS_DIR = SCRIPT_DIR / "items"
+ITEMS_FILE = ITEMS_DIR / "items.json"
+ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
+
+# Scans
+ITEM_SCANS_DIR = SCRIPT_DIR / "item_scans"
+
+# Globale Punkte-Liste (fuer confirm_point Konvertierung)
 POINTS = []
 
 # ==============================================================================
-# STANDARDWERTE - Werden verwendet wenn Feld fehlt oder ungueltig
+# STANDARDWERTE
 # ==============================================================================
+CONFIG_DEFAULTS = {
+    "clicks_per_point": 1,
+    "max_total_clicks": None,
+    "failsafe_enabled": True,
+    "color_tolerance": 0,
+    "pixel_wait_tolerance": 10,
+    "pixel_wait_timeout": 300,
+    "pixel_check_interval": 1,
+    "scan_reverse": False,
+    "marker_count": 5,
+    "require_all_markers": True,
+    "min_markers_required": 2,
+    "slot_hsv_tolerance": 25,
+    "slot_inset": 10,
+    "slot_color_distance": 25,
+    "debug_mode": False,
+    "debug_detection": False,
+    "show_pixel_position": False,
+}
+
+POINT_DEFAULTS = {
+    "x": 0,
+    "y": 0,
+    "name": ""
+}
+
+SEQUENCE_STEP_DEFAULTS = {
+    "x": 0,
+    "y": 0,
+    "name": "",
+    "delay_before": 0.0,
+    "wait_pixel": None,
+    "wait_color": None,
+    "wait_until_gone": False,
+    "item_scan": None,
+    "item_scan_mode": "all",
+    "wait_only": False,
+    "delay_max": None,
+    "key_press": None,
+    "else_action": None,
+    "else_x": None,
+    "else_y": None,
+    "else_delay": None,
+    "else_key": None,
+    "else_name": None
+}
+
+SLOT_DEFAULTS = {
+    "scan_region": None,
+    "click_pos": None,
+    "slot_color": None
+}
+
 ITEM_DEFAULTS = {
     "marker_colors": [],
     "category": None,
@@ -41,12 +112,6 @@ ITEM_DEFAULTS = {
     "confirm_delay": 0.5,
     "template": None,
     "min_confidence": 0.8
-}
-
-SLOT_DEFAULTS = {
-    "scan_region": None,
-    "click_pos": None,
-    "slot_color": None
 }
 
 SCAN_DEFAULTS = {
@@ -59,7 +124,7 @@ SCAN_DEFAULTS = {
 # ==============================================================================
 # HILFSFUNKTIONEN
 # ==============================================================================
-def load_json_safe(filepath: Path) -> dict | list | None:
+def load_json_safe(filepath: Path):
     """Laedt JSON sicher, gibt None bei Fehler."""
     if not filepath.exists():
         return None
@@ -67,7 +132,7 @@ def load_json_safe(filepath: Path) -> dict | list | None:
         with open(filepath, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        print(f"  [FEHLER] {filepath.name}: {e}")
+        print(f"    [FEHLER] {filepath.name}: {e}")
         return None
 
 
@@ -78,202 +143,290 @@ def save_json(filepath: Path, data, indent=2):
         json.dump(data, f, indent=indent, ensure_ascii=False)
 
 
-def load_points() -> list:
-    """Laedt Punkte aus points.json."""
-    data = load_json_safe(POINTS_FILE)
-    if not data:
-        return []
+def normalize_color(color):
+    """Farbe als Liste [r,g,b]."""
+    if color is None:
+        return None
+    if isinstance(color, (list, tuple)) and len(color) >= 3:
+        return [int(c) for c in color[:3]]
+    return None
 
-    points = []
-    for p in data:
-        if isinstance(p, list) and len(p) == 2:
-            points.append(p)
-        elif isinstance(p, dict) and "x" in p and "y" in p:
-            points.append([p["x"], p["y"]])
-    return points
+
+def normalize_region(region):
+    """Region als Liste [x1,y1,x2,y2]."""
+    if region is None:
+        return None
+    if isinstance(region, (list, tuple)) and len(region) >= 4:
+        return [int(v) for v in region[:4]]
+    return None
+
+
+def normalize_pos(pos):
+    """Position als Liste [x,y]."""
+    if pos is None:
+        return None
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+        return [int(v) for v in pos[:2]]
+    return None
 
 
 def convert_confirm_point(cp, item_name=""):
-    """Konvertiert confirm_point in korrektes Format.
-
-    - [x, y] Liste -> behalten
-    - int (Punkt-Nr) -> Koordinaten aus POINTS
-    - Alles andere -> None
-    """
-    # Bereits korrekt
+    """Konvertiert confirm_point: int -> Koordinaten aus POINTS."""
     if isinstance(cp, list) and len(cp) == 2:
         return cp
-
-    # Alte int-Werte konvertieren
     if isinstance(cp, int) and cp >= 1:
         if cp <= len(POINTS):
             coords = POINTS[cp - 1]
             print(f"      {item_name}: Punkt {cp} -> ({coords[0]}, {coords[1]})")
             return coords
         else:
-            print(f"      {item_name}: Punkt {cp} existiert nicht -> None")
-            return None
-
-    return None
-
-
-def normalize_color(color):
-    """Stellt sicher dass Farbe als Liste gespeichert wird."""
-    if color is None:
-        return None
-    if isinstance(color, (list, tuple)) and len(color) >= 3:
-        return list(color[:3])
-    return None
-
-
-def normalize_region(region):
-    """Stellt sicher dass Region als Liste [x1,y1,x2,y2] gespeichert wird."""
-    if region is None:
-        return None
-    if isinstance(region, (list, tuple)) and len(region) >= 4:
-        return list(region[:4])
-    return None
-
-
-def normalize_pos(pos):
-    """Stellt sicher dass Position als Liste [x,y] gespeichert wird."""
-    if pos is None:
-        return None
-    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
-        return list(pos[:2])
+            print(f"      {item_name}: Punkt {cp} nicht vorhanden -> None")
     return None
 
 
 # ==============================================================================
-# ITEM SYNC
+# 1. CONFIG SYNC
 # ==============================================================================
-def sync_item(name: str, item: dict) -> tuple[dict, list]:
-    """Synchronisiert ein einzelnes Item.
+def sync_config() -> tuple[int, int]:
+    """Synchronisiert config.json."""
+    data = load_json_safe(CONFIG_FILE)
 
-    Returns: (fixed_item, list_of_fixes)
-    """
-    fixes = []
+    if data is None:
+        # Erstelle neue Config
+        save_json(CONFIG_FILE, CONFIG_DEFAULTS)
+        print("    config.json erstellt mit Standardwerten")
+        return 1, len(CONFIG_DEFAULTS)
 
-    # Name muss vorhanden sein
-    if not item.get("name"):
-        item["name"] = name
-        fixes.append("name ergaenzt")
+    if not isinstance(data, dict):
+        print("    [FEHLER] config.json ist kein Dictionary!")
+        return 0, 0
 
-    # Marker-Colors normalisieren
-    mc = item.get("marker_colors", [])
-    if not isinstance(mc, list):
-        mc = []
-        fixes.append("marker_colors repariert")
-    else:
-        mc = [normalize_color(c) for c in mc if normalize_color(c)]
+    fixes = 0
+    updated = {}
 
-    # Priority muss >= 1 sein
-    priority = item.get("priority")
-    if not isinstance(priority, int) or priority < 1:
-        priority = ITEM_DEFAULTS["priority"]
-        fixes.append(f"priority -> {priority}")
-
-    # confirm_point konvertieren
-    old_cp = item.get("confirm_point")
-    new_cp = convert_confirm_point(old_cp, name)
-    if old_cp is not None and old_cp != new_cp:
-        if new_cp:
-            fixes.append(f"confirm_point konvertiert")
+    # Alle Defaults durchgehen (in richtiger Reihenfolge)
+    for key, default in CONFIG_DEFAULTS.items():
+        if key in data:
+            updated[key] = data[key]
         else:
-            fixes.append(f"confirm_point geloescht (ungueltig)")
+            updated[key] = default
+            print(f"    + {key} = {default}")
+            fixes += 1
 
-    # confirm_delay
-    delay = item.get("confirm_delay")
-    if not isinstance(delay, (int, float)) or delay < 0:
-        delay = ITEM_DEFAULTS["confirm_delay"]
-        fixes.append(f"confirm_delay -> {delay}")
+    # Unbekannte Keys am Ende behalten
+    for key in data:
+        if key not in updated:
+            updated[key] = data[key]
 
-    # min_confidence
-    conf = item.get("min_confidence")
-    if not isinstance(conf, (int, float)) or not (0 < conf <= 1):
-        conf = ITEM_DEFAULTS["min_confidence"]
-        fixes.append(f"min_confidence -> {conf}")
+    save_json(CONFIG_FILE, updated)
+    return 1, fixes
 
-    # Item mit korrekter Feldordnung aufbauen
-    fixed = {
-        "name": name,
-        "marker_colors": mc,
-        "category": item.get("category"),  # None ist OK
-        "priority": priority,
-        "confirm_point": new_cp,
-        "confirm_delay": delay,
-        "template": item.get("template"),  # None ist OK
-        "min_confidence": conf
-    }
+
+def sync_config_presets() -> tuple[int, int]:
+    """Synchronisiert configs/*.json."""
+    if not CONFIGS_DIR.exists():
+        return 0, 0
+
+    presets = list(CONFIGS_DIR.glob("*.json"))
+    total_count = 0
+    total_fixes = 0
+
+    for preset_file in presets:
+        data = load_json_safe(preset_file)
+        if not data or not isinstance(data, dict):
+            continue
+
+        fixes = 0
+        updated = {}
+
+        for key, default in CONFIG_DEFAULTS.items():
+            if key in data:
+                updated[key] = data[key]
+            else:
+                updated[key] = default
+                fixes += 1
+
+        for key in data:
+            if key not in updated:
+                updated[key] = data[key]
+
+        if fixes > 0:
+            print(f"    {preset_file.name}: {fixes} Felder ergaenzt")
+            total_fixes += fixes
+
+        save_json(preset_file, updated)
+        total_count += 1
+
+    return total_count, total_fixes
+
+
+# ==============================================================================
+# 2. POINTS SYNC
+# ==============================================================================
+def sync_points() -> tuple[int, int]:
+    """Synchronisiert sequences/points.json und laedt POINTS."""
+    global POINTS
+
+    data = load_json_safe(POINTS_FILE)
+    if not data:
+        POINTS = []
+        return 0, 0
+
+    if not isinstance(data, list):
+        print("    [FEHLER] points.json ist keine Liste!")
+        POINTS = []
+        return 0, 0
+
+    fixes = 0
+    updated = []
+
+    for i, point in enumerate(data):
+        if not isinstance(point, dict):
+            continue
+
+        # Normalisieren
+        fixed = {
+            "x": int(point.get("x", 0)),
+            "y": int(point.get("y", 0)),
+            "name": str(point.get("name", ""))
+        }
+
+        # Fehlende Felder zaehlen
+        if "name" not in point:
+            fixes += 1
+
+        updated.append(fixed)
+        POINTS.append([fixed["x"], fixed["y"]])
+
+    save_json(POINTS_FILE, updated)
+    return len(updated), fixes
+
+
+# ==============================================================================
+# 3. SEQUENCES SYNC
+# ==============================================================================
+def sync_step(step: dict) -> tuple[dict, int]:
+    """Synchronisiert einen Sequenz-Schritt."""
+    fixes = 0
+    fixed = {}
+
+    for key, default in SEQUENCE_STEP_DEFAULTS.items():
+        if key in step:
+            fixed[key] = step[key]
+        else:
+            fixed[key] = default
+            fixes += 1
 
     return fixed, fixes
 
 
-def sync_global_items() -> tuple[int, int]:
-    """Synchronisiert items/items.json.
-
-    Returns: (count, fixes_count)
-    """
-    data = load_json_safe(ITEMS_FILE)
-    if not data:
+def sync_sequences() -> tuple[int, int]:
+    """Synchronisiert sequences/*.json (ausser points.json)."""
+    if not SEQUENCES_DIR.exists():
         return 0, 0
 
-    if not isinstance(data, dict):
-        print("    [FEHLER] items.json ist kein Dictionary!")
-        return 0, 0
-
-    updated = {}
+    seq_files = [f for f in SEQUENCES_DIR.glob("*.json") if f.name != "points.json"]
+    total_count = 0
     total_fixes = 0
 
-    for name, item in data.items():
-        if not isinstance(item, dict):
-            print(f"    [WARNUNG] '{name}' uebersprungen (kein Dictionary)")
+    for seq_file in seq_files:
+        data = load_json_safe(seq_file)
+        if not data or not isinstance(data, dict):
             continue
 
-        fixed, fixes = sync_item(name, item)
-        updated[name] = fixed
+        fixes = 0
 
-        if fixes:
-            total_fixes += len(fixes)
-            print(f"    {name}: {', '.join(fixes)}")
+        # Name sicherstellen
+        if "name" not in data:
+            data["name"] = seq_file.stem
+            fixes += 1
 
-    save_json(ITEMS_FILE, updated)
-    return len(updated), total_fixes
+        # total_cycles
+        if "total_cycles" not in data:
+            data["total_cycles"] = None
+            fixes += 1
+
+        # start_steps
+        if "start_steps" in data and isinstance(data["start_steps"], list):
+            fixed_steps = []
+            for step in data["start_steps"]:
+                if isinstance(step, dict):
+                    fixed, f = sync_step(step)
+                    fixed_steps.append(fixed)
+                    fixes += f
+            data["start_steps"] = fixed_steps
+        else:
+            data["start_steps"] = []
+
+        # loop_phases
+        if "loop_phases" in data and isinstance(data["loop_phases"], list):
+            fixed_phases = []
+            for phase in data["loop_phases"]:
+                if isinstance(phase, dict):
+                    fixed_phase = {
+                        "name": phase.get("name", "Loop"),
+                        "repeat": phase.get("repeat", 1),
+                        "steps": []
+                    }
+                    if "steps" in phase and isinstance(phase["steps"], list):
+                        for step in phase["steps"]:
+                            if isinstance(step, dict):
+                                fixed, f = sync_step(step)
+                                fixed_phase["steps"].append(fixed)
+                                fixes += f
+                    fixed_phases.append(fixed_phase)
+            data["loop_phases"] = fixed_phases
+        else:
+            data["loop_phases"] = []
+
+        # end_steps
+        if "end_steps" in data and isinstance(data["end_steps"], list):
+            fixed_steps = []
+            for step in data["end_steps"]:
+                if isinstance(step, dict):
+                    fixed, f = sync_step(step)
+                    fixed_steps.append(fixed)
+                    fixes += f
+            data["end_steps"] = fixed_steps
+        else:
+            data["end_steps"] = []
+
+        if fixes > 0:
+            print(f"    {seq_file.name}: {fixes} Korrekturen")
+            total_fixes += fixes
+
+        save_json(seq_file, {
+            "name": data["name"],
+            "total_cycles": data["total_cycles"],
+            "start_steps": data["start_steps"],
+            "loop_phases": data["loop_phases"],
+            "end_steps": data["end_steps"]
+        })
+        total_count += 1
+
+    return total_count, total_fixes
 
 
 # ==============================================================================
-# SLOT SYNC
+# 4. SLOTS SYNC
 # ==============================================================================
-def sync_slot(name: str, slot: dict) -> tuple[dict, list]:
-    """Synchronisiert einen einzelnen Slot."""
-    fixes = []
+def sync_slot(name: str, slot: dict) -> tuple[dict, int]:
+    """Synchronisiert einen Slot."""
+    fixes = 0
 
-    # Name
     if not slot.get("name"):
-        slot["name"] = name
-        fixes.append("name ergaenzt")
+        fixes += 1
 
-    # scan_region normalisieren
     region = normalize_region(slot.get("scan_region"))
-    if slot.get("scan_region") and not region:
-        fixes.append("scan_region repariert")
-
-    # click_pos normalisieren
     pos = normalize_pos(slot.get("click_pos"))
-    if slot.get("click_pos") and not pos:
-        fixes.append("click_pos repariert")
-
-    # slot_color normalisieren
     color = normalize_color(slot.get("slot_color"))
 
-    fixed = {
+    return {
         "name": name,
         "scan_region": region,
         "click_pos": pos,
         "slot_color": color
-    }
-
-    return fixed, fixes
+    }, fixes
 
 
 def sync_global_slots() -> tuple[int, int]:
@@ -290,64 +443,19 @@ def sync_global_slots() -> tuple[int, int]:
     total_fixes = 0
 
     for name, slot in data.items():
-        if not isinstance(slot, dict):
-            print(f"    [WARNUNG] '{name}' uebersprungen")
-            continue
-
-        fixed, fixes = sync_slot(name, slot)
-        updated[name] = fixed
-
-        if fixes:
-            total_fixes += len(fixes)
-            print(f"    {name}: {', '.join(fixes)}")
+        if isinstance(slot, dict):
+            fixed, fixes = sync_slot(name, slot)
+            updated[name] = fixed
+            if fixes:
+                print(f"    {name}: {fixes} Korrekturen")
+                total_fixes += fixes
 
     save_json(SLOTS_FILE, updated)
     return len(updated), total_fixes
 
 
-# ==============================================================================
-# PRESET SYNC
-# ==============================================================================
-def sync_item_presets() -> tuple[int, int]:
-    """Synchronisiert alle Item-Presets."""
-    if not ITEM_PRESETS_DIR.exists():
-        return 0, 0
-
-    presets = list(ITEM_PRESETS_DIR.glob("*.json"))
-    total_count = 0
-    total_fixes = 0
-
-    for preset_file in presets:
-        data = load_json_safe(preset_file)
-        if not data or not isinstance(data, dict):
-            continue
-
-        updated = {}
-        fixes_in_file = 0
-
-        for name, item in data.items():
-            if not isinstance(item, dict):
-                continue
-
-            fixed, fixes = sync_item(name, item)
-            updated[name] = fixed
-            fixes_in_file += len(fixes)
-
-        if fixes_in_file > 0:
-            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
-            total_fixes += fixes_in_file
-
-        save_json(preset_file, updated)
-        total_count += 1
-
-    return total_count, total_fixes
-
-
-# ==============================================================================
-# SLOT PRESET SYNC
-# ==============================================================================
 def sync_slot_presets() -> tuple[int, int]:
-    """Synchronisiert alle Slot-Presets."""
+    """Synchronisiert slots/presets/*.json."""
     if not SLOT_PRESETS_DIR.exists():
         return 0, 0
 
@@ -364,12 +472,10 @@ def sync_slot_presets() -> tuple[int, int]:
         fixes_in_file = 0
 
         for name, slot in data.items():
-            if not isinstance(slot, dict):
-                continue
-
-            fixed, fixes = sync_slot(name, slot)
-            updated[name] = fixed
-            fixes_in_file += len(fixes)
+            if isinstance(slot, dict):
+                fixed, fixes = sync_slot(name, slot)
+                updated[name] = fixed
+                fixes_in_file += fixes
 
         if fixes_in_file > 0:
             print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
@@ -382,23 +488,126 @@ def sync_slot_presets() -> tuple[int, int]:
 
 
 # ==============================================================================
-# SCAN CONFIG SYNC
+# 5. ITEMS SYNC
+# ==============================================================================
+def sync_item(name: str, item: dict) -> tuple[dict, int]:
+    """Synchronisiert ein Item."""
+    fixes = 0
+
+    # marker_colors
+    mc = item.get("marker_colors", [])
+    if not isinstance(mc, list):
+        mc = []
+        fixes += 1
+    else:
+        mc = [normalize_color(c) for c in mc if normalize_color(c)]
+
+    # priority
+    priority = item.get("priority")
+    if not isinstance(priority, int) or priority < 1:
+        priority = ITEM_DEFAULTS["priority"]
+        fixes += 1
+
+    # confirm_point
+    old_cp = item.get("confirm_point")
+    new_cp = convert_confirm_point(old_cp, name)
+    if old_cp is not None and old_cp != new_cp:
+        fixes += 1
+
+    # confirm_delay
+    delay = item.get("confirm_delay")
+    if not isinstance(delay, (int, float)) or delay < 0:
+        delay = ITEM_DEFAULTS["confirm_delay"]
+        fixes += 1
+
+    # min_confidence
+    conf = item.get("min_confidence")
+    if not isinstance(conf, (int, float)) or not (0 < conf <= 1):
+        conf = ITEM_DEFAULTS["min_confidence"]
+        fixes += 1
+
+    return {
+        "name": name,
+        "marker_colors": mc,
+        "category": item.get("category"),
+        "priority": priority,
+        "confirm_point": new_cp,
+        "confirm_delay": delay,
+        "template": item.get("template"),
+        "min_confidence": conf
+    }, fixes
+
+
+def sync_global_items() -> tuple[int, int]:
+    """Synchronisiert items/items.json."""
+    data = load_json_safe(ITEMS_FILE)
+    if not data:
+        return 0, 0
+
+    if not isinstance(data, dict):
+        print("    [FEHLER] items.json ist kein Dictionary!")
+        return 0, 0
+
+    updated = {}
+    total_fixes = 0
+
+    for name, item in data.items():
+        if isinstance(item, dict):
+            fixed, fixes = sync_item(name, item)
+            updated[name] = fixed
+            if fixes:
+                print(f"    {name}: {fixes} Korrekturen")
+                total_fixes += fixes
+
+    save_json(ITEMS_FILE, updated)
+    return len(updated), total_fixes
+
+
+def sync_item_presets() -> tuple[int, int]:
+    """Synchronisiert items/presets/*.json."""
+    if not ITEM_PRESETS_DIR.exists():
+        return 0, 0
+
+    presets = list(ITEM_PRESETS_DIR.glob("*.json"))
+    total_count = 0
+    total_fixes = 0
+
+    for preset_file in presets:
+        data = load_json_safe(preset_file)
+        if not data or not isinstance(data, dict):
+            continue
+
+        updated = {}
+        fixes_in_file = 0
+
+        for name, item in data.items():
+            if isinstance(item, dict):
+                fixed, fixes = sync_item(name, item)
+                updated[name] = fixed
+                fixes_in_file += fixes
+
+        if fixes_in_file > 0:
+            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
+            total_fixes += fixes_in_file
+
+        save_json(preset_file, updated)
+        total_count += 1
+
+    return total_count, total_fixes
+
+
+# ==============================================================================
+# 6. SCAN CONFIGS SYNC
 # ==============================================================================
 def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
-    """Synchronisiert Scan-Configs mit globalen Items.
-
-    Returns: (updated, auto_fixed, user_input_needed)
-    """
+    """Synchronisiert item_scans/*.json mit globalen Items."""
     if not ITEM_SCANS_DIR.exists():
         return 0, 0, 0
 
     scan_files = list(ITEM_SCANS_DIR.glob("*.json"))
-    if not scan_files:
-        return 0, 0, 0
-
     total_updated = 0
     total_fixed = 0
-    total_user_input = 0
+    total_user = 0
 
     for scan_file in scan_files:
         data = load_json_safe(scan_file)
@@ -406,12 +615,11 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
             continue
 
         scan_name = data.get("name", scan_file.stem)
+        print(f"\n    [{scan_name}]")
 
-        # Name sicherstellen
+        # Basis-Felder
         if not data.get("name"):
             data["name"] = scan_file.stem
-
-        # color_tolerance mit Default
         if "color_tolerance" not in data:
             data["color_tolerance"] = SCAN_DEFAULTS["color_tolerance"]
 
@@ -428,13 +636,8 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
 
         # Items verarbeiten
         items = data.get("items", [])
-        if not isinstance(items, list):
-            items = []
-
         fixed_items = []
         file_fixes = 0
-
-        print(f"\n  [{scan_name}]")
 
         for item in items:
             if not isinstance(item, dict):
@@ -442,11 +645,8 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
 
             item_name = item.get("name", "")
 
-            # Item in globalen Items?
             if item_name and item_name in global_items:
                 global_item = global_items[item_name]
-
-                # Werte aus globalem Item uebernehmen
                 changes = []
 
                 for field in ["category", "priority", "template", "min_confidence",
@@ -456,60 +656,51 @@ def sync_scan_configs(global_items: dict) -> tuple[int, int, int]:
                         changes.append(field)
 
                 if changes:
-                    print(f"    {item_name}: {', '.join(changes)} aktualisiert")
+                    print(f"      {item_name}: {', '.join(changes)}")
                     total_updated += 1
 
-                # Item normalisieren
                 fixed, fixes = sync_item(item_name, item)
-                # marker_colors aus Original behalten (scan-spezifisch)
                 fixed["marker_colors"] = item.get("marker_colors", [])
                 fixed_items.append(fixed)
-                file_fixes += len(fixes)
+                file_fixes += fixes
 
             elif item_name:
-                # Item nicht in globalen Items - User fragen
-                print(f"\n    ! '{item_name}' nicht in globalen Items")
-
-                # Aehnliche suchen
+                print(f"\n      ! '{item_name}' nicht in globalen Items")
                 similar = [n for n in global_items.keys()
                           if item_name.lower() in n.lower() or n.lower() in item_name.lower()]
                 if similar:
-                    print(f"      Aehnliche: {', '.join(similar[:5])}")
+                    print(f"        Aehnliche: {', '.join(similar[:5])}")
 
-                print("      [Enter]=behalten, [d]=loeschen, [Name]=ersetzen")
-                choice = input("      > ").strip()
+                print("        [Enter]=behalten, [d]=loeschen, [Name]=ersetzen")
+                choice = input("        > ").strip()
 
                 if choice.lower() == "d":
-                    print(f"      -> geloescht")
-                    total_user_input += 1
+                    print("        -> geloescht")
+                    total_user += 1
                 elif choice in global_items:
-                    # Durch globales Item ersetzen
-                    global_item = global_items[choice]
-                    fixed, _ = sync_item(choice, dict(global_item))
+                    fixed, _ = sync_item(choice, dict(global_items[choice]))
                     fixed["marker_colors"] = item.get("marker_colors", [])
                     fixed_items.append(fixed)
-                    print(f"      -> ersetzt durch '{choice}'")
-                    total_user_input += 1
+                    print(f"        -> ersetzt durch '{choice}'")
+                    total_user += 1
                     total_updated += 1
                 else:
-                    # Behalten aber normalisieren
                     fixed, fixes = sync_item(item_name, item)
                     fixed_items.append(fixed)
-                    file_fixes += len(fixes)
-                    print(f"      -> behalten")
+                    file_fixes += fixes
+                    print("        -> behalten")
 
         data["items"] = fixed_items
         total_fixed += file_fixes
 
-        # Speichern mit korrekter Struktur
         save_json(scan_file, {
             "name": data["name"],
-            "color_tolerance": data.get("color_tolerance", SCAN_DEFAULTS["color_tolerance"]),
-            "slots": data.get("slots", []),
+            "color_tolerance": data["color_tolerance"],
+            "slots": data["slots"],
             "items": data["items"]
         })
 
-    return total_updated, total_fixed, total_user_input
+    return total_updated, total_fixed, total_user
 
 
 # ==============================================================================
@@ -519,50 +710,61 @@ def main():
     global POINTS
 
     print("\n" + "=" * 60)
-    print("  SYNC-TOOL: JSON-Dateien aktualisieren")
+    print("  SYNC-TOOL: Alle JSON-Dateien aktualisieren")
     print("=" * 60)
     print(f"\n  Verzeichnis: {SCRIPT_DIR}")
 
-    # Punkte laden (fuer confirm_point Konvertierung)
-    POINTS = load_points()
-    print(f"  Punkte geladen: {len(POINTS)}")
+    # 1. Config
+    print(f"\n  [1/6] Config...")
+    count, fixes = sync_config()
+    if fixes:
+        print(f"        {fixes} Felder ergaenzt/korrigiert")
+    else:
+        print("        OK")
 
-    # 1. Global Items
-    print(f"\n  [1/5] Global Items...")
-    count, fixes = sync_global_items()
+    count, fixes = sync_config_presets()
     if count:
-        print(f"        {count} Items, {fixes} Korrekturen")
+        print(f"        + {count} Preset(s), {fixes} Korrekturen")
+
+    # 2. Points (laedt auch POINTS fuer spaeter)
+    print(f"\n  [2/6] Points...")
+    count, fixes = sync_points()
+    print(f"        {count} Punkte geladen")
+
+    # 3. Sequences
+    print(f"\n  [3/6] Sequences...")
+    count, fixes = sync_sequences()
+    if count:
+        print(f"        {count} Sequenz(en), {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 2. Global Slots
-    print(f"\n  [2/5] Global Slots...")
+    # 4. Slots
+    print(f"\n  [4/6] Slots...")
     count, fixes = sync_global_slots()
     if count:
         print(f"        {count} Slots, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 3. Item-Presets
-    print(f"\n  [3/5] Item-Presets...")
-    count, fixes = sync_item_presets()
-    if count:
-        print(f"        {count} Presets, {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
-
-    # 4. Slot-Presets
-    print(f"\n  [4/5] Slot-Presets...")
     count, fixes = sync_slot_presets()
     if count:
-        print(f"        {count} Presets, {fixes} Korrekturen")
+        print(f"        + {count} Preset(s), {fixes} Korrekturen")
+
+    # 5. Items
+    print(f"\n  [5/6] Items...")
+    count, fixes = sync_global_items()
+    if count:
+        print(f"        {count} Items, {fixes} Korrekturen")
     else:
         print("        - keine vorhanden")
 
-    # 5. Scan-Configs
-    print(f"\n  [5/5] Scan-Konfigurationen...")
+    count, fixes = sync_item_presets()
+    if count:
+        print(f"        + {count} Preset(s), {fixes} Korrekturen")
 
-    # Globale Items nochmal laden (nach Sync aktualisiert)
+    # 6. Scan-Configs
+    print(f"\n  [6/6] Scan-Konfigurationen...")
     global_items = load_json_safe(ITEMS_FILE) or {}
 
     if global_items:
