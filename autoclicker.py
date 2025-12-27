@@ -405,7 +405,7 @@ class SequenceStep:
     # Optional: Tastendruck statt Mausklick
     key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
     # Optional: Fallback/Else-Aktion wenn Bedingung fehlschlägt
-    else_action: Optional[str] = None    # "skip", "click", "key"
+    else_action: Optional[str] = None    # "skip", "restart", "click", "key"
     else_x: int = 0                      # X für Fallback-Klick
     else_y: int = 0                      # Y für Fallback-Klick
     else_delay: float = 0                # Delay vor Fallback
@@ -443,6 +443,8 @@ class SequenceStep:
             return ""
         if self.else_action == "skip":
             return " | ELSE: skip"
+        elif self.else_action == "restart":
+            return " | ELSE: restart"
         elif self.else_action == "click":
             name = self.else_name or f"({self.else_x},{self.else_y})"
             return f" | ELSE: klicke {name}"
@@ -602,6 +604,7 @@ class AutoClickerState:
     quit_event: threading.Event = field(default_factory=threading.Event)
     pause_event: threading.Event = field(default_factory=threading.Event)
     skip_event: threading.Event = field(default_factory=threading.Event)
+    restart_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 # =============================================================================
@@ -4361,6 +4364,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
 
     Formate:
     - else skip          -> überspringen
+    - else restart       -> Sequenz neu starten
     - else <Nr> [delay]  -> Punkt klicken (optional mit Verzögerung)
     - else key <Taste>   -> Taste drücken
 
@@ -4374,6 +4378,10 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     # else skip
     if first == "skip":
         return {"else_action": "skip"}
+
+    # else restart
+    if first == "restart":
+        return {"else_action": "restart"}
 
     # else key <Taste>
     if first == "key" and len(else_parts) >= 2:
@@ -4409,7 +4417,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
         pass
 
     print(f"  → Unbekanntes ELSE-Format: {' '.join(else_parts)}")
-    print("     Formate: else skip | else <Nr> [delay] | else key <Taste>")
+    print("     Formate: else skip | else restart | else <Nr> [delay] | else key <Taste>")
     return {}
 
 
@@ -4444,6 +4452,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
     print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
+    print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
     print("Punkte verwalten:")
@@ -5020,6 +5029,12 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
         return True
 
+    elif step.else_action == "restart":
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", end="", flush=True)
+        state.restart_event.set()
+        return False  # Beendet aktuelle Ausführung, sequence_worker prüft restart_event
+
     return True
 
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
@@ -5328,6 +5343,12 @@ def sequence_worker(state: AutoClickerState) -> None:
 
     # Äußere Schleife für Zyklen (START → alle Loops → START → alle Loops → ...)
     while not state.stop_event.is_set() and not state.quit_event.is_set():
+        # Prüfe ob Neustart angefordert wurde
+        if state.restart_event.is_set():
+            state.restart_event.clear()
+            cycle_count = 0
+            print("\n[RESTART] Sequenz wird neu gestartet...")
+
         cycle_count += 1
 
         # Prüfen ob max Zyklen erreicht (0 = unendlich)
@@ -5351,6 +5372,8 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if not execute_step(state, step, i + 1, total_start, "START"):
                     break
 
+            if state.restart_event.is_set():
+                continue  # Neustart von oben
             if state.stop_event.is_set():
                 break
 
@@ -5379,11 +5402,25 @@ def sequence_worker(state: AutoClickerState) -> None:
                         if not execute_step(state, step, i + 1, total_steps, phase_label):
                             break
 
+                    # Restart innerhalb Loop-Phase?
+                    if state.restart_event.is_set():
+                        break
+
+                # Restart innerhalb Loop-Phase?
+                if state.restart_event.is_set():
+                    break
+
                 if not state.stop_event.is_set():
                     print(f"\n[{loop_phase.name}] Abgeschlossen.")
 
+            if state.restart_event.is_set():
+                continue  # Neustart von oben
             if state.stop_event.is_set():
                 break
+
+        # Restart angefordert?
+        if state.restart_event.is_set():
+            continue  # Neustart von oben
 
         # Wenn keine Loops oder total_cycles==1 → nach einem Durchlauf fertig
         if not has_loops or total_cycles == 1:

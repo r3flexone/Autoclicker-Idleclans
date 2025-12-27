@@ -305,6 +305,7 @@ Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen de
 | Befehl | Beschreibung |
 |--------|--------------|
 | `else skip` | Schritt überspringen, Sequenz fortsetzen |
+| `else restart` | Sequenz komplett neu starten |
 | `else <Nr>` | Anderen Punkt klicken |
 | `else <Nr> <Sek>` | Warten, dann anderen Punkt klicken |
 | `else key <Taste>` | Taste drücken |
@@ -313,9 +314,11 @@ Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen de
 
 ```
 scan items else skip           # Wenn kein Item: überspringen
+scan items else restart        # Wenn kein Item: Sequenz neu starten
 scan items else 2              # Wenn kein Item: Punkt 2 klicken
 scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
 1 pixel else skip              # Wenn Timeout: überspringen
+1 pixel else restart           # Wenn Timeout: von vorne beginnen
 1 pixel else key enter         # Wenn Timeout: Enter drücken
 wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ```
@@ -414,6 +417,7 @@ Autoclicker-Idleclans/
 
 ### Neueste Änderungen
 
+- **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
 - **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
 - **Template-Matching**: Items per Screenshot erkennen (OpenCV)
 - **Befehle vereinheitlicht**: `done`/`cancel` statt `fertig`/`abbruch` (beide funktionieren)
