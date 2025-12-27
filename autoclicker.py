@@ -524,12 +524,14 @@ class ItemProfile:
     """Ein Item-Typ mit Marker-Farben und/oder Template-Matching."""
     name: str
     marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
-    priority: int = 99  # 1 = beste, höher = schlechter
+    priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
     confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
     min_confidence: float = 0.8  # Mindest-Konfidenz für Template-Match (0.0-1.0)
+    # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
+    category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
 
     def __str__(self) -> str:
         if self.template:
@@ -540,7 +542,8 @@ class ItemProfile:
                 colors_str += f" (+{len(self.marker_colors)-3})"
             template_str = colors_str if colors_str else "keine Marker"
         confirm_str = f" → Punkt {self.confirm_point}" if self.confirm_point else ""
-        return f"[P{self.priority}] {self.name}: {template_str}{confirm_str}"
+        category_str = f" [{self.category}]" if self.category else ""
+        return f"[P{self.priority}]{category_str} {self.name}: {template_str}{confirm_str}"
 
 @dataclass
 class ItemSlot:
@@ -806,7 +809,8 @@ def save_item_scan(config: ItemScanConfig) -> None:
                 "confirm_point": item.confirm_point,
                 "confirm_delay": item.confirm_delay,
                 "template": item.template,
-                "min_confidence": item.min_confidence
+                "min_confidence": item.min_confidence,
+                "category": item.category
             }
             for item in config.items
         ]
@@ -842,11 +846,12 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    priority=i.get("priority", 99),
+                    priority=i.get("priority", 1),
                     confirm_point=i.get("confirm_point"),
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8)
+                    min_confidence=i.get("min_confidence", 0.8),
+                    category=i.get("category")
                 )
                 items.append(item)
 
@@ -935,7 +940,8 @@ def save_global_items(state: AutoClickerState) -> None:
             "confirm_point": item.confirm_point,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
-            "min_confidence": item.min_confidence
+            "min_confidence": item.min_confidence,
+            "category": item.category
         }
         for name, item in state.global_items.items()
     }
@@ -954,11 +960,12 @@ def load_global_items(state: AutoClickerState) -> None:
             state.global_items[name] = ItemProfile(
                 name=i["name"],
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                priority=i.get("priority", 99),
+                priority=i.get("priority", 1),
                 confirm_point=i.get("confirm_point"),
                 confirm_delay=i.get("confirm_delay", 0.5),
                 template=i.get("template"),
-                min_confidence=i.get("min_confidence", 0.8)
+                min_confidence=i.get("min_confidence", 0.8),
+                category=i.get("category")
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
@@ -1088,7 +1095,8 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
             "confirm_point": item.confirm_point,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
-            "min_confidence": item.min_confidence
+            "min_confidence": item.min_confidence,
+            "category": item.category
         }
         for name, item in state.global_items.items()
     }
@@ -1118,11 +1126,12 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
                 state.global_items[name] = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    priority=i.get("priority", 99),
+                    priority=i.get("priority", 1),
                     confirm_point=i.get("confirm_point"),
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8)
+                    min_confidence=i.get("min_confidence", 0.8),
+                    category=i.get("category")
                 )
 
         # Auch in aktive Datei speichern
@@ -2472,8 +2481,13 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                     except ValueError:
                         print("  → Keine gültige Zahl, keine Bestätigung")
 
+                # Kategorie abfragen (für Prioritäts-Vergleich)
+                print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
+                print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
+                category = input("  Kategorie (Enter = keine): ").strip() or None
+
                 # Item erstellen und speichern
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
 
                 # Optional: Auch als Template speichern?
                 if OPENCV_AVAILABLE:
@@ -2573,11 +2587,15 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                     except ValueError:
                         pass
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                # Kategorie abfragen
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
                 with state.lock:
                     state.global_items[item_name] = item
                 confirm_str = f" → Punkt {confirm_point}" if confirm_point else ""
-                print(f"  ✓ Item '{item_name}' hinzugefügt!{confirm_str}")
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ Item '{item_name}'{cat_str} hinzugefügt!{confirm_str}")
                 continue
 
             elif user_input.startswith("del "):
@@ -3177,6 +3195,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 except ValueError:
                     pass
 
+                # Kategorie (für Prioritäts-Vergleich)
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
                 # Bestätigungs-Klick?
                 confirm_point = None
                 confirm_delay = 0.5
@@ -3199,7 +3220,8 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                     confirm_point=confirm_point,
                     confirm_delay=confirm_delay,
                     template=template_file,
-                    min_confidence=min_confidence
+                    min_confidence=min_confidence,
+                    category=category
                 )
 
                 # Global speichern
@@ -3212,7 +3234,8 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 item_list.append(item_name)
                 selected_item_names.append(item_name)
 
-                print(f"  ✓ Item '{item_name}' erstellt mit Template '{template_file}' ({min_confidence:.0%})")
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ Item '{item_name}'{cat_str} erstellt mit Template '{template_file}' ({min_confidence:.0%})")
                 print(f"  ✓ Automatisch zum Scan hinzugefügt")
 
             elif "-" in inp_lower and not inp_lower.startswith("new"):
@@ -3575,10 +3598,14 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                # Kategorie abfragen
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay, category=category)
                 items.append(item)
                 confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
-                print(f"  ✓ {item_name} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ {item_name}{cat_str} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
                 continue
 
             elif user_input.startswith("edit "):
@@ -3932,14 +3959,30 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         print("[SCAN] Kein Item erkannt.")
         return []
 
+    # Gruppiere nach Kategorie und behalte nur das beste pro Kategorie
+    # Kategorie = item.category oder item.name (falls keine Kategorie gesetzt)
+    best_per_category = {}  # {category: (slot, item, priority)}
+    for slot, item, priority in found_items:
+        cat = item.category or item.name  # Fallback auf Item-Name
+        if cat not in best_per_category or priority < best_per_category[cat][2]:
+            best_per_category[cat] = (slot, item, priority)
+
+    # Debug: Zeige Kategorie-Filterung
+    if CONFIG.get("debug_detection", False) and len(found_items) != len(best_per_category):
+        print(f"[DEBUG] {len(found_items)} Items gefunden, {len(best_per_category)} nach Kategorie-Filter")
+        for cat, (slot, item, prio) in best_per_category.items():
+            print(f"[DEBUG]   [{cat}] → {item.name} (P{prio}) in {slot.name}")
+
+    filtered_items = list(best_per_category.values())
+
     if mode == "all":
-        # Alle gefundenen Slots zurückgeben
-        print(f"[SCAN] {len(found_items)} Items gefunden - klicke alle!")
-        return [(slot.click_pos, item) for slot, item, priority in found_items]
+        # Alle besten pro Kategorie zurückgeben
+        print(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!")
+        return [(slot.click_pos, item) for slot, item, priority in filtered_items]
     else:
-        # Nur das beste Item zurückgeben
-        found_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
-        best_slot, best_item, best_priority = found_items[0]
+        # Nur das absolute beste Item zurückgeben
+        filtered_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
+        best_slot, best_item, best_priority = filtered_items[0]
         print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (P{best_priority})")
         return [(best_slot.click_pos, best_item)]
 
