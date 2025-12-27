@@ -1011,11 +1011,84 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
     return updated_scans
 
 
+def sync_all_json_files(state: AutoClickerState) -> None:
+    """Synchronisiert ALLE JSON-Dateien auf den aktuellen Code-Stand.
+
+    1. Global Items: Feldordnung, fehlende Felder ergänzen
+    2. Global Slots: Feldordnung aktualisieren
+    3. Scan-Configs: Items mit globalen Items abgleichen + Struktur
+    4. Item-Presets: Feldordnung aktualisieren
+    """
+    print("\n" + "=" * 60)
+    print("  SYNC: Alle JSON-Dateien aktualisieren")
+    print("=" * 60)
+
+    # 1. Global Items neu speichern (aktualisiert Feldordnung)
+    if state.global_items:
+        print(f"\n  [1/4] Global Items ({len(state.global_items)})...")
+        save_global_items(state)
+        print("        ✓ Feldordnung aktualisiert")
+    else:
+        print("\n  [1/4] Global Items: keine vorhanden")
+
+    # 2. Global Slots neu speichern
+    if state.global_slots:
+        print(f"\n  [2/4] Global Slots ({len(state.global_slots)})...")
+        save_global_slots(state)
+        print("        ✓ Feldordnung aktualisiert")
+    else:
+        print("\n  [2/4] Global Slots: keine vorhanden")
+
+    # 3. Item-Presets aktualisieren
+    preset_dir = Path(ITEM_PRESETS_DIR)
+    preset_count = 0
+    if preset_dir.exists():
+        presets = list(preset_dir.glob("*.json"))
+        if presets:
+            print(f"\n  [3/4] Item-Presets ({len(presets)})...")
+            for preset_file in presets:
+                try:
+                    with open(preset_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    # Neu speichern mit aktueller Struktur
+                    updated_data = {}
+                    for name, item_data in data.items():
+                        updated_data[name] = {
+                            "name": item_data.get("name", name),
+                            "marker_colors": item_data.get("marker_colors", []),
+                            "category": item_data.get("category"),
+                            "priority": item_data.get("priority", 1),
+                            "confirm_point": item_data.get("confirm_point"),
+                            "confirm_delay": item_data.get("confirm_delay", 0.5),
+                            "template": item_data.get("template"),
+                            "min_confidence": item_data.get("min_confidence", 0.8)
+                        }
+                    with open(preset_file, "w", encoding="utf-8") as f:
+                        json.dump(updated_data, f, indent=2, ensure_ascii=False)
+                    print(f"        ✓ {preset_file.name}")
+                    preset_count += 1
+                except Exception as e:
+                    print(f"        ✗ {preset_file.name}: {e}")
+        else:
+            print("\n  [3/4] Item-Presets: keine vorhanden")
+    else:
+        print("\n  [3/4] Item-Presets: keine vorhanden")
+
+    # 4. Scan-Configs synchronisieren
+    print(f"\n  [4/4] Scan-Konfigurationen...")
+    sync_scans_with_global_items(state)
+
+    print("\n" + "=" * 60)
+    print("  SYNC abgeschlossen!")
+    print("=" * 60)
+
+
 def sync_scans_with_global_items(state: AutoClickerState) -> None:
     """Synchronisiert alle Scan-Konfigurationen mit den globalen Items.
 
     - Aktualisiert category, priority, template etc. aus global_items
     - Fragt bei unbekannten Items nach was zu tun ist
+    - Aktualisiert Feldordnung auf aktuellen Code-Stand
     """
     scan_dir = Path(ITEM_SCANS_DIR)
 
@@ -1142,10 +1215,27 @@ def sync_scans_with_global_items(state: AutoClickerState) -> None:
                         total_skipped += 1
                         print("      → Behalten (unverändert)")
 
+            # Immer neu speichern für korrekte Feldordnung
+            # Items mit korrekter Struktur neu aufbauen
+            rebuilt_items = []
+            for item in items_to_keep:
+                rebuilt_item = {
+                    "name": item.get("name"),
+                    "marker_colors": item.get("marker_colors", []),
+                    "category": item.get("category"),
+                    "priority": item.get("priority", 1),
+                    "confirm_point": item.get("confirm_point"),
+                    "confirm_delay": item.get("confirm_delay", 0.5),
+                    "template": item.get("template"),
+                    "min_confidence": item.get("min_confidence", 0.8)
+                }
+                rebuilt_items.append(rebuilt_item)
+
+            data["items"] = rebuilt_items
+            with open(scan_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
             if modified:
-                data["items"] = items_to_keep
-                with open(scan_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
                 print(f"    → {scan_name} gespeichert!")
 
         except Exception as e:
@@ -3078,7 +3168,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
     print(f"\n  [1] Slots bearbeiten     ({slot_count} vorhanden)")
     print(f"  [2] Items bearbeiten     ({item_count} vorhanden)")
     print(f"  [3] Scans bearbeiten     ({scan_count} vorhanden)")
-    print(f"  [4] SYNC - Scans mit Items abgleichen")
+    print(f"  [4] SYNC - Alle JSON-Dateien aktualisieren")
     print("\n  [0] Abbrechen")
 
     try:
@@ -3090,7 +3180,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
         elif choice == "3":
             run_item_scan_editor(state)
         elif choice == "4":
-            sync_scans_with_global_items(state)
+            sync_all_json_files(state)
             # Scans neu laden nach Sync
             load_all_item_scans(state)
         elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
