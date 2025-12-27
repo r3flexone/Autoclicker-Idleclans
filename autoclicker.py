@@ -397,7 +397,7 @@ class SequenceStep:
     wait_until_gone: bool = False        # True = warte bis Farbe WEG ist, False = warte bis Farbe DA ist
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
-    item_scan_mode: str = "best"         # "best" = nur bestes Item, "all" = alle Items
+    item_scan_mode: str = "all"          # "all" = bestes pro Kategorie, "best" = nur 1 Item total
     # Optional: Nur warten, nicht klicken
     wait_only: bool = False              # True = nur warten, kein Klick
     # Optional: Zufällige Verzögerung (delay_before bis delay_max)
@@ -702,7 +702,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         wait_color=wait_color,
                         wait_until_gone=s.get("wait_until_gone", False),
                         item_scan=s.get("item_scan"),
-                        item_scan_mode=s.get("item_scan_mode", "best"),
+                        item_scan_mode=s.get("item_scan_mode", "all"),
                         wait_only=s.get("wait_only", False),
                         delay_max=float(delay_max_raw) if delay_max_raw is not None else None,
                         key_press=s.get("key_press"),
@@ -1258,7 +1258,6 @@ COLOR_TOLERANCE = CONFIG["color_tolerance"]
 PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
 PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
 PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
-DEBUG_DETECTION = CONFIG["debug_detection"]
 
 def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
@@ -1538,12 +1537,12 @@ def run_color_analyzer() -> None:
     print("  [1] Farbe unter Mauszeiger")
     print("  [2] Region (Bereich auswählen)")
     print("  [3] Vollbild")
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     try:
         choice = input("> ").strip()
 
-        if choice == "abbruch":
+        if choice.lower() in ("cancel", "abbruch"):
             return
 
         if choice == "1":
@@ -1755,7 +1754,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             print(f"  [{i+1}] {name} ({count} Slots)")
         print("\n  del <Nr> - Preset löschen")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     # Preset-Auswahl
     preset_name = None
@@ -1763,8 +1762,8 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             # Löschen-Befehl
@@ -2075,8 +2074,8 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
 
             elif user_input == "add":
                 slot_num = len(state.global_slots) + 1
-                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
-                if slot_name.lower() == "abbruch":
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
+                if slot_name.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if not slot_name:
@@ -2261,7 +2260,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             print(f"  [{i+1}] {name} ({count} Items)")
         print("\n  del <Nr> - Preset löschen")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     # Preset-Auswahl
     preset_name = None
@@ -2269,8 +2268,8 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             # Löschen-Befehl
@@ -2351,6 +2350,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
     print("  learn <Slot-Nr>  - Item aus Slot lernen (automatisch!)")
     print("  add              - Neues Item manuell hinzufügen")
     print("  edit <Nr>        - Item bearbeiten")
+    print("  rename <Nr>      - Item umbenennen (inkl. Template)")
     print("  del <Nr>         - Item löschen")
     print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
@@ -2409,7 +2409,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         print(f"    {i+1}. {slot.name}")
                     try:
                         slot_input = input("  Slot-Nr wo das Item liegt: ").strip()
-                        if slot_input.lower() == "abbruch":
+                        if slot_input.lower() in ("cancel", "abbruch"):
                             continue
                         slot_num = int(slot_input)
                     except ValueError:
@@ -2426,7 +2426,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 # Item-Name abfragen
                 item_num = len(state.global_items) + 1
                 item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
-                if item_name.lower() == "abbruch":
+                if item_name.lower() in ("cancel", "abbruch"):
                     continue
                 if not item_name:
                     item_name = f"Item {item_num}"
@@ -2441,7 +2441,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 priority = 1
                 try:
                     prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Abgebrochen")
                         continue
                     if prio_input:
@@ -2463,7 +2463,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
                 print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
                 confirm_input = input("  Punkt-Nr für Bestätigung (Enter = Nein): ").strip()
-                if confirm_input.lower() == "abbruch":
+                if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Abgebrochen")
                     continue
                 if confirm_input:
@@ -2537,8 +2537,8 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
             elif user_input == "add":
                 item_num = len(state.global_items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
-                if item_name.lower() == "abbruch":
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'cancel'): ").strip()
+                if item_name.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if not item_name:
@@ -2553,8 +2553,8 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 # Priorität
                 priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'cancel'): ").strip()
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Item-Erstellung abgebrochen")
                         continue
                     if prio_input:
@@ -2659,6 +2659,62 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                             print(f"  → Ungültiges Item!")
                 except ValueError:
                     print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input.startswith("rename "):
+                try:
+                    rename_num = int(user_input[7:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= rename_num <= len(item_names):
+                            old_name = item_names[rename_num - 1]
+                            item = state.global_items[old_name]
+
+                            print(f"\n  Aktueller Name: '{old_name}'")
+                            if item.template:
+                                print(f"  Template: {item.template}")
+
+                            new_name = input("  Neuer Name (Enter = abbrechen): ").strip()
+                            if not new_name or new_name.lower() in ("cancel", "abbruch"):
+                                print("  → Abgebrochen")
+                                continue
+
+                            if new_name == old_name:
+                                print("  → Name ist identisch, nichts geändert")
+                                continue
+
+                            if new_name in state.global_items:
+                                print(f"  → Name '{new_name}' existiert bereits!")
+                                continue
+
+                            # Template umbenennen falls vorhanden
+                            old_template = item.template
+                            new_template = None
+                            if old_template:
+                                old_template_path = Path(TEMPLATES_DIR) / old_template
+                                # Neuer Template-Name basierend auf Item-Name
+                                safe_name = new_name.lower().replace(" ", "_").replace("/", "_")
+                                new_template = f"{safe_name}.png"
+                                new_template_path = Path(TEMPLATES_DIR) / new_template
+
+                                if old_template_path.exists():
+                                    try:
+                                        old_template_path.rename(new_template_path)
+                                        print(f"  ✓ Template umbenannt: {old_template} → {new_template}")
+                                        item.template = new_template
+                                    except Exception as e:
+                                        print(f"  → Template-Umbenennung fehlgeschlagen: {e}")
+                                        print(f"    Template bleibt: {old_template}")
+
+                            # Item umbenennen
+                            item.name = new_name
+                            del state.global_items[old_name]
+                            state.global_items[new_name] = item
+                            print(f"  ✓ Item umbenannt: '{old_name}' → '{new_name}'")
+                        else:
+                            print(f"  → Ungültiges Item! Verfügbar: 1-{len(item_names)}")
+                except ValueError:
+                    print("  → Format: rename <Nr>")
                 continue
 
             elif user_input == "templates":
@@ -2828,7 +2884,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
             run_global_item_editor(state)
         elif choice == "3":
             run_item_scan_editor(state)
-        elif choice == "0" or choice.lower() == "abbruch":
+        elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
             return
         else:
             print("[FEHLER] Ungültige Auswahl")
@@ -2864,14 +2920,14 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
                 print(f"  [{i+1}] {config}")
         print("\n  del <Nr> - Item-Scan löschen")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     while True:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             # Löschen-Befehl
@@ -3354,8 +3410,8 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
             elif user_input == "add":
                 slot_num = len(slots) + 1
-                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
-                if slot_name.lower() == "abbruch":
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
+                if slot_name.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if not slot_name:
@@ -3363,7 +3419,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
                 # Scan-Region auswählen
                 print("\n  Scan-Region definieren (Bereich wo das Item angezeigt wird):")
-                print("  ('abbruch' in Konsole = abbrechen)")
+                print("  ('cancel' in Konsole = abbrechen)")
                 region = select_region()
                 if not region:
                     print("  → Slot-Erstellung abgebrochen")
@@ -3392,9 +3448,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 slot_color = None
                 print("\n  Hintergrundfarbe des leeren Slots markieren:")
                 print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
-                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'abbruch')...")
+                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'cancel')...")
                 bg_input = input().strip()
-                if bg_input.lower() == "abbruch":
+                if bg_input.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if bg_input == "":
@@ -3413,9 +3469,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
                 # Klick-Position
                 print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
-                print("  Bewege die Maus zur Klick-Position und drücke Enter (oder 'abbruch')...")
+                print("  Bewege die Maus zur Klick-Position und drücke Enter (oder 'cancel')...")
                 click_input = input().strip()
-                if click_input.lower() == "abbruch":
+                if click_input.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 click_x, click_y = get_cursor_pos()
@@ -3525,8 +3581,8 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
             elif user_input == "add":
                 item_num = len(items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
-                if item_name.lower() == "abbruch":
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'cancel'): ").strip()
+                if item_name.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if not item_name:
@@ -3535,8 +3591,8 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 # Priorität
                 priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'cancel'): ").strip()
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Item-Erstellung abgebrochen")
                         continue
                     if prio_input:
@@ -3546,10 +3602,10 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                 # Marker-Farben sammeln - Slot oder freier Bereich
                 if slots:
-                    print(f"\n  Slot-Nr (1-{len(slots)}) oder '0' für freien Bereich ('abbruch' = abbrechen):")
+                    print(f"\n  Slot-Nr (1-{len(slots)}) oder '0' für freien Bereich ('cancel'):")
                     try:
                         slot_input = input("  > ").strip()
-                        if slot_input.lower() == "abbruch":
+                        if slot_input.lower() in ("cancel", "abbruch"):
                             print("  → Item-Erstellung abgebrochen")
                             continue
                         slot_num = int(slot_input)
@@ -3577,8 +3633,8 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
                 confirm_delay = 0.5
-                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'abbruch' = abbrechen): ").strip()
-                if confirm_input.lower() == "abbruch":
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'cancel'): ").strip()
+                if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if confirm_input:
@@ -4014,14 +4070,14 @@ def run_sequence_editor(state: AutoClickerState) -> None:
             if seq:
                 print(f"  [{i+1}] {seq}")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     while True:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             choice_num = int(choice)
@@ -4162,7 +4218,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
     """Bearbeitet mehrere Loop-Phasen.
 
     Returns:
-        Liste der Loop-Phasen bei 'fertig', None bei 'abbruch'.
+        Liste der Loop-Phasen bei 'fertig', None bei 'cancel'.
     """
 
     if loop_phases:
@@ -4361,7 +4417,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
 
     Returns:
-        Liste der Schritte bei 'fertig', None bei 'abbruch'.
+        Liste der Schritte bei 'fertig', None bei 'cancel'.
     """
 
     if steps:
@@ -4390,6 +4446,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
+    print("Punkte verwalten:")
+    print("  learn <Name>      - Neuen Punkt erstellen")
+    print("  points            - Alle Punkte anzeigen")
     print("  del <Nr>          - Schritt löschen")
     print("  clear | show | done | cancel")
     print("-" * 60)
@@ -4430,22 +4489,62 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  → Format: del <Nr>")
                 continue
 
+            elif user_input.lower() == "points":
+                # Alle Punkte anzeigen
+                with state.lock:
+                    if state.points:
+                        print("\n  Verfügbare Punkte:")
+                        for i, p in enumerate(state.points):
+                            print(f"    {i+1}. {p.name} ({p.x}, {p.y})")
+                    else:
+                        print("  (Keine Punkte vorhanden)")
+                continue
+
+            elif user_input.lower().startswith("learn"):
+                # Neuen Punkt erstellen
+                # Format: "learn" oder "learn <Name>"
+                parts = user_input.split(maxsplit=1)
+                if len(parts) > 1:
+                    point_name = parts[1].strip()
+                else:
+                    point_name = input("  Punkt-Name: ").strip()
+                    if not point_name or point_name.lower() in ("cancel", "abbruch"):
+                        print("  → Abgebrochen")
+                        continue
+
+                print(f"\n  Bewege die Maus zur Position für '{point_name}'")
+                print("  Drücke Enter...")
+                input()
+                x, y = get_cursor_pos()
+
+                with state.lock:
+                    new_point = ClickPoint(x, y, point_name)
+                    state.points.append(new_point)
+                    point_num = len(state.points)
+
+                save_data(state)
+                print(f"  ✓ Punkt {point_num} erstellt: '{point_name}' bei ({x}, {y})")
+                print(f"    → Verwenden mit: {point_num} <Zeit>")
+                continue
+
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
-                # Format: "scan <Name> [all] [else ...]"
+                # Format: "scan <Name> [best] [else ...]"
                 scan_parts = user_input[5:].strip().split()
                 if not scan_parts:
-                    print("  → Format: scan <Name> [all] [else skip|<Nr>|key <Taste>]")
+                    print("  → Format: scan <Name> [best] [else skip|<Nr>|key <Taste>]")
+                    print("    Standard: bestes Item pro Kategorie")
+                    print("    'best': nur 1 Item total (das absolute Beste)")
                     continue
 
                 scan_name = scan_parts[0]
-                scan_mode = "best"  # Standard: nur bestes Item
+                scan_mode = "all"  # Standard: bestes pro Kategorie
                 else_data = {}
 
-                # Parse den Rest (all und/oder else)
+                # Parse den Rest (best und/oder else)
                 rest_parts = scan_parts[1:]
-                if rest_parts and rest_parts[0].lower() == "all":
-                    scan_mode = "all"
+                if rest_parts and rest_parts[0].lower() in ("best", "all"):
+                    scan_mode = rest_parts[0].lower()
                     rest_parts = rest_parts[1:]
 
                 # Prüfe auf else
@@ -4776,14 +4875,14 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         if seq:
             print(f"  {i+1}. {seq}")
 
-    print("\nNummer eingeben | del <Nr> zum Löschen | 'abbruch':")
+    print("\nNummer eingeben | del <Nr> zum Löschen | 'cancel':")
 
     while True:
         try:
             user_input = input("> ").strip().lower()
 
-            if user_input == "abbruch":
-                print("[ABBRUCH] Keine Sequenz geladen.")
+            if user_input in ("cancel", "abbruch"):
+                print("[CANCEL] Keine Sequenz geladen.")
                 return
 
             # Löschen-Befehl
@@ -5542,27 +5641,34 @@ def handle_show(state: AutoClickerState) -> None:
 
 def handle_toggle(state: AutoClickerState) -> None:
     """Startet oder stoppt die Sequenz."""
+    # Prüfe ob bereits läuft → stoppen
     with state.lock:
         if state.is_running:
             state.stop_event.set()
             print("\n[TOGGLE] Stoppe Sequenz...")
-        else:
-            if not state.active_sequence:
-                print("\n[FEHLER] Keine Sequenz geladen!")
-                print("         Erstelle eine mit CTRL+ALT+E oder lade eine mit CTRL+ALT+L")
-                return
+            return
 
-            if not state.points:
-                print("\n[FEHLER] Keine Punkte gespeichert!")
-                return
+    # Keine Sequenz geladen → automatisch Lade-Menü öffnen
+    if not state.active_sequence:
+        print("\n[INFO] Keine Sequenz geladen - öffne Lade-Menü...")
+        run_sequence_loader(state)
+        # Nach dem Laden prüfen ob jetzt eine Sequenz da ist
+        if not state.active_sequence:
+            return  # Nichts geladen
 
-            state.is_running = True
-            state.stop_event.clear()
-            state.pause_event.clear()
-            state.skip_event.clear()
+    # Jetzt starten
+    with state.lock:
+        if not state.points:
+            print("\n[FEHLER] Keine Punkte gespeichert!")
+            return
 
-            worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
-            worker.start()
+        state.is_running = True
+        state.stop_event.clear()
+        state.pause_event.clear()
+        state.skip_event.clear()
+
+        worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
+        worker.start()
 
 def handle_pause(state: AutoClickerState) -> None:
     """Pausiert oder setzt die Sequenz fort."""
