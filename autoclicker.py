@@ -535,7 +535,7 @@ class ItemProfile:
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
-    min_confidence: float = 0.8  # Mindest-Konfidenz für Template-Match (0.0-1.0)
+    min_confidence: float = 0.9  # Mindest-Konfidenz für Template-Match (0.0-1.0)
 
     def __str__(self) -> str:
         if self.template:
