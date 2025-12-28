@@ -2632,6 +2632,9 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 with state.lock:
                     state.global_items[item_name] = item
 
+                # Items speichern
+                save_global_items(state)
+
                 confirm_str = f" → ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
                 template_str = f" + Template" if item.template else ""
                 print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
@@ -2720,6 +2723,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
+                save_global_items(state)
                 confirm_str = f" → ({confirm_point.x},{confirm_point.y})" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
                 print(f"  ✓ Item '{item_name}'{cat_str} hinzugefügt!{confirm_str}")
@@ -3136,7 +3140,10 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     # Slot-Preset auswählen
     while True:
         try:
-            slot_choice = input("\nSlot-Preset wählen (Enter=0): ").strip()
+            slot_choice = input("\nSlot-Preset wählen (Enter=0, 'cancel'): ").strip()
+            if slot_choice.lower() in ("cancel", "abbruch"):
+                print("  → Abgebrochen")
+                return
             if not slot_choice or slot_choice == "0":
                 break
             slot_num = int(slot_choice)
@@ -3162,7 +3169,10 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     # Item-Preset auswählen
     while True:
         try:
-            item_choice = input("\nItem-Preset wählen (Enter=0): ").strip()
+            item_choice = input("\nItem-Preset wählen (Enter=0, 'cancel'): ").strip()
+            if item_choice.lower() in ("cancel", "abbruch"):
+                print("  → Abgebrochen")
+                return
             if not item_choice or item_choice == "0":
                 break
             item_num = int(item_choice)
