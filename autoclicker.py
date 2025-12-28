@@ -146,6 +146,8 @@ DEFAULT_CONFIG = {
 
     # === SICHERHEIT ===
     "failsafe_enabled": True,           # Fail-Safe: Maus in Ecke stoppt alles
+    "failsafe_x": 5,                    # Fail-Safe X-Bereich (Maus x <= Wert)
+    "failsafe_y": 5,                    # Fail-Safe Y-Bereich (Maus y <= Wert)
 
     # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
@@ -1370,7 +1372,9 @@ def check_failsafe() -> bool:
     if not FAILSAFE_ENABLED:
         return False
     x, y = get_cursor_pos()
-    return x <= 2 and y <= 2
+    failsafe_x = CONFIG.get("failsafe_x", 5)
+    failsafe_y = CONFIG.get("failsafe_y", 5)
+    return x <= failsafe_x and y <= failsafe_y
 
 def clear_line() -> None:
     """Löscht die aktuelle Konsolenzeile."""
@@ -2473,7 +2477,9 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  learn <Slot-Nr>  - Item aus Slot lernen (automatisch!)")
+    print("  learn <Nr>       - Item aus Slot lernen (automatisch!)")
+    print("  learn <Nr>-<Nr>  - Bulk: Items für Slot-Bereich (mit Template)")
+    print("  learn <Nr>-<Nr> simple - Bulk: ohne Template")
     print("  add              - Neues Item manuell hinzufügen")
     print("  edit <Nr>        - Item bearbeiten")
     print("  rename <Nr>      - Item umbenennen (inkl. Template)")
@@ -2520,6 +2526,103 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 if not slot_list:
                     print("  → Keine Slots vorhanden! Erst Slots mit 'auto' im Slot-Editor erstellen.")
                     continue
+
+                # Bulk-Learn: learn 5-10 [template|simple]
+                learn_arg = user_input[5:].strip() if user_input.startswith("learn ") else ""
+                if "-" in learn_arg:
+                    # Bulk mode: parse range and mode
+                    parts = learn_arg.split()
+                    range_part = parts[0]
+                    mode_part = parts[1] if len(parts) > 1 else "template"  # Default: mit Template
+
+                    try:
+                        range_parts = range_part.split("-")
+                        start_slot = int(range_parts[0])
+                        end_slot = int(range_parts[1])
+
+                        if start_slot < 1 or end_slot > len(slot_list) or start_slot > end_slot:
+                            print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slot_list)}")
+                            continue
+
+                        use_template = mode_part.lower() in ("template", "t")
+                        mode_str = "MIT Template" if use_template else "OHNE Template"
+
+                        print(f"\n  === BULK LEARN: Slots {start_slot}-{end_slot} ({mode_str}) ===")
+
+                        # Kategorie einmal für alle abfragen
+                        print("  Kategorie für alle Items (Enter = keine):")
+                        category = select_category(state, show_explanation=False)
+
+                        # Bestätigungs-Punkt einmal für alle abfragen
+                        confirm_point = None
+                        confirm_delay = 0.5
+                        confirm_input = input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
+                        if confirm_input:
+                            try:
+                                point_id = int(confirm_input)
+                                found_point = get_point_by_id(state, point_id)
+                                if found_point:
+                                    confirm_point = found_point
+                                    delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                                    if delay_input:
+                                        try:
+                                            confirm_delay = float(delay_input)
+                                        except ValueError:
+                                            pass
+                            except ValueError:
+                                pass
+
+                        created_count = 0
+                        for slot_idx in range(start_slot - 1, end_slot):
+                            slot = slot_list[slot_idx]
+                            item_name = f"{slot.name} Item"
+
+                            # Eindeutigen Namen sicherstellen
+                            base_name = item_name
+                            counter = 1
+                            while item_name in state.global_items:
+                                counter += 1
+                                item_name = f"{base_name} {counter}"
+
+                            priority = slot_idx - start_slot + 2  # P1, P2, P3, ...
+
+                            # Item erstellen
+                            item = ItemProfile(
+                                name=item_name,
+                                marker_colors=[],
+                                category=category,
+                                priority=priority,
+                                confirm_point=confirm_point,
+                                confirm_delay=confirm_delay,
+                                min_confidence=DEFAULT_MIN_CONFIDENCE
+                            )
+
+                            # Template speichern wenn gewünscht
+                            if use_template and OPENCV_AVAILABLE:
+                                template_img = take_screenshot(slot.scan_region)
+                                if template_img:
+                                    safe_name = sanitize_filename(item_name)
+                                    template_file = f"{safe_name}.png"
+                                    template_path = Path(TEMPLATES_DIR) / template_file
+                                    template_img.save(template_path)
+                                    item.template = template_file
+
+                            with state.lock:
+                                state.global_items[item_name] = item
+                            created_count += 1
+
+                            template_str = f" + {item.template}" if item.template else ""
+                            print(f"    ✓ {item_name} (P{priority}){template_str}")
+
+                        save_global_items(state)
+                        print(f"\n  === {created_count} Items erstellt! ===")
+                        continue
+
+                    except (ValueError, IndexError):
+                        print("  → Format: learn <von>-<bis> [template|simple]")
+                        print("    Beispiel: learn 1-5 template  (mit Screenshot)")
+                        print("    Beispiel: learn 1-5 simple    (ohne Screenshot)")
+                        continue
 
                 # Slot-Nummer aus Befehl oder nachfragen
                 slot_num = None
