@@ -4273,10 +4273,11 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
         # Prüfe alle Item-Profile für diesen Slot
         for item in config.items:
-            item_matched = False
-            match_info = ""
+            template_matched = False
+            markers_matched = False
+            match_info_parts = []
 
-            # Methode 1: Template Matching (wenn Template definiert)
+            # Schritt 1: Template Matching (wenn Template definiert)
             if item.template:
                 if not OPENCV_AVAILABLE:
                     print(f"  [WARNUNG] OpenCV nicht verfügbar für Template '{item.template}'")
@@ -4286,13 +4287,17 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 if state.config.get("debug_detection", False):
                     status = "✓" if matched else "✗"
                     threshold_info = f"≥{item.min_confidence:.0%}" if not matched else ""
-                    print(f"[DEBUG]   {status} {item.name}: {confidence:.0%} {threshold_info}")
+                    print(f"[DEBUG]   {status} {item.name}: Template {confidence:.0%} {threshold_info}")
 
                 if matched:
-                    item_matched = True
-                    match_info = f"Template {confidence:.0%}"
-            # Methode 2: Marker-Farben (Fallback oder wenn kein Template)
-            elif item.marker_colors:
+                    template_matched = True
+                    match_info_parts.append(f"Template {confidence:.0%}")
+                else:
+                    # Template nicht erkannt → Item nicht erkannt
+                    continue
+
+            # Schritt 2: Marker-Farben prüfen (immer wenn vorhanden, auch nach Template-Match)
+            if item.marker_colors:
                 # Berechne min_required vor der Schleife für Early-Exit
                 if state.config.get("require_all_markers", True):
                     min_required = len(item.marker_colors)
@@ -4316,14 +4321,32 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                         if markers_missing > max_allowed_missing:
                             break
 
-                # Item erkannt wenn genug Marker-Farben gefunden
-                if markers_found >= min_required:
-                    item_matched = True
-                    match_info = f"{markers_found}/{len(item.marker_colors)} Marker"
-
                 if state.config.get("debug_detection", False):
-                    status = "✓" if item_matched else "✗"
+                    status = "✓" if markers_found >= min_required else "✗"
                     print(f"[DEBUG]   {status} {item.name}: {markers_found}/{len(item.marker_colors)} Marker (min {min_required})")
+
+                # Marker erkannt wenn genug gefunden
+                if markers_found >= min_required:
+                    markers_matched = True
+                    match_info_parts.append(f"{markers_found}/{len(item.marker_colors)} Marker")
+                else:
+                    # Marker nicht erkannt → Item nicht erkannt
+                    continue
+
+            # Item erkannt wenn alle definierten Checks bestanden
+            # (Template UND/ODER Marker je nach Konfiguration)
+            item_matched = False
+            if item.template and item.marker_colors:
+                # Beides definiert → beides muss passen
+                item_matched = template_matched and markers_matched
+            elif item.template:
+                # Nur Template definiert
+                item_matched = template_matched
+            elif item.marker_colors:
+                # Nur Marker definiert
+                item_matched = markers_matched
+
+            match_info = " + ".join(match_info_parts)
 
             # Item erkannt? → Sofort hinzufügen und zum nächsten Slot
             # (Ein Slot enthält maximal 1 Item, keine Prioritäts-Konkurrenz)
