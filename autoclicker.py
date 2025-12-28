@@ -157,7 +157,7 @@ DEFAULT_CONFIG = {
 
     # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
-    "scan_slot_delay": 0,               # Pause zwischen Slot-Scans in Sekunden (0 = keine)
+    "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden
     "min_markers_required": 2,          # Minimum Marker (nur wenn require_all_markers=False)
