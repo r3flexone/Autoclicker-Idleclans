@@ -53,9 +53,25 @@ import json
 import shutil
 import random
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from pathlib import Path
+
+# =============================================================================
+# LOGGING SETUP (muss vor optionalen Imports stehen!)
+# =============================================================================
+# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
+# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
+logger = logging.getLogger("autoclicker")
+logger.setLevel(logging.DEBUG)
+
+# Console Handler mit Format
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
+_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+_console_handler.setFormatter(_console_formatter)
+logger.addHandler(_console_handler)
 
 # Bilderkennung (optional - nur wenn pillow installiert)
 try:
@@ -73,20 +89,14 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
-# =============================================================================
-# LOGGING SETUP
-# =============================================================================
-# Logger für strukturierte Ausgaben (Fehler, Warnungen, Debug)
-# Interaktive Ausgaben (Fortschritt, Status) verwenden weiterhin print()
-logger = logging.getLogger("autoclicker")
-logger.setLevel(logging.DEBUG)
-
-# Console Handler mit Format
-_console_handler = logging.StreamHandler()
-_console_handler.setLevel(logging.INFO)  # Standard: INFO, DEBUG nur wenn aktiviert
-_console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
-_console_handler.setFormatter(_console_formatter)
-logger.addHandler(_console_handler)
+# OpenCV für Template Matching (optional)
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    logger.warning("OpenCV nicht installiert. Template Matching deaktiviert.")
+    logger.warning("Installieren mit: pip install opencv-python")
 
 def set_log_level(level: str) -> None:
     """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
@@ -100,26 +110,62 @@ def set_log_level(level: str) -> None:
         _console_handler.setLevel(levels[level.upper()])
         logger.debug(f"Log-Level auf {level.upper()} gesetzt")
 
+
+def sanitize_filename(name: str) -> str:
+    """Bereinigt einen Namen für sichere Dateinamen.
+
+    Entfernt/ersetzt unsichere Zeichen wie ../, \\, :, *, ?, ", <, >, |
+    """
+    # Entferne Path-Traversal-Versuche
+    name = name.replace("..", "").replace("/", "_").replace("\\", "_")
+    # Entferne Windows-unsichere Zeichen
+    name = re.sub(r'[<>:"|?*]', '', name)
+    # Leerzeichen zu Unterstrichen
+    name = name.replace(' ', '_')
+    # Nur alphanumerische Zeichen, Unterstriche und Bindestriche erlauben
+    name = re.sub(r'[^\w\-]', '', name)
+    # Leere Namen verhindern
+    if not name:
+        name = "unnamed"
+    return name.lower()
+
+
 # =============================================================================
 # KONFIGURATION
 # =============================================================================
 CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
+CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 
 # Standard-Konfiguration (wird von config.json überschrieben)
+# Die Reihenfolge hier bestimmt die Reihenfolge in der gespeicherten config.json
 DEFAULT_CONFIG = {
+    # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
     "max_total_clicks": None,           # None = unendlich
-    "failsafe_enabled": True,           # Fail-Safe aktivieren
+
+    # === SICHERHEIT ===
+    "failsafe_enabled": True,           # Fail-Safe: Maus in Ecke stoppt alles
+
+    # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
-    "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Schwankungen erlaubt)
-    "pixel_wait_timeout": 300,          # Timeout in Sekunden für Pixel-Trigger (5 Min)
-    "pixel_check_interval": 1,          # Wie oft auf Farbe prüfen (in Sekunden)
-    "debug_detection": True,            # Debug-Ausgaben für Item-Erkennung
-    "scan_reverse": False,              # True = Slots von hinten scannen (4,3,2,1), False = von vorne (1,2,3,4)
-    "marker_count": 5,                  # Anzahl Marker-Farben die beim Item-Lernen gespeichert werden
-    "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden, False = min_markers_required
-    "min_markers_required": 2,          # Nur wenn require_all_markers=False: Mindestanzahl Marker
+    "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
+    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
+    "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
+
+    # === ITEM-SCAN EINSTELLUNGEN ===
+    "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
+    "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
+    "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden
+    "min_markers_required": 2,          # Minimum Marker (nur wenn require_all_markers=False)
+    "slot_hsv_tolerance": 25,           # HSV-Toleranz für Slot-Erkennung
+    "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand
+    "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss
+
+    # === DEBUG-EINSTELLUNGEN ===
+    "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
+    "debug_detection": False,           # Alle Ausgaben persistent (nicht überschrieben)
+    "show_pixel_position": False,       # Maus kurz zum Prüf-Pixel bewegen beim Start
 }
 
 def load_config() -> dict:
@@ -133,7 +179,14 @@ def load_config() -> dict:
                 # Merge mit Default-Config (falls neue Optionen hinzugefügt wurden)
                 config = DEFAULT_CONFIG.copy()
                 config.update(loaded)
-                print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
+
+                # Prüfe ob neue Optionen hinzugefügt wurden
+                missing_keys = set(DEFAULT_CONFIG.keys()) - set(loaded.keys())
+                if missing_keys:
+                    save_config(config)
+                    print(f"[CONFIG] Geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}")
+                else:
+                    print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
                 return config
         except (json.JSONDecodeError, IOError) as e:
             print(f"[WARNUNG] Config konnte nicht geladen werden: {e}")
@@ -146,10 +199,20 @@ def load_config() -> dict:
     return DEFAULT_CONFIG.copy()
 
 def save_config(config: dict) -> None:
-    """Speichert Konfiguration in config.json."""
+    """Speichert Konfiguration in config.json (in sortierter Reihenfolge)."""
     try:
+        # Sortiere nach DEFAULT_CONFIG Reihenfolge, dann unbekannte Keys am Ende
+        ordered_config = {}
+        for key in DEFAULT_CONFIG:
+            if key in config:
+                ordered_config[key] = config[key]
+        # Füge unbekannte Keys am Ende hinzu (falls vorhanden)
+        for key in config:
+            if key not in ordered_config:
+                ordered_config[key] = config[key]
+
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+            json.dump(ordered_config, f, indent=2, ensure_ascii=False)
     except IOError as e:
         print(f"[FEHLER] Config konnte nicht gespeichert werden: {e}")
 
@@ -334,7 +397,7 @@ class SequenceStep:
     wait_until_gone: bool = False        # True = warte bis Farbe WEG ist, False = warte bis Farbe DA ist
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
-    item_scan_mode: str = "best"         # "best" = nur bestes Item, "all" = alle Items
+    item_scan_mode: str = "all"          # "all" = bestes pro Kategorie, "best" = nur 1 Item total
     # Optional: Nur warten, nicht klicken
     wait_only: bool = False              # True = nur warten, kein Klick
     # Optional: Zufällige Verzögerung (delay_before bis delay_max)
@@ -342,7 +405,7 @@ class SequenceStep:
     # Optional: Tastendruck statt Mausklick
     key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
     # Optional: Fallback/Else-Aktion wenn Bedingung fehlschlägt
-    else_action: Optional[str] = None    # "skip", "click", "key"
+    else_action: Optional[str] = None    # "skip", "restart", "click", "key"
     else_x: int = 0                      # X für Fallback-Klick
     else_y: int = 0                      # Y für Fallback-Klick
     else_delay: float = 0                # Delay vor Fallback
@@ -355,7 +418,8 @@ class SequenceStep:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
         if self.item_scan:
-            mode_str = "ALLE Items" if self.item_scan_mode == "all" else "bestes Item"
+            mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
+            mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
@@ -380,6 +444,8 @@ class SequenceStep:
             return ""
         if self.else_action == "skip":
             return " | ELSE: skip"
+        elif self.else_action == "restart":
+            return " | ELSE: restart"
         elif self.else_action == "click":
             name = self.else_name or f"({self.else_x},{self.else_y})"
             return f" | ELSE: klicke {name}"
@@ -445,30 +511,42 @@ class Sequence:
 # ITEM-SCAN SYSTEM (für Item-Erkennung und Vergleich)
 # =============================================================================
 ITEM_SCANS_DIR: str = "item_scans"  # Ordner für Item-Scan Konfigurationen
-SLOTS_DIR: str = "slots"            # Ordner für Slots und Screenshots
-ITEMS_DIR: str = "items"            # Ordner für Items und Screenshots
+SLOTS_DIR: str = "slots"            # Ordner für Slots
+ITEMS_DIR: str = "items"            # Ordner für Items
+SCREENSHOTS_DIR: str = os.path.join(SLOTS_DIR, "Screenshots") # Ordner für Screenshots
+TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")     # Ordner für Item-Templates
 SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
 ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
 
 # Ordner erstellen falls nicht vorhanden
-for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR]:
+for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR, TEMPLATES_DIR]:
     os.makedirs(folder, exist_ok=True)
 
 @dataclass
 class ItemProfile:
-    """Ein Item-Typ mit Marker-Farben und Priorität."""
+    """Ein Item-Typ mit Marker-Farben und/oder Template-Matching."""
     name: str
     marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
-    priority: int = 99  # 1 = beste, höher = schlechter
-    confirm_point: Optional[int] = None  # Punkt-Nr für Bestätigung nach Klick
+    # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
+    category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
+    priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
+    confirm_point: Optional[tuple] = None  # (x, y) Koordinaten für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
+    # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
+    template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
+    min_confidence: float = 0.8  # Mindest-Konfidenz für Template-Match (0.0-1.0)
 
     def __str__(self) -> str:
-        colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
-        if len(self.marker_colors) > 3:
-            colors_str += f" (+{len(self.marker_colors)-3})"
-        confirm_str = f" → Punkt {self.confirm_point}" if self.confirm_point else ""
-        return f"[P{self.priority}] {self.name}: {colors_str}{confirm_str}"
+        if self.template:
+            template_str = f"Template: {self.template} (≥{self.min_confidence:.0%})"
+        else:
+            colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:3]])
+            if len(self.marker_colors) > 3:
+                colors_str += f" (+{len(self.marker_colors)-3})"
+            template_str = colors_str if colors_str else "keine Marker"
+        confirm_str = f" → ({self.confirm_point[0]},{self.confirm_point[1]})" if self.confirm_point else ""
+        category_str = f" [{self.category}]" if self.category else ""
+        return f"[P{self.priority}]{category_str} {self.name}: {template_str}{confirm_str}"
 
 @dataclass
 class ItemSlot:
@@ -527,6 +605,7 @@ class AutoClickerState:
     quit_event: threading.Event = field(default_factory=threading.Event)
     pause_event: threading.Event = field(default_factory=threading.Event)
     skip_event: threading.Event = field(default_factory=threading.Event)
+    restart_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 # =============================================================================
@@ -573,7 +652,7 @@ def save_data(state: AutoClickerState) -> None:
             ],
             "end_steps": [step_to_dict(s) for s in seq.end_steps]
         }
-        filename = f"{name.replace(' ', '_').lower()}.json"
+        filename = f"{sanitize_filename(name)}.json"
         with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
             json.dump(seq_data, f, indent=2, ensure_ascii=False)
 
@@ -611,19 +690,25 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     if wait_color:
                         wait_color = tuple(int(v) for v in wait_color)
                     # Unterstütze beide Formate: delay_before (neu) und delay_after (alt)
-                    delay = s.get("delay_before", s.get("delay_after", 0))
+                    # None-Check: s.get() returned None wenn Wert null ist oder Key fehlt
+                    delay_raw = s.get("delay_before")
+                    if delay_raw is None:
+                        delay_raw = s.get("delay_after")
+                    if delay_raw is None:
+                        delay_raw = 0
+                    delay_max_raw = s.get("delay_max")
                     step = SequenceStep(
                         x=s.get("x", 0),
                         y=s.get("y", 0),
-                        delay_before=delay,
+                        delay_before=float(delay_raw),
                         name=s.get("name", ""),
                         wait_pixel=wait_pixel,
                         wait_color=wait_color,
                         wait_until_gone=s.get("wait_until_gone", False),
                         item_scan=s.get("item_scan"),
-                        item_scan_mode=s.get("item_scan_mode", "best"),
+                        item_scan_mode=s.get("item_scan_mode", "all"),
                         wait_only=s.get("wait_only", False),
-                        delay_max=s.get("delay_max"),
+                        delay_max=float(delay_max_raw) if delay_max_raw is not None else None,
                         key_press=s.get("key_press"),
                         else_action=s.get("else_action"),
                         else_x=s.get("else_x", 0),
@@ -723,16 +808,19 @@ def save_item_scan(config: ItemScanConfig) -> None:
         "items": [
             {
                 "name": item.name,
-                "marker_colors": [list(c) for c in item.marker_colors],
+                "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+                "category": item.category,
                 "priority": item.priority,
-                "confirm_point": item.confirm_point,
-                "confirm_delay": item.confirm_delay
+                "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+                "confirm_delay": item.confirm_delay,
+                "template": item.template,
+                "min_confidence": item.min_confidence
             }
             for item in config.items
         ]
     }
 
-    filename = f"{config.name.replace(' ', '_').lower()}.json"
+    filename = f"{sanitize_filename(config.name)}.json"
     with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -759,12 +847,21 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             items = []
             for i in data.get("items", []):
+                # confirm_point: kann [x,y] Liste sein oder None
+                cp = i.get("confirm_point")
+                if cp and isinstance(cp, list) and len(cp) == 2:
+                    cp = tuple(cp)
+                else:
+                    cp = None  # Alte int-Werte ignorieren
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    priority=i.get("priority", 99),
-                    confirm_point=i.get("confirm_point"),
-                    confirm_delay=i.get("confirm_delay", 0.5)
+                    category=i.get("category"),
+                    priority=i.get("priority", 1),
+                    confirm_point=cp,
+                    confirm_delay=i.get("confirm_delay", 0.5),
+                    template=i.get("template"),
+                    min_confidence=i.get("min_confidence", 0.8)
                 )
                 items.append(item)
 
@@ -848,16 +945,77 @@ def save_global_items(state: AutoClickerState) -> None:
     data = {
         name: {
             "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors],
+            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+            "category": item.category,
             "priority": item.priority,
-            "confirm_point": item.confirm_point,
-            "confirm_delay": item.confirm_delay
+            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+            "confirm_delay": item.confirm_delay,
+            "template": item.template,
+            "min_confidence": item.min_confidence
         }
         for name, item in state.global_items.items()
     }
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
+
+
+def shift_category_priorities(state: AutoClickerState, category: str) -> int:
+    """Verschiebt alle Items einer Kategorie um +1 in der Priorität.
+
+    Returns: Anzahl der verschobenen Items.
+    """
+    if not category:
+        return 0
+
+    shifted = 0
+    with state.lock:
+        for item in state.global_items.values():
+            if item.category == category:
+                item.priority += 1
+                shifted += 1
+
+    if shifted > 0:
+        save_global_items(state)
+        print(f"  → {shifted} Item(s) in Kategorie '{category}' nach hinten verschoben")
+
+    return shifted
+
+
+def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[str] = None) -> int:
+    """Aktualisiert ein Item in allen Scan-Konfigurationen.
+
+    Returns: Anzahl der aktualisierten Scans.
+    """
+    updated_scans = 0
+    scan_dir = Path(ITEM_SCANS_DIR)
+
+    if not scan_dir.exists():
+        return 0
+
+    for scan_file in scan_dir.glob("*.json"):
+        try:
+            with open(scan_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            modified = False
+            for item in data.get("items", []):
+                if item.get("name") == old_name:
+                    item["name"] = new_name
+                    if new_template:
+                        item["template"] = new_template
+                    modified = True
+
+            if modified:
+                with open(scan_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                updated_scans += 1
+
+        except Exception as e:
+            print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
+
+    return updated_scans
+
 
 def load_global_items(state: AutoClickerState) -> None:
     """Lädt alle globalen Items."""
@@ -867,17 +1025,213 @@ def load_global_items(state: AutoClickerState) -> None:
         with open(ITEMS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         for name, i in data.items():
+            # confirm_point: kann [x,y] Liste sein oder None
+            cp = i.get("confirm_point")
+            if cp and isinstance(cp, list) and len(cp) == 2:
+                cp = tuple(cp)
+            else:
+                cp = None  # Alte int-Werte ignorieren
             state.global_items[name] = ItemProfile(
                 name=i["name"],
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                priority=i.get("priority", 99),
-                confirm_point=i.get("confirm_point"),
-                confirm_delay=i.get("confirm_delay", 0.5)
+                category=i.get("category"),
+                priority=i.get("priority", 1),
+                confirm_point=cp,
+                confirm_delay=i.get("confirm_delay", 0.5),
+                template=i.get("template"),
+                min_confidence=i.get("min_confidence", 0.8)
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
     except Exception as e:
         logger.error(f"Items laden fehlgeschlagen: {e}")
+
+# =============================================================================
+# SLOT UND ITEM PRESETS
+# =============================================================================
+SLOT_PRESETS_DIR: str = os.path.join(SLOTS_DIR, "presets")
+ITEM_PRESETS_DIR: str = os.path.join(ITEMS_DIR, "presets")
+
+# Preset-Ordner erstellen
+for folder in [SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
+    os.makedirs(folder, exist_ok=True)
+
+def list_slot_presets() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Slot-Presets auf."""
+    preset_dir = Path(SLOT_PRESETS_DIR)
+    if not preset_dir.exists():
+        return []
+    presets = []
+    for f in preset_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = f.stem
+                count = len(data)
+                presets.append((name, f, count))
+        except Exception:
+            pass
+    return presets
+
+def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Speichert aktuelle Slots als Preset."""
+    if not state.global_slots:
+        print("[FEHLER] Keine Slots vorhanden zum Speichern!")
+        return False
+
+    data = {
+        name: {
+            "name": slot.name,
+            "scan_region": list(slot.scan_region),
+            "click_pos": list(slot.click_pos),
+            "slot_color": list(slot.slot_color) if slot.slot_color else None
+        }
+        for name, slot in state.global_slots.items()
+    }
+
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
+    return True
+
+def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Lädt ein Slot-Preset."""
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        with state.lock:
+            state.global_slots.clear()
+            for name, s in data.items():
+                slot_color = tuple(s["slot_color"]) if s.get("slot_color") else None
+                state.global_slots[name] = ItemSlot(
+                    name=s["name"],
+                    scan_region=tuple(s["scan_region"]),
+                    click_pos=tuple(s["click_pos"]),
+                    slot_color=slot_color
+                )
+
+        # Auch in aktive Datei speichern
+        save_global_slots(state)
+        print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
+        return True
+    except Exception as e:
+        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        return False
+
+def delete_slot_preset(preset_name: str) -> bool:
+    """Löscht ein Slot-Preset."""
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+    filepath.unlink()
+    print(f"[DELETE] Slot-Preset '{preset_name}' gelöscht")
+    return True
+
+def list_item_presets() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Item-Presets auf."""
+    preset_dir = Path(ITEM_PRESETS_DIR)
+    if not preset_dir.exists():
+        return []
+    presets = []
+    for f in preset_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = f.stem
+                count = len(data)
+                presets.append((name, f, count))
+        except Exception:
+            pass
+    return presets
+
+def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Speichert aktuelle Items als Preset."""
+    if not state.global_items:
+        print("[FEHLER] Keine Items vorhanden zum Speichern!")
+        return False
+
+    data = {
+        name: {
+            "name": item.name,
+            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+            "category": item.category,
+            "priority": item.priority,
+            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+            "confirm_delay": item.confirm_delay,
+            "template": item.template,
+            "min_confidence": item.min_confidence
+        }
+        for name, item in state.global_items.items()
+    }
+
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
+    return True
+
+def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
+    """Lädt ein Item-Preset."""
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        with state.lock:
+            state.global_items.clear()
+            for name, i in data.items():
+                # confirm_point: kann [x,y] Liste sein oder None
+                cp = i.get("confirm_point")
+                if cp and isinstance(cp, list) and len(cp) == 2:
+                    cp = tuple(cp)
+                else:
+                    cp = None  # Alte int-Werte ignorieren
+                state.global_items[name] = ItemProfile(
+                    name=i["name"],
+                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
+                    category=i.get("category"),
+                    priority=i.get("priority", 1),
+                    confirm_point=cp,
+                    confirm_delay=i.get("confirm_delay", 0.5),
+                    template=i.get("template"),
+                    min_confidence=i.get("min_confidence", 0.8)
+                )
+
+        # Auch in aktive Datei speichern
+        save_global_items(state)
+        print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
+        return True
+    except Exception as e:
+        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        return False
+
+def delete_item_preset(preset_name: str) -> bool:
+    """Löscht ein Item-Preset."""
+    safe_name = sanitize_filename(preset_name)
+    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
+    if not filepath.exists():
+        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        return False
+    filepath.unlink()
+    print(f"[DELETE] Item-Preset '{preset_name}' gelöscht")
+    return True
 
 # =============================================================================
 # HILFSFUNKTIONEN
@@ -984,7 +1338,6 @@ COLOR_TOLERANCE = CONFIG["color_tolerance"]
 PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
 PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
 PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
-DEBUG_DETECTION = CONFIG["debug_detection"]
 
 def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
@@ -1023,6 +1376,61 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
                 if color_distance(pixel, target_color) <= tolerance:
                     return True
         return False
+
+def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = 0.8) -> tuple:
+    """
+    Sucht ein Template-Bild im gegebenen Bild mittels OpenCV Template Matching.
+
+    Args:
+        img: PIL Image (Suchbereich)
+        template_name: Dateiname des Templates (in items/templates/)
+        min_confidence: Mindest-Konfidenz für Match (0.0-1.0)
+
+    Returns:
+        (match_found: bool, confidence: float, position: tuple or None)
+        position ist (x, y) relativ zum Suchbereich
+    """
+    if not OPENCV_AVAILABLE:
+        logger.warning("OpenCV nicht verfügbar für Template Matching")
+        return (False, 0.0, None)
+
+    if not NUMPY_AVAILABLE:
+        logger.warning("NumPy nicht verfügbar für Template Matching")
+        return (False, 0.0, None)
+
+    # Template-Pfad erstellen
+    template_path = os.path.join(TEMPLATES_DIR, template_name)
+    if not os.path.exists(template_path):
+        logger.error(f"Template nicht gefunden: {template_path}")
+        return (False, 0.0, None)
+
+    try:
+        # PIL-Bild zu OpenCV-Format konvertieren (RGB -> BGR)
+        img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+        # Template laden (mit Unicode-Pfad-Unterstützung für Windows)
+        # cv2.imread hat Probleme mit Umlauten (ü, ä, ö) - daher imdecode verwenden
+        template_cv = cv2.imdecode(np.fromfile(template_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if template_cv is None:
+            logger.error(f"Konnte Template nicht laden: {template_path}")
+            return (False, 0.0, None)
+
+        # Template Matching mit TM_CCOEFF_NORMED (beste Methode für farbige Bilder)
+        result = cv2.matchTemplate(img_cv, template_cv, cv2.TM_CCOEFF_NORMED)
+
+        # Bestes Match finden
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        # max_val ist die Konfidenz (0.0 - 1.0)
+        if max_val >= min_confidence:
+            # Position ist obere linke Ecke des Matches
+            return (True, max_val, max_loc)
+        else:
+            return (False, max_val, None)
+
+    except Exception as e:
+        logger.error(f"Template Matching Fehler: {e}")
+        return (False, 0.0, None)
 
 def get_color_name(rgb: tuple) -> str:
     """Gibt einen ungefähren Farbnamen für RGB zurück."""
@@ -1209,12 +1617,12 @@ def run_color_analyzer() -> None:
     print("  [1] Farbe unter Mauszeiger")
     print("  [2] Region (Bereich auswählen)")
     print("  [3] Vollbild")
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     try:
         choice = input("> ").strip()
 
-        if choice == "abbruch":
+        if choice.lower() in ("cancel", "abbruch"):
             return
 
         if choice == "1":
@@ -1274,6 +1682,7 @@ def analyze_and_print_colors(region: tuple = None) -> None:
 
     print("-" * 50)
 
+
 def select_region() -> Optional[tuple]:
     """
     Lässt den Benutzer eine Region per Maus auswählen.
@@ -1302,7 +1711,8 @@ def select_region() -> Optional[tuple]:
         height = y2 - y1
         print(f"\n  Region: {width}x{height} Pixel ({x1},{y1}) → ({x2},{y2})")
 
-        return (x1, y1, x2, y2)
+        region = (x1, y1, x2, y2)
+        return region
 
     except (KeyboardInterrupt, EOFError):
         print("\n  [ABBRUCH] Keine Region ausgewählt.")
@@ -1367,7 +1777,7 @@ def print_points(state: AutoClickerState) -> None:
 # GLOBALER SLOT-EDITOR
 # =============================================================================
 def run_global_slot_editor(state: AutoClickerState) -> None:
-    """Editor für globale Slot-Definitionen."""
+    """Editor für globale Slot-Definitionen - wie Sequenz-Editor mit Preset-Auswahl."""
     print("\n" + "=" * 60)
     print("  SLOT-EDITOR")
     print("=" * 60)
@@ -1375,6 +1785,86 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
         return
+
+    # Verfügbare Slot-Presets laden
+    available_presets = list_slot_presets()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neues Slot-Preset erstellen")
+
+    if available_presets:
+        print("\nBestehende Slot-Presets bearbeiten:")
+        for i, (name, path, count) in enumerate(available_presets):
+            print(f"  [{i+1}] {name} ({count} Slots)")
+        print("\n  del <Nr> - Preset löschen")
+
+    print("\nAuswahl (oder 'cancel'):")
+
+    # Preset-Auswahl
+    preset_name = None
+    while True:
+        try:
+            choice = input("> ").strip().lower()
+
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
+                return
+
+            # Löschen-Befehl
+            if choice.startswith("del "):
+                try:
+                    del_num = int(choice[4:])
+                    if 1 <= del_num <= len(available_presets):
+                        name, path, count = available_presets[del_num - 1]
+                        confirm = input(f"Preset '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            delete_slot_preset(name)
+                            # Liste aktualisieren
+                            available_presets = list_slot_presets()
+                            print("\nAktualisierte Liste:")
+                            print("  [0] Neues Slot-Preset erstellen")
+                            for i, (n, p, c) in enumerate(available_presets):
+                                print(f"  [{i+1}] {n} ({c} Slots)")
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültiges Preset! Verfügbar: 1-{len(available_presets)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                # Neues Preset erstellen
+                preset_name = input("\nName des Slot-Presets: ").strip()
+                if not preset_name:
+                    preset_name = f"Slots_{int(time.time())}"
+                # Slots für neues Preset leeren
+                with state.lock:
+                    state.global_slots.clear()
+                break
+            elif 1 <= choice_num <= len(available_presets):
+                # Bestehendes Preset bearbeiten
+                preset_name, path, count = available_presets[choice_num - 1]
+                load_slot_preset(state, preset_name)
+                break
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
+            return
+
+    # Jetzt den eigentlichen Editor mit dem gewählten Preset starten
+    print(f"\n--- Bearbeite Slot-Preset: {preset_name} ---")
+    edit_slot_preset(state, preset_name)
+
+
+def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
+    """Bearbeitet ein Slot-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
     # Aktuelle Slots anzeigen
     with state.lock:
@@ -1394,15 +1884,22 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     print("  del <Nr>-<Nr>    - Bereich löschen (z.B. del 1-7)")
     print("  del all          - ALLE Slots löschen")
     print("  show             - Alle Slots anzeigen")
-    print("  fertig / abbruch")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
         try:
             user_input = input("[Slots] > ").strip().lower()
 
-            if user_input == "fertig" or user_input == "abbruch":
+            if user_input == "done":
+                # Speichere mit dem Preset-Namen
+                save_slot_preset(state, preset_name)
+                # Auch als aktive Konfiguration speichern
                 save_global_slots(state)
+                print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
+                return
+            elif user_input == "cancel":
+                print("\n[CANCEL] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -1444,7 +1941,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
 
                 # Farbe für Slot-Erkennung scannen
-                print("\n  Bewege Maus auf den TÜRKISEN SLOT-HINTERGRUND...")
+                print("\n  Bewege Maus auf den SLOT-HINTERGRUND...")
                 input("  ENTER wenn bereit...")
                 mx, my = get_cursor_pos()
 
@@ -1497,7 +1994,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                     continue
 
                 hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-                tol = 25
+                tol = CONFIG.get("slot_hsv_tolerance", 25)
                 lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
                 upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
 
@@ -1541,7 +2038,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 slot_color = [r, g, b]
 
                 # Slots hinzufügen
-                inset = 10
+                inset = CONFIG.get("slot_inset", 10)
                 added = 0
                 start_num = len(state.global_slots) + 1
 
@@ -1577,29 +2074,52 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
 
                     # Original Screenshot
-                    screenshot_path = os.path.join(SLOTS_DIR, f"screenshot_{timestamp}.png")
+                    screenshot_path = os.path.join(SCREENSHOTS_DIR, f"screenshot_{timestamp}.png")
                     img.save(screenshot_path)
                     print(f"  Screenshot: {screenshot_path}")
 
-                    # Vorschau mit Markierungen erstellen
-                    preview_path = os.path.join(SLOTS_DIR, f"preview_{timestamp}.png")
+                    # Vorschau mit Markierungen, Nummerierung und Klick-Position erstellen
+                    preview_path = os.path.join(SCREENSHOTS_DIR, f"preview_{timestamp}.png")
                     preview = img_bgr.copy()
-                    for dx, dy, dw, dh in detected_slots:
+                    for i, (dx, dy, dw, dh) in enumerate(detected_slots):
+                        # Rechtecke zeichnen (grün = erkannter Bereich, gelb = Scan-Bereich mit Inset)
                         cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
                         cv2_save.rectangle(preview, (dx + inset, dy + inset),
                                           (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
+
+                        # Klick-Position markieren (rotes Kreuz in der Mitte)
+                        click_x = dx + dw // 2
+                        click_y = dy + dh // 2
+                        cross_size = 8
+                        cv2_save.line(preview, (click_x - cross_size, click_y), (click_x + cross_size, click_y), (0, 0, 255), 2)
+                        cv2_save.line(preview, (click_x, click_y - cross_size), (click_x, click_y + cross_size), (0, 0, 255), 2)
+
+                        # Slot-Nummer hinzufügen (oben links im Slot)
+                        slot_num_text = str(start_num + i)
+                        font = cv2_save.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.6
+                        thickness = 2
+                        # Text oben links positionieren
+                        text_x = dx + 5
+                        text_y = dy + 20
+                        # Schwarzer Hintergrund für bessere Lesbarkeit
+                        (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
+                        cv2_save.rectangle(preview, (text_x - 2, text_y - text_h - 2),
+                                          (text_x + text_w + 2, text_y + 2), (0, 0, 0), -1)
+                        # Weiße Nummer
+                        cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
                     cv2_save.imwrite(preview_path, preview)
                     print(f"  Vorschau: {preview_path}")
                 except Exception as e:
                     print(f"  [WARNUNG] Screenshots speichern: {e}")
 
-                save_global_slots(state)
+                # Slots werden am Ende beim "fertig" gespeichert
                 continue
 
             elif user_input == "add":
                 slot_num = len(state.global_slots) + 1
-                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
-                if slot_name.lower() == "abbruch":
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
+                if slot_name.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if not slot_name:
@@ -1752,7 +2272,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
+            # Speichere mit dem Preset-Namen
+            save_slot_preset(state, preset_name)
             save_global_slots(state)
+            print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
             return
 
 
@@ -1760,7 +2283,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
 # GLOBALER ITEM-EDITOR
 # =============================================================================
 def run_global_item_editor(state: AutoClickerState) -> None:
-    """Editor für globale Item-Definitionen."""
+    """Editor für globale Item-Definitionen - wie Sequenz-Editor mit Preset-Auswahl."""
     print("\n" + "=" * 60)
     print("  ITEM-EDITOR")
     print("=" * 60)
@@ -1768,6 +2291,86 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
         return
+
+    # Verfügbare Item-Presets laden
+    available_presets = list_item_presets()
+
+    print("\nWas möchtest du tun?")
+    print("  [0] Neues Item-Preset erstellen")
+
+    if available_presets:
+        print("\nBestehende Item-Presets bearbeiten:")
+        for i, (name, path, count) in enumerate(available_presets):
+            print(f"  [{i+1}] {name} ({count} Items)")
+        print("\n  del <Nr> - Preset löschen")
+
+    print("\nAuswahl (oder 'cancel'):")
+
+    # Preset-Auswahl
+    preset_name = None
+    while True:
+        try:
+            choice = input("> ").strip().lower()
+
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
+                return
+
+            # Löschen-Befehl
+            if choice.startswith("del "):
+                try:
+                    del_num = int(choice[4:])
+                    if 1 <= del_num <= len(available_presets):
+                        name, path, count = available_presets[del_num - 1]
+                        confirm = input(f"Preset '{name}' wirklich löschen? (j/n): ").strip().lower()
+                        if confirm == "j":
+                            delete_item_preset(name)
+                            # Liste aktualisieren
+                            available_presets = list_item_presets()
+                            print("\nAktualisierte Liste:")
+                            print("  [0] Neues Item-Preset erstellen")
+                            for i, (n, p, c) in enumerate(available_presets):
+                                print(f"  [{i+1}] {n} ({c} Items)")
+                        else:
+                            print("[ABBRUCH] Nicht gelöscht.")
+                    else:
+                        print(f"[FEHLER] Ungültiges Preset! Verfügbar: 1-{len(available_presets)}")
+                except ValueError:
+                    print("[FEHLER] Format: del <Nr>")
+                continue
+
+            choice_num = int(choice)
+
+            if choice_num == 0:
+                # Neues Preset erstellen
+                preset_name = input("\nName des Item-Presets: ").strip()
+                if not preset_name:
+                    preset_name = f"Items_{int(time.time())}"
+                # Items für neues Preset leeren
+                with state.lock:
+                    state.global_items.clear()
+                break
+            elif 1 <= choice_num <= len(available_presets):
+                # Bestehendes Preset bearbeiten
+                preset_name, path, count = available_presets[choice_num - 1]
+                load_item_preset(state, preset_name)
+                break
+            else:
+                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
+
+        except ValueError:
+            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[ABBRUCH] Editor beendet.")
+            return
+
+    # Jetzt den eigentlichen Editor mit dem gewählten Preset starten
+    print(f"\n--- Bearbeite Item-Preset: {preset_name} ---")
+    edit_item_preset(state, preset_name)
+
+
+def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
+    """Bearbeitet ein Item-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
     # Aktuelle Items anzeigen
     with state.lock:
@@ -1791,18 +2394,28 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     print("  learn <Slot-Nr>  - Item aus Slot lernen (automatisch!)")
     print("  add              - Neues Item manuell hinzufügen")
     print("  edit <Nr>        - Item bearbeiten")
+    print("  rename <Nr>      - Item umbenennen (inkl. Template)")
     print("  del <Nr>         - Item löschen")
     print("  del all          - Alle Items löschen")
     print("  show             - Alle Items anzeigen")
-    print("  fertig / abbruch")
+    print("  template <Nr>    - Template für Item setzen/entfernen")
+    print("  templates        - Verfügbare Templates anzeigen")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
         try:
             user_input = input("[Items] > ").strip().lower()
 
-            if user_input == "fertig" or user_input == "abbruch":
+            if user_input == "done":
+                # Speichere mit dem Preset-Namen
+                save_item_preset(state, preset_name)
+                # Auch als aktive Konfiguration speichern
                 save_global_items(state)
+                print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
+                return
+            elif user_input == "cancel":
+                print("\n[CANCEL] Änderungen verworfen!")
                 return
             elif user_input == "":
                 continue
@@ -1840,7 +2453,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                         print(f"    {i+1}. {slot.name}")
                     try:
                         slot_input = input("  Slot-Nr wo das Item liegt: ").strip()
-                        if slot_input.lower() == "abbruch":
+                        if slot_input.lower() in ("cancel", "abbruch"):
                             continue
                         slot_num = int(slot_input)
                     except ValueError:
@@ -1857,7 +2470,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 # Item-Name abfragen
                 item_num = len(state.global_items) + 1
                 item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
-                if item_name.lower() == "abbruch":
+                if item_name.lower() in ("cancel", "abbruch"):
                     continue
                 if not item_name:
                     item_name = f"Item {item_num}"
@@ -1868,15 +2481,29 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                         print(f"  → Item '{item_name}' existiert bereits!")
                         continue
 
-                # Priorität
-                priority = item_num
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
+                print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
+                category = input("  Kategorie (Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
+                priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Abgebrochen")
                         continue
                     if prio_input:
-                        priority = max(1, int(prio_input))
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
                 except ValueError:
                     pass
 
@@ -1894,31 +2521,58 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
                 print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
                 confirm_input = input("  Punkt-Nr für Bestätigung (Enter = Nein): ").strip()
-                if confirm_input.lower() == "abbruch":
+                if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Abgebrochen")
                     continue
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            confirm_point = None
-                        else:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     pass
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         print("  → Keine gültige Zahl, keine Bestätigung")
 
                 # Item erstellen und speichern
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
+
+                # Optional: Auch als Template speichern?
+                if OPENCV_AVAILABLE:
+                    save_template = input("  Auch als Template speichern? (j/n, Enter=n): ").strip().lower()
+                    if save_template == "j":
+                        # Screenshot der Scan-Region als Template speichern
+                        template_img = take_screenshot(selected_slot.scan_region)
+                        if template_img:
+                            safe_name = sanitize_filename(item_name)
+                            template_file = f"{safe_name}.png"
+                            template_path = Path(TEMPLATES_DIR) / template_file
+                            template_img.save(template_path)
+                            item.template = template_file
+
+                            # Konfidenz abfragen
+                            conf_input = input(f"  Min. Konfidenz für Template (Enter=80%): ").strip()
+                            if conf_input:
+                                try:
+                                    conf = float(conf_input.replace("%", "")) / 100
+                                    item.min_confidence = max(0.1, min(1.0, conf))
+                                except ValueError:
+                                    pass
+
+                            print(f"  ✓ Template gespeichert: {template_file}")
+
                 with state.lock:
                     state.global_items[item_name] = item
 
-                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
-                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}")
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
+                template_str = f" + Template" if item.template else ""
+                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
                 continue
 
             elif user_input == "del all":
@@ -1937,8 +2591,8 @@ def run_global_item_editor(state: AutoClickerState) -> None:
 
             elif user_input == "add":
                 item_num = len(state.global_items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
-                if item_name.lower() == "abbruch":
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'cancel'): ").strip()
+                if item_name.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if not item_name:
@@ -1950,15 +2604,27 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                         print(f"  → Item '{item_name}' existiert bereits!")
                         continue
 
-                # Priorität
-                priority = item_num
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
+                priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}, 'cancel'): ").strip()
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Item-Erstellung abgebrochen")
                         continue
                     if prio_input:
-                        priority = max(1, int(prio_input))
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
                 except ValueError:
                     pass
 
@@ -1974,24 +2640,26 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja): ").strip()
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            confirm_point = None
-                        else:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     pass
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         pass
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
-                confirm_str = f" → Punkt {confirm_point}" if confirm_point else ""
-                print(f"  ✓ Item '{item_name}' hinzugefügt!{confirm_str}")
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]})" if confirm_point else ""
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ Item '{item_name}'{cat_str} hinzugefügt!{confirm_str}")
                 continue
 
             elif user_input.startswith("del "):
@@ -2034,19 +2702,23 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                                     item.marker_colors = new_colors
 
                             # Bestätigung
-                            current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                            current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
                             confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-Nr=setzen, 0=entfernen, Enter=behalten): ").strip()
                             if confirm_input == "0":
                                 item.confirm_point = None
                             elif confirm_input:
                                 try:
-                                    item.confirm_point = int(confirm_input)
-                                    delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
-                                    if delay_input:
-                                        try:
-                                            item.confirm_delay = float(delay_input)
-                                        except ValueError:
-                                            pass
+                                    point_nr = int(confirm_input)
+                                    if point_nr >= 1 and point_nr <= len(state.points):
+                                        item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                        delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                        if delay_input:
+                                            try:
+                                                item.confirm_delay = float(delay_input)
+                                            except ValueError:
+                                                pass
+                                    else:
+                                        print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                                 except ValueError:
                                     pass
 
@@ -2057,11 +2729,211 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                     print("  → Format: edit <Nr>")
                 continue
 
+            elif user_input.startswith("rename "):
+                try:
+                    rename_num = int(user_input[7:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= rename_num <= len(item_names):
+                            old_name = item_names[rename_num - 1]
+                            item = state.global_items[old_name]
+
+                            print(f"\n  Aktueller Name: '{old_name}'")
+                            if item.template:
+                                print(f"  Template: {item.template}")
+
+                            new_name = input("  Neuer Name (Enter = abbrechen): ").strip()
+                            if not new_name or new_name.lower() in ("cancel", "abbruch"):
+                                print("  → Abgebrochen")
+                                continue
+
+                            if new_name == old_name:
+                                print("  → Name ist identisch, nichts geändert")
+                                continue
+
+                            if new_name in state.global_items:
+                                print(f"  → Name '{new_name}' existiert bereits!")
+                                continue
+
+                            # Template umbenennen falls vorhanden
+                            old_template = item.template
+                            if old_template:
+                                old_template_path = Path(TEMPLATES_DIR) / old_template
+                                # Neuer Template-Name basierend auf Item-Name
+                                safe_name = new_name.lower().replace(" ", "_").replace("/", "_")
+                                new_template = f"{safe_name}.png"
+                                new_template_path = Path(TEMPLATES_DIR) / new_template
+
+                                # Template-Pfad im Item IMMER aktualisieren
+                                item.template = new_template
+
+                                # Versuche auch die Datei umzubenennen
+                                if old_template_path.exists():
+                                    try:
+                                        old_template_path.rename(new_template_path)
+                                        print(f"  ✓ Template umbenannt: {old_template} → {new_template}")
+                                    except Exception as e:
+                                        print(f"  → Template-Datei Umbenennung fehlgeschlagen: {e}")
+                                        print(f"    Template-Pfad aktualisiert: {new_template}")
+                                else:
+                                    print(f"  → Template-Datei nicht gefunden: {old_template}")
+                                    print(f"    Template-Pfad aktualisiert: {new_template}")
+
+                            # Item umbenennen
+                            item.name = new_name
+                            del state.global_items[old_name]
+                            state.global_items[new_name] = item
+                            save_global_items(state)
+
+                            # Auch in allen Scan-Konfigurationen aktualisieren
+                            updated_scans = update_item_in_scans(old_name, new_name, item.template)
+                            if updated_scans > 0:
+                                print(f"  ✓ {updated_scans} Scan-Konfiguration(en) aktualisiert")
+
+                            print(f"  ✓ Item umbenannt: '{old_name}' → '{new_name}' (gespeichert)")
+                        else:
+                            print(f"  → Ungültiges Item! Verfügbar: 1-{len(item_names)}")
+                except ValueError:
+                    print("  → Format: rename <Nr>")
+                continue
+
+            elif user_input == "templates":
+                # Zeige verfügbare Templates
+                if not Path(TEMPLATES_DIR).exists():
+                    print("  → Keine Templates vorhanden")
+                    continue
+                templates = list(Path(TEMPLATES_DIR).glob("*.png"))
+                if not templates:
+                    print("  → Keine Templates vorhanden")
+                    print(f"    (Ordner: {TEMPLATES_DIR})")
+                else:
+                    print(f"\n  Verfügbare Templates ({len(templates)}):")
+                    for t in sorted(templates):
+                        print(f"    - {t.name}")
+                continue
+
+            elif user_input.startswith("template "):
+                try:
+                    item_num = int(user_input[9:])
+                    with state.lock:
+                        item_names = list(state.global_items.keys())
+                        if 1 <= item_num <= len(item_names):
+                            name = item_names[item_num - 1]
+                            item = state.global_items[name]
+
+                            # Verfügbare Templates anzeigen
+                            templates = list(Path(TEMPLATES_DIR).glob("*.png")) if Path(TEMPLATES_DIR).exists() else []
+                            if templates:
+                                print(f"\n  Verfügbare Templates:")
+                                for i, t in enumerate(sorted(templates)):
+                                    print(f"    {i+1}. {t.name}")
+
+                            current = item.template if item.template else "Keins"
+                            print(f"\n  Item: {item.name}")
+                            print(f"  Aktuelles Template: {current}")
+                            print(f"  Aktuelle Konfidenz: {item.min_confidence:.0%}")
+
+                            print("\n  Optionen:")
+                            print("    <Dateiname.png> - Template setzen")
+                            print("    <Nr>            - Template aus Liste wählen")
+                            print("    capture         - Screenshot als Template speichern")
+                            print("    remove          - Template entfernen")
+                            print("    Enter           - Abbrechen")
+
+                            template_input = input("  Template: ").strip()
+                            if not template_input:
+                                continue
+
+                            if template_input.lower() == "remove":
+                                item.template = None
+                                print("  ✓ Template entfernt!")
+                            elif template_input.lower() == "capture":
+                                # Screenshot-Region abfragen
+                                with state.lock:
+                                    slot_list = list(state.global_slots.values())
+                                if slot_list:
+                                    print(f"\n  Screenshot von:")
+                                    print("    0. Freie Region wählen")
+                                    for i, slot in enumerate(slot_list):
+                                        print(f"    {i+1}. {slot.name}")
+                                    try:
+                                        slot_choice = input("  Auswahl: ").strip()
+                                        if slot_choice == "0":
+                                            region = select_screen_region()
+                                        else:
+                                            slot_idx = int(slot_choice) - 1
+                                            if 0 <= slot_idx < len(slot_list):
+                                                region = slot_list[slot_idx].scan_region
+                                            else:
+                                                print("  → Ungültiger Slot!")
+                                                continue
+                                    except ValueError:
+                                        region = select_screen_region()
+                                else:
+                                    region = select_screen_region()
+
+                                if region:
+                                    # Screenshot machen
+                                    img = take_screenshot(region)
+                                    if img:
+                                        # Dateiname
+                                        safe_name = sanitize_filename(item.name)
+                                        template_file = f"{safe_name}.png"
+                                        template_path = Path(TEMPLATES_DIR) / template_file
+                                        img.save(template_path)
+                                        item.template = template_file
+
+                                        # Konfidenz abfragen
+                                        conf_input = input(f"  Min. Konfidenz (Enter=80%): ").strip()
+                                        if conf_input:
+                                            try:
+                                                conf = float(conf_input.replace("%", "")) / 100
+                                                item.min_confidence = max(0.1, min(1.0, conf))
+                                            except ValueError:
+                                                pass
+
+                                        print(f"  ✓ Template gespeichert: {template_file}")
+                                    else:
+                                        print("  → Screenshot fehlgeschlagen!")
+                            else:
+                                # Dateiname oder Nummer
+                                try:
+                                    template_num = int(template_input)
+                                    if 1 <= template_num <= len(templates):
+                                        item.template = sorted(templates)[template_num - 1].name
+                                    else:
+                                        print("  → Ungültige Nummer!")
+                                        continue
+                                except ValueError:
+                                    # Direkter Dateiname
+                                    if not template_input.endswith(".png"):
+                                        template_input += ".png"
+                                    item.template = template_input
+
+                                # Konfidenz abfragen
+                                conf_input = input(f"  Min. Konfidenz (aktuell {item.min_confidence:.0%}, Enter=behalten): ").strip()
+                                if conf_input:
+                                    try:
+                                        conf = float(conf_input.replace("%", "")) / 100
+                                        item.min_confidence = max(0.1, min(1.0, conf))
+                                    except ValueError:
+                                        pass
+
+                                print(f"  ✓ Template gesetzt: {item.template} (≥{item.min_confidence:.0%})")
+                        else:
+                            print(f"  → Ungültiges Item!")
+                except ValueError:
+                    print("  → Format: template <Nr>")
+                continue
+
             else:
                 print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
+            # Speichere mit dem Preset-Namen
+            save_item_preset(state, preset_name)
             save_global_items(state)
+            print(f"\n[SAVE] Preset '{preset_name}' gespeichert!")
             return
 
 
@@ -2092,7 +2964,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
             run_global_item_editor(state)
         elif choice == "3":
             run_item_scan_editor(state)
-        elif choice == "0" or choice.lower() == "abbruch":
+        elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
             return
         else:
             print("[FEHLER] Ungültige Auswahl")
@@ -2128,14 +3000,14 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
                 print(f"  [{i+1}] {config}")
         print("\n  del <Nr> - Item-Scan löschen")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     while True:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             # Löschen-Befehl
@@ -2184,20 +3056,77 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:
     """Bearbeitet eine Item-Scan Konfiguration (verknüpft globale Slots + Items)."""
 
-    # Prüfe ob globale Slots und Items vorhanden sind
+    # === SCHRITT 0: Presets auswählen ===
+    print("\n" + "=" * 60)
+    print("  PRESETS AUSWÄHLEN")
+    print("=" * 60)
+
+    # Slot-Presets anzeigen
+    slot_presets = list_slot_presets()
+    print("\nSlot-Presets:")
+    if slot_presets:
+        for i, (name, path, count) in enumerate(slot_presets):
+            print(f"  [{i+1}] {name} ({count} Slots)")
+    print("  [0] Aktuelle Slots verwenden")
+
+    # Slot-Preset auswählen
+    while True:
+        try:
+            slot_choice = input("\nSlot-Preset wählen (Enter=0): ").strip()
+            if not slot_choice or slot_choice == "0":
+                break
+            slot_num = int(slot_choice)
+            if 1 <= slot_num <= len(slot_presets):
+                preset_name, _, _ = slot_presets[slot_num - 1]
+                load_slot_preset(state, preset_name)
+                break
+            else:
+                print(f"  → Ungültig! 0-{len(slot_presets)}")
+        except ValueError:
+            print("  → Bitte eine Nummer eingeben!")
+        except (KeyboardInterrupt, EOFError):
+            return
+
+    # Item-Presets anzeigen
+    item_presets = list_item_presets()
+    print("\nItem-Presets:")
+    if item_presets:
+        for i, (name, path, count) in enumerate(item_presets):
+            print(f"  [{i+1}] {name} ({count} Items)")
+    print("  [0] Aktuelle Items verwenden / Keine (neu erstellen)")
+
+    # Item-Preset auswählen
+    while True:
+        try:
+            item_choice = input("\nItem-Preset wählen (Enter=0): ").strip()
+            if not item_choice or item_choice == "0":
+                break
+            item_num = int(item_choice)
+            if 1 <= item_num <= len(item_presets):
+                preset_name, _, _ = item_presets[item_num - 1]
+                load_item_preset(state, preset_name)
+                break
+            else:
+                print(f"  → Ungültig! 0-{len(item_presets)}")
+        except ValueError:
+            print("  → Bitte eine Nummer eingeben!")
+        except (KeyboardInterrupt, EOFError):
+            return
+
+    # Prüfe ob globale Slots vorhanden sind
     with state.lock:
         available_slots = dict(state.global_slots)
         available_items = dict(state.global_items)
 
     if not available_slots:
-        print("\n[FEHLER] Keine globalen Slots vorhanden!")
+        print("\n[FEHLER] Keine Slots im gewählten Preset!")
         print("         Erstelle zuerst Slots im Slot-Editor (Option 1)")
         return
 
+    # Items sind optional - können im Scan-Editor erstellt werden
     if not available_items:
-        print("\n[FEHLER] Keine globalen Items vorhanden!")
-        print("         Erstelle zuerst Items im Item-Editor (Option 2)")
-        return
+        print("\n[INFO] Keine Items im gewählten Preset.")
+        print("       Du kannst sie gleich per Template erstellen!")
 
     if existing:
         print(f"\n--- Bearbeite Scan: {existing.name} ---")
@@ -2224,12 +3153,14 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "✓" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel'")
     while True:
         try:
             inp = input("[Slots] > ").strip().lower()
-            if inp == "fertig":
+            if inp == "done":
                 break
+            elif inp == "cancel":
+                return
             elif inp == "all":
                 selected_slot_names = list(slot_list)
                 print(f"  ✓ Alle {len(slot_list)} Slots ausgewählt")
@@ -2238,6 +3169,22 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 print("  ✓ Auswahl gelöscht")
             elif inp == "show":
                 print(f"\nAusgewählt: {', '.join(selected_slot_names) if selected_slot_names else '(keine)'}")
+            elif "-" in inp:
+                # Bereich: 1-5
+                try:
+                    parts = inp.split("-")
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if 1 <= start <= len(slot_list) and 1 <= end <= len(slot_list):
+                        for num in range(min(start, end), max(start, end) + 1):
+                            name = slot_list[num - 1]
+                            if name not in selected_slot_names:
+                                selected_slot_names.append(name)
+                        print(f"  + Slots {start}-{end} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(slot_list)}")
+                except (ValueError, IndexError):
+                    print("  → Format: <Von>-<Bis> (z.B. 1-5)")
             else:
                 try:
                     num = int(inp)
@@ -2260,30 +3207,201 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
         return
 
-    # Schritt 2: Items auswählen
+    # Schritt 2: Items auswählen oder erstellen
     print("\n" + "=" * 60)
-    print("  SCHRITT 2: ITEMS AUSWÄHLEN")
+    print("  SCHRITT 2: ITEMS AUSWÄHLEN / ERSTELLEN")
     print("=" * 60)
+
+    # Zeige verfügbare Templates
+    templates = list(Path(TEMPLATES_DIR).glob("*.png")) if Path(TEMPLATES_DIR).exists() else []
+    if templates:
+        print(f"\nVerfügbare Templates ({len(templates)}):")
+        for t in sorted(templates)[:10]:  # Max 10 anzeigen
+            print(f"    {t.name}")
+        if len(templates) > 10:
+            print(f"    ... und {len(templates) - 10} weitere")
+
+    # Aktualisiere available_items
+    with state.lock:
+        available_items = dict(state.global_items)
+
     print("\nVerfügbare Items:")
     item_list = list(available_items.keys())
-    for i, name in enumerate(item_list):
-        selected = "✓" if name in selected_item_names else " "
-        print(f"  [{selected}] {i+1}. {available_items[name]}")
+    if item_list:
+        for i, name in enumerate(item_list):
+            selected = "✓" if name in selected_item_names else " "
+            print(f"  [{selected}] {i+1}. {available_items[name]}")
+    else:
+        print("  (Keine Items - erstelle welche mit 'new')")
 
-    print("\nBefehle: '<Nr>' zum Hinzufügen/Entfernen, 'all' für alle, 'fertig'")
+    print("\n" + "-" * 40)
+    print("Befehle:")
+    print("  <Nr>              - Item auswählen/abwählen")
+    print("  <Von>-<Bis>       - Bereich auswählen (z.B. 1-5)")
+    print("  all | clear       - Alle auswählen / Auswahl löschen")
+    print("  new <Slot-Nr>     - Neues Item per Template von Slot erstellen")
+    print("  done | cancel")
+    print("-" * 40)
+
     while True:
         try:
-            inp = input("[Items] > ").strip().lower()
-            if inp == "fertig":
+            inp = input("[Items] > ").strip()
+            inp_lower = inp.lower()
+
+            if inp_lower == "done":
                 break
-            elif inp == "all":
+            elif inp_lower == "cancel":
+                return
+            elif inp_lower == "all":
                 selected_item_names = list(item_list)
                 print(f"  ✓ Alle {len(item_list)} Items ausgewählt")
-            elif inp == "clear":
+            elif inp_lower == "clear":
                 selected_item_names = []
                 print("  ✓ Auswahl gelöscht")
-            elif inp == "show":
+            elif inp_lower == "show":
                 print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
+
+            elif inp_lower.startswith("new"):
+                # Neues Item per Template erstellen
+                if not OPENCV_AVAILABLE:
+                    print("  → OpenCV nicht installiert! (pip install opencv-python)")
+                    continue
+
+                # Slot-Nummer parsen
+                slot_num = None
+                if inp_lower.startswith("new "):
+                    try:
+                        slot_num = int(inp[4:])
+                    except ValueError:
+                        pass
+
+                if slot_num is None:
+                    print(f"\n  Von welchem Slot Screenshot machen? (1-{len(slot_list)})")
+                    try:
+                        slot_num = int(input("  Slot-Nr: ").strip())
+                    except ValueError:
+                        print("  → Ungültige Eingabe!")
+                        continue
+
+                if slot_num < 1 or slot_num > len(slot_list):
+                    print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
+                    continue
+
+                # Screenshot vom Slot machen
+                slot_name = slot_list[slot_num - 1]
+                slot = available_slots[slot_name]
+                print(f"\n  Mache Screenshot von {slot_name}...")
+
+                template_img = take_screenshot(slot.scan_region)
+                if not template_img:
+                    print("  → Screenshot fehlgeschlagen!")
+                    continue
+
+                # Item-Name abfragen
+                item_name = input("  Item-Name: ").strip()
+                if not item_name:
+                    item_name = f"Item_{len(item_list) + 1}"
+
+                # Prüfen ob Name schon existiert
+                if item_name in available_items:
+                    print(f"  → '{item_name}' existiert bereits!")
+                    continue
+
+                # Template speichern
+                safe_name = sanitize_filename(item_name)
+                template_file = f"{safe_name}.png"
+                template_path = Path(TEMPLATES_DIR) / template_file
+                template_img.save(template_path)
+
+                # Kategorie zuerst (für Prioritäts-Verschiebung)
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
+                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
+                priority = 1
+                try:
+                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
+                    if prio_input:
+                        prio_val = int(prio_input)
+                        if prio_val == 0:
+                            if category:
+                                shift_category_priorities(state, category)
+                                priority = 1
+                            else:
+                                print("  → Priorität 0 nur mit Kategorie möglich!")
+                                priority = 1
+                        else:
+                            priority = max(1, prio_val)
+                except ValueError:
+                    pass
+
+                # Konfidenz
+                min_confidence = 0.8
+                try:
+                    conf_input = input("  Min. Konfidenz % (Enter=80): ").strip()
+                    if conf_input:
+                        min_confidence = max(0.1, min(1.0, float(conf_input) / 100))
+                except ValueError:
+                    pass
+
+                # Bestätigungs-Klick?
+                confirm_point = None
+                confirm_delay = 0.5
+                confirm_input = input("  Bestätigungs-Punkt Nr (Enter=Nein): ").strip()
+                if confirm_input:
+                    try:
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                            delay_input = input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
+                            if delay_input:
+                                confirm_delay = float(delay_input)
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                    except ValueError:
+                        pass
+
+                # Item erstellen
+                new_item = ItemProfile(
+                    name=item_name,
+                    marker_colors=[],
+                    category=category,
+                    priority=priority,
+                    confirm_point=confirm_point,
+                    confirm_delay=confirm_delay,
+                    template=template_file,
+                    min_confidence=min_confidence
+                )
+
+                # Global speichern
+                with state.lock:
+                    state.global_items[item_name] = new_item
+                save_global_items(state)
+
+                # Listen aktualisieren
+                available_items[item_name] = new_item
+                item_list.append(item_name)
+                selected_item_names.append(item_name)
+
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ Item '{item_name}'{cat_str} erstellt mit Template '{template_file}' ({min_confidence:.0%})")
+                print(f"  ✓ Automatisch zum Scan hinzugefügt")
+
+            elif "-" in inp_lower and not inp_lower.startswith("new"):
+                # Bereich: 1-5
+                try:
+                    parts = inp_lower.split("-")
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if 1 <= start <= len(item_list) and 1 <= end <= len(item_list):
+                        for num in range(min(start, end), max(start, end) + 1):
+                            name = item_list[num - 1]
+                            if name not in selected_item_names:
+                                selected_item_names.append(name)
+                        print(f"  + Items {start}-{end} hinzugefügt")
+                    else:
+                        print(f"  → Ungültig! 1-{len(item_list)}")
+                except (ValueError, IndexError):
+                    print("  → Format: <Von>-<Bis> (z.B. 1-5)")
             else:
                 try:
                     num = int(inp)
@@ -2354,10 +3472,12 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add      - Neuen Slot hinzufügen (Region + Klickpunkt)")
-    print("  del <Nr> - Slot löschen")
-    print("  show     - Alle Slots anzeigen")
-    print("  fertig   - Slots abschließen")
+    print("  add            - Neuen Slot hinzufügen (Region + Klickpunkt)")
+    print("  del <Nr>       - Slot löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-7)")
+    print("  del all        - ALLE Slots löschen")
+    print("  show           - Alle Slots anzeigen")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -2365,8 +3485,10 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
             prompt = f"[SLOTS: {len(slots)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 return slots
+            elif user_input == "cancel":
+                return slots  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -2380,8 +3502,8 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
             elif user_input == "add":
                 slot_num = len(slots) + 1
-                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'abbruch' = abbrechen): ").strip()
-                if slot_name.lower() == "abbruch":
+                slot_name = input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
+                if slot_name.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if not slot_name:
@@ -2389,7 +3511,7 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
                 # Scan-Region auswählen
                 print("\n  Scan-Region definieren (Bereich wo das Item angezeigt wird):")
-                print("  ('abbruch' in Konsole = abbrechen)")
+                print("  ('cancel' in Konsole = abbrechen)")
                 region = select_region()
                 if not region:
                     print("  → Slot-Erstellung abgebrochen")
@@ -2418,9 +3540,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 slot_color = None
                 print("\n  Hintergrundfarbe des leeren Slots markieren:")
                 print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
-                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'abbruch')...")
+                print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'cancel')...")
                 bg_input = input().strip()
-                if bg_input.lower() == "abbruch":
+                if bg_input.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 if bg_input == "":
@@ -2439,9 +3561,9 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
 
                 # Klick-Position
                 print("\n  Klick-Position (wo geklickt wird um das Item zu nehmen):")
-                print("  Bewege die Maus zur Klick-Position und drücke Enter (oder 'abbruch')...")
+                print("  Bewege die Maus zur Klick-Position und drücke Enter (oder 'cancel')...")
                 click_input = input().strip()
-                if click_input.lower() == "abbruch":
+                if click_input.lower() in ("cancel", "abbruch"):
                     print("  → Slot-Erstellung abgebrochen")
                     continue
                 click_x, click_y = get_cursor_pos()
@@ -2450,6 +3572,38 @@ def edit_item_slots(slots: list[ItemSlot]) -> list[ItemSlot]:
                 slot = ItemSlot(slot_name, region, (click_x, click_y), slot_color)
                 slots.append(slot)
                 print(f"  ✓ {slot_name} hinzugefügt")
+                continue
+
+            elif user_input == "del all":
+                if not slots:
+                    print("  → Keine Slots vorhanden!")
+                    continue
+                confirm = input(f"  {len(slots)} Slot(s) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(slots)
+                    slots.clear()
+                    print(f"  ✓ {count} Slot(s) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-7
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(slots) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slots)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Slot(s) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del slots[start-1:end]
+                        print(f"  ✓ {count} Slot(s) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
                 continue
 
             elif user_input.startswith("del "):
@@ -2486,11 +3640,13 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add       - Neues Item-Profil erstellen")
-    print("  edit <Nr> - Item-Profil bearbeiten")
-    print("  del <Nr>  - Item-Profil löschen")
-    print("  show      - Alle Profile anzeigen")
-    print("  fertig    - Profile abschließen")
+    print("  add            - Neues Item-Profil erstellen")
+    print("  edit <Nr>      - Item-Profil bearbeiten")
+    print("  del <Nr>       - Item-Profil löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-5)")
+    print("  del all        - ALLE Profile löschen")
+    print("  show           - Alle Profile anzeigen")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -2498,10 +3654,12 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
             prompt = f"[ITEMS: {len(items)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 # Entferne Farben die bei allen Items gleich sind (Hintergrund)
                 items = remove_common_colors(items)
                 return items
+            elif user_input == "cancel":
+                return items  # Gibt aktuelle Liste zurück (Sub-Editor)
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -2515,18 +3673,21 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
             elif user_input == "add":
                 item_num = len(items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'abbruch' = abbrechen): ").strip()
-                if item_name.lower() == "abbruch":
+                item_name = input(f"  Item-Name (Enter = 'Item {item_num}', 'cancel'): ").strip()
+                if item_name.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if not item_name:
                     item_name = f"Item {item_num}"
 
+                # Kategorie zuerst
+                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+
                 # Priorität
-                priority = len(items) + 1
+                priority = 1
                 try:
-                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'abbruch' = abbrechen): ").strip()
-                    if prio_input.lower() == "abbruch":
+                    prio_input = input(f"  Priorität (1=beste, Enter={priority}, 'cancel'): ").strip()
+                    if prio_input.lower() in ("cancel", "abbruch"):
                         print("  → Item-Erstellung abgebrochen")
                         continue
                     if prio_input:
@@ -2536,10 +3697,10 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                 # Marker-Farben sammeln - Slot oder freier Bereich
                 if slots:
-                    print(f"\n  Slot-Nr (1-{len(slots)}) oder '0' für freien Bereich ('abbruch' = abbrechen):")
+                    print(f"\n  Slot-Nr (1-{len(slots)}) oder '0' für freien Bereich ('cancel'):")
                     try:
                         slot_input = input("  > ").strip()
-                        if slot_input.lower() == "abbruch":
+                        if slot_input.lower() in ("cancel", "abbruch"):
                             print("  → Item-Erstellung abgebrochen")
                             continue
                         slot_num = int(slot_input)
@@ -2567,31 +3728,31 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
                 confirm_delay = 0.5
-                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'abbruch' = abbrechen): ").strip()
-                if confirm_input.lower() == "abbruch":
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'cancel'): ").strip()
+                if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if confirm_input:
                     try:
-                        confirm_point = int(confirm_input)
-                        if confirm_point < 1:
-                            print("  → Ungültiger Punkt, Bestätigung übersprungen")
-                            confirm_point = None
-                        else:
-                            # Wartezeit vor Bestätigung
+                        point_nr = int(confirm_input)
+                        if point_nr >= 1 and point_nr <= len(state.points):
+                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
                                     confirm_delay = 0.5
+                        else:
+                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
 
-                item = ItemProfile(item_name, marker_colors, priority, confirm_point, confirm_delay)
+                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 items.append(item)
-                confirm_str = f" → Punkt {confirm_point} nach {confirm_delay}s" if confirm_point else ""
-                print(f"  ✓ {item_name} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
+                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
+                cat_str = f" [{category}]" if category else ""
+                print(f"  ✓ {item_name}{cat_str} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
                 continue
 
             elif user_input.startswith("edit "):
@@ -2628,20 +3789,24 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 item.marker_colors = new_colors
 
                         # Bestätigung bearbeiten
-                        current_confirm = f"Punkt {item.confirm_point}" if item.confirm_point else "Keine"
+                        current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
                         confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
                         if confirm_input == "0":
                             item.confirm_point = None
                             print("  → Bestätigung entfernt")
                         elif confirm_input:
                             try:
-                                item.confirm_point = int(confirm_input)
-                                delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
-                                if delay_input:
-                                    try:
-                                        item.confirm_delay = float(delay_input)
-                                    except ValueError:
-                                        pass
+                                point_nr = int(confirm_input)
+                                if point_nr >= 1 and point_nr <= len(state.points):
+                                    item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                    delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
+                                    if delay_input:
+                                        try:
+                                            item.confirm_delay = float(delay_input)
+                                        except ValueError:
+                                            pass
+                                else:
+                                    print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
                             except ValueError:
                                 pass
 
@@ -2650,6 +3815,38 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                         print(f"  → Ungültiges Item! Verfügbar: 1-{len(items)}")
                 except ValueError:
                     print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input == "del all":
+                if not items:
+                    print("  → Keine Items vorhanden!")
+                    continue
+                confirm = input(f"  {len(items)} Item(s) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(items)
+                    items.clear()
+                    print(f"  ✓ {count} Item(s) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-5
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(items) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(items)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Item(s) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del items[start-1:end]
+                        print(f"  ✓ {count} Item(s) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
                 continue
 
             elif user_input.startswith("del "):
@@ -2735,10 +3932,11 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
         # Runde die exclude_color auf 5er-Schritte (wie die anderen Farben)
         exclude_rounded = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
 
-        # Finde alle ähnlichen Farben (Toleranz 25 = 5 Rundungsschritte)
+        # Finde alle ähnlichen Farben (Toleranz aus Config)
+        slot_color_dist = CONFIG.get("slot_color_distance", 25)
         colors_to_remove = []
         for color in color_counts.keys():
-            if color_distance(color, exclude_rounded) <= 25:
+            if color_distance(color, exclude_rounded) <= slot_color_dist:
                 colors_to_remove.append(color)
 
         # Entferne alle ähnlichen Farben
@@ -2807,11 +4005,12 @@ def remove_common_colors(items: list) -> list:
 # =============================================================================
 # ITEM-SCAN AUSFÜHRUNG
 # =============================================================================
-def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best") -> list[tuple]:
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all") -> list[tuple]:
     """
     Führt einen Item-Scan aus.
-    mode="best": Gibt nur die Klick-Position des besten Items zurück
-    mode="all": Gibt alle Klick-Positionen mit erkannten Items zurück
+    mode="all": Bestes Item pro Kategorie (Standard)
+    mode="best": Nur das eine beste Item insgesamt
+    mode="every": Alle gefundenen Items (keine Filterung, für Duplikate)
     Returns Liste von ((x, y), ItemProfile) Tupeln (leer wenn nichts gefunden)
     """
     with state.lock:
@@ -2835,7 +4034,8 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
     else:
         direction = "vorwärts"
 
-    mode_str = "ALLE" if mode == "all" else "BESTES"
+    mode_names = {"all": "ALLE (pro Kategorie)", "best": "BESTES", "every": "JEDES (keine Filter)"}
+    mode_str = mode_names.get(mode, mode)
     print(f"\n[SCAN] Scanne {len(slots_to_scan)} Slots für '{scan_name}' ({direction}, Modus: {mode_str})...")
 
     for slot in slots_to_scan:
@@ -2844,48 +4044,103 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "best
         if img is None:
             continue
 
+        if CONFIG.get("debug_detection", False):
+            print(f"[DEBUG] Scanne {slot.name}...")
+
         # Prüfe alle Item-Profile für diesen Slot
-        slot_best_item = None
-        slot_best_priority = 999
-
         for item in config.items:
-            # Prüfe ob Marker-Farben vorhanden sind (optimiert mit NumPy)
-            markers_found = 0
+            item_matched = False
+            match_info = ""
 
-            for marker_color in item.marker_colors:
-                if find_color_in_image(img, marker_color, config.color_tolerance):
-                    markers_found += 1
+            # Methode 1: Template Matching (wenn Template definiert)
+            if item.template:
+                if not OPENCV_AVAILABLE:
+                    print(f"  [WARNUNG] OpenCV nicht verfügbar für Template '{item.template}'")
+                    continue
+                matched, confidence, pos = match_template_in_image(img, item.template, item.min_confidence)
 
-            # Item erkannt wenn genug Marker-Farben gefunden
-            if CONFIG.get("require_all_markers", True):
-                # ALLE Marker müssen gefunden werden
-                min_required = len(item.marker_colors)
-            else:
-                # Nur Mindestanzahl muss gefunden werden
-                min_required = CONFIG.get("min_markers_required", 2)
-                min_required = min(min_required, len(item.marker_colors))
-            if markers_found >= min_required:
-                print(f"  → {slot.name}: {item.name} erkannt (P{item.priority}, {markers_found}/{len(item.marker_colors)} Marker)")
-                if item.priority < slot_best_priority:
-                    slot_best_priority = item.priority
-                    slot_best_item = item
+                if CONFIG.get("debug_detection", False):
+                    status = "✓" if matched else "✗"
+                    threshold_info = f"≥{item.min_confidence:.0%}" if not matched else ""
+                    print(f"[DEBUG]   {status} {item.name}: {confidence:.0%} {threshold_info}")
 
-        # Merke das beste Item für diesen Slot
-        if slot_best_item:
-            found_items.append((slot, slot_best_item, slot_best_priority))
+                if matched:
+                    item_matched = True
+                    match_info = f"Template {confidence:.0%}"
+            # Methode 2: Marker-Farben (Fallback oder wenn kein Template)
+            elif item.marker_colors:
+                # Berechne min_required vor der Schleife für Early-Exit
+                if CONFIG.get("require_all_markers", True):
+                    min_required = len(item.marker_colors)
+                else:
+                    min_required = min(CONFIG.get("min_markers_required", 2), len(item.marker_colors))
+
+                # Prüfe ob Marker-Farben vorhanden sind (mit Early-Exit-Optimierung)
+                markers_found = 0
+                markers_missing = 0
+                max_allowed_missing = len(item.marker_colors) - min_required
+
+                for marker_color in item.marker_colors:
+                    if find_color_in_image(img, marker_color, config.color_tolerance):
+                        markers_found += 1
+                        # Early exit: Genug Marker gefunden
+                        if markers_found >= min_required:
+                            break
+                    else:
+                        markers_missing += 1
+                        # Early exit: Zu viele Marker fehlen
+                        if markers_missing > max_allowed_missing:
+                            break
+
+                # Item erkannt wenn genug Marker-Farben gefunden
+                if markers_found >= min_required:
+                    item_matched = True
+                    match_info = f"{markers_found}/{len(item.marker_colors)} Marker"
+
+                if CONFIG.get("debug_detection", False):
+                    status = "✓" if item_matched else "✗"
+                    print(f"[DEBUG]   {status} {item.name}: {markers_found}/{len(item.marker_colors)} Marker (min {min_required})")
+
+            # Item erkannt? → Sofort hinzufügen und zum nächsten Slot
+            # (Ein Slot enthält maximal 1 Item, keine Prioritäts-Konkurrenz)
+            if item_matched:
+                print(f"  → {slot.name}: {item.name} erkannt ({match_info})")
+                found_items.append((slot, item, item.priority))
+                break  # Nächster Slot - dieses Item ist gefunden
 
     if not found_items:
         print("[SCAN] Kein Item erkannt.")
         return []
 
-    if mode == "all":
-        # Alle gefundenen Slots zurückgeben
-        print(f"[SCAN] {len(found_items)} Items gefunden - klicke alle!")
+    # Modus "every": Alle Treffer ohne Filterung (für Spiele mit Duplikaten)
+    if mode == "every":
+        print(f"[SCAN] {len(found_items)} Item(s) gefunden - klicke alle (ohne Filter)!")
         return [(slot.click_pos, item) for slot, item, priority in found_items]
+
+    # Gruppiere nach Kategorie und behalte nur das beste pro Kategorie
+    # Kategorie = item.category oder item.name (falls keine Kategorie gesetzt)
+    best_per_category = {}  # {category: (slot, item, priority)}
+    for slot, item, priority in found_items:
+        cat = item.category or item.name  # Fallback auf Item-Name
+        if cat not in best_per_category or priority < best_per_category[cat][2]:
+            best_per_category[cat] = (slot, item, priority)
+
+    # Debug: Zeige Kategorie-Filterung
+    if CONFIG.get("debug_detection", False) and len(found_items) != len(best_per_category):
+        print(f"[DEBUG] {len(found_items)} Items gefunden, {len(best_per_category)} nach Kategorie-Filter")
+        for cat, (slot, item, prio) in best_per_category.items():
+            print(f"[DEBUG]   [{cat}] → {item.name} (P{prio}) in {slot.name}")
+
+    filtered_items = list(best_per_category.values())
+
+    if mode == "all":
+        # Alle besten pro Kategorie zurückgeben
+        print(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!")
+        return [(slot.click_pos, item) for slot, item, priority in filtered_items]
     else:
-        # Nur das beste Item zurückgeben
-        found_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
-        best_slot, best_item, best_priority = found_items[0]
+        # Nur das absolute beste Item zurückgeben
+        filtered_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
+        best_slot, best_item, best_priority = filtered_items[0]
         print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (P{best_priority})")
         return [(best_slot.click_pos, best_item)]
 
@@ -2917,14 +4172,14 @@ def run_sequence_editor(state: AutoClickerState) -> None:
             if seq:
                 print(f"  [{i+1}] {seq}")
 
-    print("\nAuswahl (oder 'abbruch'):")
+    print("\nAuswahl (oder 'cancel'):")
 
     while True:
         try:
             choice = input("> ").strip().lower()
 
-            if choice == "abbruch":
-                print("[ABBRUCH] Editor beendet.")
+            if choice in ("cancel", "abbruch"):
+                print("[CANCEL] Editor beendet.")
                 return
 
             choice_num = int(choice)
@@ -2980,13 +4235,20 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("\n" + "=" * 60)
     print("  PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)")
     print("=" * 60)
-    start_steps = edit_phase(state, start_steps, "START")
+    result = edit_phase(state, start_steps, "START")
+    if result is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
+    start_steps = result
 
     # Dann LOOP-Phasen bearbeiten (mehrere möglich)
     print("\n" + "=" * 60)
     print("  PHASE 2: LOOP-PHASEN (können mehrere sein)")
     print("=" * 60)
     loop_phases = edit_loop_phases(state, loop_phases)
+    if loop_phases is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
 
     # Gesamt-Zyklen abfragen
     if loop_phases:
@@ -3012,7 +4274,11 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("  PHASE 3: END-SEQUENZ (wird einmal am Ende ausgeführt)")
     print("=" * 60)
     print("\n  (Optional: Aufräumen, Logout, etc.)")
-    end_steps = edit_phase(state, end_steps, "END")
+    result = edit_phase(state, end_steps, "END")
+    if result is None:
+        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        return
+    end_steps = result
 
     # Sequenz erstellen und speichern
     new_sequence = Sequence(
@@ -3050,8 +4316,12 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 
-def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> list[LoopPhase]:
-    """Bearbeitet mehrere Loop-Phasen."""
+def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> Optional[list[LoopPhase]]:
+    """Bearbeitet mehrere Loop-Phasen.
+
+    Returns:
+        Liste der Loop-Phasen bei 'fertig', None bei 'cancel'.
+    """
 
     if loop_phases:
         print(f"\nAktuelle Loop-Phasen ({len(loop_phases)}):")
@@ -3060,11 +4330,13 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
 
     print("\n" + "-" * 60)
     print("Befehle:")
-    print("  add        - Neue Loop-Phase hinzufügen")
-    print("  edit <Nr>  - Loop-Phase bearbeiten (z.B. 'edit 1')")
-    print("  del <Nr>   - Loop-Phase löschen")
-    print("  show       - Alle Loop-Phasen anzeigen")
-    print("  fertig     - Loop-Phasen abschließen")
+    print("  add            - Neue Loop-Phase hinzufügen")
+    print("  edit <Nr>      - Loop-Phase bearbeiten (z.B. 'edit 1')")
+    print("  del <Nr>       - Loop-Phase löschen")
+    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
+    print("  del all        - ALLE Loop-Phasen löschen")
+    print("  show           - Alle Loop-Phasen anzeigen")
+    print("  done | cancel")
     print("-" * 60)
 
     while True:
@@ -3072,8 +4344,10 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
             prompt = f"[LOOPS: {len(loop_phases)}]"
             user_input = input(f"{prompt} > ").strip().lower()
 
-            if user_input == "fertig":
+            if user_input == "done":
                 return loop_phases
+            elif user_input == "cancel":
+                return None  # Abbruch signalisieren
             elif user_input == "":
                 continue
             elif user_input == "show":
@@ -3095,6 +4369,8 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
 
                 print(f"\n  Schritte für {loop_name} hinzufügen:")
                 steps = edit_phase(state, [], loop_name)
+                if steps is None:
+                    return None  # Abbruch durchreichen
 
                 repeat = 1
                 try:
@@ -3114,7 +4390,10 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                     if 1 <= edit_num <= len(loop_phases):
                         lp = loop_phases[edit_num - 1]
                         print(f"\n  Bearbeite {lp.name}:")
-                        lp.steps = edit_phase(state, lp.steps, lp.name)
+                        new_steps = edit_phase(state, lp.steps, lp.name)
+                        if new_steps is None:
+                            return None  # Abbruch durchreichen
+                        lp.steps = new_steps
                         try:
                             repeat_input = input(f"  Wiederholungen (aktuell {lp.repeat}, Enter = behalten): ").strip()
                             if repeat_input:
@@ -3126,6 +4405,38 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                         print(f"  → Ungültige Nr! Verfügbar: 1-{len(loop_phases)}")
                 except ValueError:
                     print("  → Format: edit <Nr>")
+                continue
+
+            elif user_input == "del all":
+                if not loop_phases:
+                    print("  → Keine Loop-Phasen vorhanden!")
+                    continue
+                confirm = input(f"  {len(loop_phases)} Loop-Phase(n) wirklich löschen? (j/n): ").strip().lower()
+                if confirm == "j":
+                    count = len(loop_phases)
+                    loop_phases.clear()
+                    print(f"  ✓ {count} Loop-Phase(n) gelöscht!")
+                else:
+                    print("  → Abgebrochen")
+                continue
+
+            elif user_input.startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-3
+                try:
+                    range_part = user_input[4:]
+                    start, end = map(int, range_part.split("-"))
+                    if start < 1 or end > len(loop_phases) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(loop_phases)}")
+                        continue
+                    count = end - start + 1
+                    confirm = input(f"  {count} Loop-Phase(n) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
+                    if confirm == "j":
+                        del loop_phases[start-1:end]
+                        print(f"  ✓ {count} Loop-Phase(n) gelöscht!")
+                    else:
+                        print("  → Abgebrochen")
+                except ValueError:
+                    print("  → Format: del <Nr>-<Nr>")
                 continue
 
             elif user_input.startswith("del "):
@@ -3141,7 +4452,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> l
                 continue
 
             else:
-                print("  → Unbekannter Befehl. Nutze: add, edit <Nr>, del <Nr>, show, fertig")
+                print("  → Unbekannter Befehl")
 
         except (KeyboardInterrupt, EOFError):
             raise
@@ -3152,6 +4463,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
 
     Formate:
     - else skip          -> überspringen
+    - else restart       -> Sequenz neu starten
     - else <Nr> [delay]  -> Punkt klicken (optional mit Verzögerung)
     - else key <Taste>   -> Taste drücken
 
@@ -3165,6 +4477,10 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     # else skip
     if first == "skip":
         return {"else_action": "skip"}
+
+    # else restart
+    if first == "restart":
+        return {"else_action": "restart"}
 
     # else key <Taste>
     if first == "key" and len(else_parts) >= 2:
@@ -3200,12 +4516,16 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
         pass
 
     print(f"  → Unbekanntes ELSE-Format: {' '.join(else_parts)}")
-    print("     Formate: else skip | else <Nr> [delay] | else key <Taste>")
+    print("     Formate: else skip | else restart | else <Nr> [delay] | else key <Taste>")
     return {}
 
 
-def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> list[SequenceStep]:
-    """Bearbeitet eine Phase (Start oder Loop) der Sequenz."""
+def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
+    """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
+
+    Returns:
+        Liste der Schritte bei 'fertig', None bei 'cancel'.
+    """
 
     if steps:
         print(f"\nAktuelle {phase_name}-Schritte ({len(steps)}):")
@@ -3227,14 +4547,19 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
-    print("  scan <Name>       - Item-Scan: klicke BESTES Item")
-    print("  scan <Name> all   - Item-Scan: klicke ALLE Items")
+    print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
+    print("  scan <Name> best  - Item-Scan: nur 1 Item total")
+    print("  scan <Name> every - Item-Scan: alle Treffer (für Duplikate)")
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
     print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
+    print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
+    print("Punkte verwalten:")
+    print("  learn <Name>      - Neuen Punkt erstellen")
+    print("  points            - Alle Punkte anzeigen")
     print("  del <Nr>          - Schritt löschen")
-    print("  clear / show / fertig / abbruch")
+    print("  clear | show | done | cancel")
     print("-" * 60)
 
     while True:
@@ -3242,11 +4567,11 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             prompt = f"[{phase_name}: {len(steps)}]"
             user_input = input(f"{prompt} > ").strip()
 
-            if user_input.lower() == "fertig":
+            if user_input.lower() == "done":
                 return steps
-            elif user_input.lower() == "abbruch":
-                print("[ABBRUCH] Sequenz nicht gespeichert.")
-                raise KeyboardInterrupt
+            elif user_input.lower() == "cancel":
+                print("[CANCEL] Phase abgebrochen.")
+                return None
             elif user_input.lower() == "":
                 continue
             elif user_input.lower() == "show":
@@ -3273,22 +4598,63 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  → Format: del <Nr>")
                 continue
 
+            elif user_input.lower() == "points":
+                # Alle Punkte anzeigen
+                with state.lock:
+                    if state.points:
+                        print("\n  Verfügbare Punkte:")
+                        for i, p in enumerate(state.points):
+                            print(f"    {i+1}. {p.name} ({p.x}, {p.y})")
+                    else:
+                        print("  (Keine Punkte vorhanden)")
+                continue
+
+            elif user_input.lower().startswith("learn"):
+                # Neuen Punkt erstellen
+                # Format: "learn" oder "learn <Name>"
+                parts = user_input.split(maxsplit=1)
+                if len(parts) > 1:
+                    point_name = parts[1].strip()
+                else:
+                    point_name = input("  Punkt-Name: ").strip()
+                    if not point_name or point_name.lower() in ("cancel", "abbruch"):
+                        print("  → Abgebrochen")
+                        continue
+
+                print(f"\n  Bewege die Maus zur Position für '{point_name}'")
+                print("  Drücke Enter...")
+                input()
+                x, y = get_cursor_pos()
+
+                with state.lock:
+                    new_point = ClickPoint(x, y, point_name)
+                    state.points.append(new_point)
+                    point_num = len(state.points)
+
+                save_data(state)
+                print(f"  ✓ Punkt {point_num} erstellt: '{point_name}' bei ({x}, {y})")
+                print(f"    → Verwenden mit: {point_num} <Zeit>")
+                continue
+
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
-                # Format: "scan <Name> [all] [else ...]"
+                # Format: "scan <Name> [all|best|every] [else ...]"
                 scan_parts = user_input[5:].strip().split()
                 if not scan_parts:
-                    print("  → Format: scan <Name> [all] [else skip|<Nr>|key <Taste>]")
+                    print("  → Format: scan <Name> [all|best|every] [else ...]")
+                    print("    all:   bestes Item pro Kategorie (Standard)")
+                    print("    best:  nur 1 Item total (das absolute Beste)")
+                    print("    every: alle Treffer ohne Filter (für Duplikate)")
                     continue
 
                 scan_name = scan_parts[0]
-                scan_mode = "best"  # Standard: nur bestes Item
+                scan_mode = "all"  # Standard: bestes pro Kategorie
                 else_data = {}
 
-                # Parse den Rest (all und/oder else)
+                # Parse den Rest (Modus und/oder else)
                 rest_parts = scan_parts[1:]
-                if rest_parts and rest_parts[0].lower() == "all":
-                    scan_mode = "all"
+                if rest_parts and rest_parts[0].lower() in ("best", "all", "every"):
+                    scan_mode = rest_parts[0].lower()
                     rest_parts = rest_parts[1:]
 
                 # Prüfe auf else
@@ -3619,14 +4985,14 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         if seq:
             print(f"  {i+1}. {seq}")
 
-    print("\nNummer eingeben | del <Nr> zum Löschen | 'abbruch':")
+    print("\nNummer eingeben | del <Nr> zum Löschen | 'cancel':")
 
     while True:
         try:
             user_input = input("> ").strip().lower()
 
-            if user_input == "abbruch":
-                print("[ABBRUCH] Keine Sequenz geladen.")
+            if user_input in ("cancel", "abbruch"):
+                print("[CANCEL] Keine Sequenz geladen.")
                 return
 
             # Löschen-Befehl
@@ -3679,6 +5045,9 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
                          total_steps: int, message: str) -> bool:
     """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
     remaining = seconds
+    debug_active = CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False)
+    last_remaining = -1  # Track um doppelte Ausgaben zu vermeiden
+
     while remaining > 0:
         # Check stop
         if state.stop_event.is_set():
@@ -3687,16 +5056,26 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         # Check skip
         if state.skip_event.is_set():
             state.skip_event.clear()
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            if debug_active:
+                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            else:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
             return True
 
         # Check pause
         if not wait_while_paused(state, message):
             return False
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+        # Ausgabe nur wenn sich remaining geändert hat (weniger Spam bei Debug)
+        current_remaining = int(remaining)
+        if current_remaining != last_remaining:
+            if debug_active:
+                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+            else:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+            last_remaining = current_remaining
 
         wait_time = min(1.0, remaining)
         if state.stop_event.wait(wait_time):
@@ -3751,6 +5130,12 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
         return True
 
+    elif step.else_action == "restart":
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", end="", flush=True)
+        state.restart_event.set()
+        return False  # Beendet aktuelle Ausführung, sequence_worker prüft restart_event
+
     return True
 
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
@@ -3762,6 +5147,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         state.stop_event.set()
         return False
 
+    # Debug: Zeige Schritt-Details
+    if CONFIG.get("debug_mode", False):
+        print(f"\n  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
+              f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
+
     # === SONDERFALL: Item-Scan Schritt ===
     if step.item_scan:
         mode = step.item_scan_mode
@@ -3770,31 +5160,32 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
         scan_results = execute_item_scan(state, step.item_scan, mode)
+        if CONFIG.get("debug_detection", False):
+            print(f"[DEBUG] scan_results = {scan_results}")
         if scan_results:
             # Klicke alle gefundenen Positionen
             for i, (pos, item) in enumerate(scan_results):
                 if state.stop_event.is_set():
                     return False
+                if CONFIG.get("debug_detection", False):
+                    print(f"[DEBUG] Klicke Item '{item.name}' bei ({pos[0]}, {pos[1]})")
                 send_click(pos[0], pos[1])
                 with state.lock:
                     state.total_clicks += 1
                     state.items_found += 1
 
-                # Bestätigungs-Klick falls für dieses Item definiert
+                # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
-                    confirm_ok = False
+                    confirm_x, confirm_y = item.confirm_point
+                    if CONFIG.get("debug_detection", False):
+                        print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
+                    if item.confirm_delay > 0:
+                        time.sleep(item.confirm_delay)
+                    send_click(confirm_x, confirm_y)
+                    if CONFIG.get("debug_detection", False):
+                        print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                     with state.lock:
-                        if item.confirm_point >= 1 and item.confirm_point <= len(state.points):
-                            confirm_pos = state.points[item.confirm_point - 1]
-                            confirm_ok = True
-                        else:
-                            print(f"\n  [WARNUNG] Bestätigungs-Punkt {item.confirm_point} nicht vorhanden!")
-                    if confirm_ok:
-                        if item.confirm_delay > 0:
-                            time.sleep(item.confirm_delay)
-                        send_click(confirm_pos.x, confirm_pos.y)
-                        with state.lock:
-                            state.total_clicks += 1
+                        state.total_clicks += 1
 
                 # 1 Sekunde Pause nach jedem Klick
                 time.sleep(1.0)
@@ -3837,6 +5228,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                                         "Vor Farbprüfung"):
                 return False
 
+        # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
+        if CONFIG.get("show_pixel_position", False):
+            set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
+            time.sleep(0.3)  # Kurz anzeigen wo geprüft wird
+
         # Warten auf Farbe an Pixel-Position (oder warten bis Farbe WEG ist)
         timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
         start_time = time.time()
@@ -3863,31 +5259,44 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                     dist = color_distance(current_color, step.wait_color)
 
                     # Bedingung: Farbe DA (dist <= Toleranz) oder Farbe WEG (dist > Toleranz)
-                    color_matches = dist <= PIXEL_WAIT_TOLERANCE
+                    # Toleranz dynamisch aus Config laden
+                    pixel_tolerance = CONFIG.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
+                    color_matches = dist <= pixel_tolerance
                     condition_met = (not color_matches) if step.wait_until_gone else color_matches
 
+                    # Debug-Ausgabe wenn aktiviert (persistente Ausgabe im Terminal)
+                    if CONFIG.get("debug_detection", False):
+                        current_name = get_color_name(current_color)
+                        elapsed = time.time() - start_time
+                        if step.wait_until_gone:
+                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
+                        else:
+                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
+
                     if condition_met:
-                        clear_line()
                         if step.wait_until_gone:
                             msg = "Farbe weg!"
                         else:
                             msg = "Farbe erkannt!"
-                        if step.wait_only:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                        if CONFIG.get("debug_detection", False):
+                            # Debug: keine Zeilenüberschreibung
+                            if step.wait_only:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                            else:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         else:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                            # Normal: Zeile überschreiben
+                            clear_line()
+                            if step.wait_only:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                            else:
+                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                         break
 
-                    # Debug-Ausgabe wenn aktiviert
-                    if DEBUG_DETECTION:
-                        current_name = get_color_name(current_color)
-                        elapsed = time.time() - start_time
-                        clear_line()
-                        if step.wait_until_gone:
-                            print(f"[{phase}] Warte bis WEG... Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
-                        else:
-                            print(f"[{phase}] Warte... Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} ({elapsed:.0f}s)", end="", flush=True)
-                        if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
+                    # Wenn Debug aktiv, warte und continue
+                    if CONFIG.get("debug_detection", False):
+                        check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+                        if state.stop_event.wait(check_interval):
                             return False
                         continue
 
@@ -3895,33 +5304,47 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             if elapsed >= timeout:
                 # Timeout erreicht - Else-Aktion ausführen falls vorhanden
                 if step.else_action:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                    if CONFIG.get("debug_detection", False):
+                        print(f"\n[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                    else:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
                     return execute_else_action(state, step, phase, step_num, total_steps)
                 print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
                 state.stop_event.set()  # Stoppt die ganze Sequenz
                 return False
 
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
+            # Status-Ausgabe (nur wenn NICHT im debug_detection Modus, da dort bereits ausgegeben)
+            if not CONFIG.get("debug_detection", False):
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
-            if state.stop_event.wait(PIXEL_CHECK_INTERVAL):
+            check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+            if state.stop_event.wait(check_interval):
                 return False
 
     elif step.delay_before > 0 or step.delay_max:
         # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
         actual_delay = step.get_actual_delay()
+        if CONFIG.get("debug_mode", False):
+            print(f"\n  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
         action = "Warten" if step.wait_only else "Klicke in"
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
             return False
+    else:
+        if CONFIG.get("debug_mode", False):
+            print(f"\n  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
 
     if state.stop_event.is_set():
         return False
 
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", end="", flush=True)
+        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         return True
 
     # === PHASE 2: Klick ausführen ===
@@ -3939,8 +5362,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         with state.lock:
             state.total_clicks += 1
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
 
         if MAX_TOTAL_CLICKS and state.total_clicks >= MAX_TOTAL_CLICKS:
             print(f"\n[INFO] Maximum von {MAX_TOTAL_CLICKS} Klicks erreicht.")
@@ -3983,6 +5409,23 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
+        # Debug: Zeige alle Schritte (mit Rahmen damit es nicht überschrieben wird)
+        if CONFIG.get("debug_mode", False):
+            print("\n" + "=" * 60)
+            print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
+            print("-" * 60)
+            for i, step in enumerate(sequence.start_steps):
+                print(f"  START[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s | wait_only={step.wait_only}")
+            for lp in sequence.loop_phases:
+                print(f"  --- {lp.name} (x{lp.repeat}) ---")
+                for i, step in enumerate(lp.steps):
+                    print(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s | wait_only={step.wait_only}")
+            for i, step in enumerate(sequence.end_steps):
+                print(f"  END[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s")
+            print("=" * 60)
+            print("[DEBUG] Drücke Enter zum Starten...")
+            input()  # Warte auf Bestätigung damit man die Werte sehen kann
+
         # Statistiken zurücksetzen
         state.total_clicks = 0
         state.items_found = 0
@@ -3993,6 +5436,12 @@ def sequence_worker(state: AutoClickerState) -> None:
 
     # Äußere Schleife für Zyklen (START → alle Loops → START → alle Loops → ...)
     while not state.stop_event.is_set() and not state.quit_event.is_set():
+        # Prüfe ob Neustart angefordert wurde
+        if state.restart_event.is_set():
+            state.restart_event.clear()
+            cycle_count = 0
+            print("\n[RESTART] Sequenz wird neu gestartet...")
+
         cycle_count += 1
 
         # Prüfen ob max Zyklen erreicht (0 = unendlich)
@@ -4016,6 +5465,8 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if not execute_step(state, step, i + 1, total_start, "START"):
                     break
 
+            if state.restart_event.is_set():
+                continue  # Neustart von oben
             if state.stop_event.is_set():
                 break
 
@@ -4044,11 +5495,25 @@ def sequence_worker(state: AutoClickerState) -> None:
                         if not execute_step(state, step, i + 1, total_steps, phase_label):
                             break
 
+                    # Restart innerhalb Loop-Phase?
+                    if state.restart_event.is_set():
+                        break
+
+                # Restart innerhalb Loop-Phase?
+                if state.restart_event.is_set():
+                    break
+
                 if not state.stop_event.is_set():
                     print(f"\n[{loop_phase.name}] Abgeschlossen.")
 
+            if state.restart_event.is_set():
+                continue  # Neustart von oben
             if state.stop_event.is_set():
                 break
+
+        # Restart angefordert?
+        if state.restart_event.is_set():
+            continue  # Neustart von oben
 
         # Wenn keine Loops oder total_cycles==1 → nach einem Durchlauf fertig
         if not has_loops or total_cycles == 1:
@@ -4156,7 +5621,7 @@ def handle_reset(state: AutoClickerState) -> None:
     print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
 
     try:
-        confirm = input("> ").strip()
+        confirm = input("> ").strip().upper()
         if confirm != "JA":
             print("[ABBRUCH] Nichts wurde gelöscht.")
             return
@@ -4306,27 +5771,34 @@ def handle_show(state: AutoClickerState) -> None:
 
 def handle_toggle(state: AutoClickerState) -> None:
     """Startet oder stoppt die Sequenz."""
+    # Prüfe ob bereits läuft → stoppen
     with state.lock:
         if state.is_running:
             state.stop_event.set()
             print("\n[TOGGLE] Stoppe Sequenz...")
-        else:
-            if not state.active_sequence:
-                print("\n[FEHLER] Keine Sequenz geladen!")
-                print("         Erstelle eine mit CTRL+ALT+E oder lade eine mit CTRL+ALT+L")
-                return
+            return
 
-            if not state.points:
-                print("\n[FEHLER] Keine Punkte gespeichert!")
-                return
+    # Keine Sequenz geladen → automatisch Lade-Menü öffnen
+    if not state.active_sequence:
+        print("\n[INFO] Keine Sequenz geladen - öffne Lade-Menü...")
+        run_sequence_loader(state)
+        # Nach dem Laden prüfen ob jetzt eine Sequenz da ist
+        if not state.active_sequence:
+            return  # Nichts geladen
 
-            state.is_running = True
-            state.stop_event.clear()
-            state.pause_event.clear()
-            state.skip_event.clear()
+    # Jetzt starten
+    with state.lock:
+        if not state.points:
+            print("\n[FEHLER] Keine Punkte gespeichert!")
+            return
 
-            worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
-            worker.start()
+        state.is_running = True
+        state.stop_event.clear()
+        state.pause_event.clear()
+        state.skip_event.clear()
+
+        worker = threading.Thread(target=sequence_worker, args=(state,), daemon=True)
+        worker.start()
 
 def handle_pause(state: AutoClickerState) -> None:
     """Pausiert oder setzt die Sequenz fort."""
@@ -4444,15 +5916,19 @@ def register_hotkeys() -> bool:
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
 
-    success = True
+    failed = []
     for hk_id, vk, name in hotkeys:
         if not user32.RegisterHotKey(None, hk_id, modifiers, vk):
-            print(f"[FEHLER] Hotkey nicht registriert: {name}")
-            success = False
-        else:
-            print(f"  ✓ {name}")
+            failed.append(name)
 
-    return success
+    # Nur Fehler anzeigen
+    if failed:
+        print("[FEHLER] Folgende Hotkeys konnten nicht registriert werden:")
+        for name in failed:
+            print(f"  ✗ {name}")
+        return False
+
+    return True
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle Hotkeys."""
@@ -4521,11 +5997,10 @@ def main() -> int:
     load_global_items(state)
     load_all_item_scans(state)
 
-    # Hotkeys registrieren
-    print("Registriere Hotkeys...")
+    # Hotkeys registrieren (zeigt nur Fehler an)
     if not register_hotkeys():
         logger.warning("Nicht alle Hotkeys registriert.")
-    print()
+        print()
 
     print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
     print_status(state)

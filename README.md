@@ -14,7 +14,10 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Zufällige Verzögerung**: `1 30-45` = warte 30-45 Sekunden zufällig
 - **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
 - **Automatische Slot-Erkennung**: OpenCV-basierte Erkennung von Item-Slots
-- **Item-Scan System**: Items anhand von Marker-Farben erkennen und priorisieren
+- **Item-Scan System**: Items anhand von Marker-Farben oder Templates erkennen
+- **Kategorie-System**: Items gruppieren (z.B. Hosen, Jacken) - nur bestes pro Kategorie klicken
+- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
+- **Preset-System**: Slots und Items als benannte Presets speichern
 - **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
@@ -23,6 +26,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
+- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
 
 ## Voraussetzungen
 
@@ -49,57 +53,84 @@ python autoclicker.py
 | `CTRL+ALT+C` | Alle Punkte löschen |
 | `CTRL+ALT+X` | Factory Reset (ALLES löschen - wie frisch von GitHub) |
 | `CTRL+ALT+E` | Sequenz-Editor öffnen |
-| `CTRL+ALT+O` | Slot-Editor (Slots verwalten, automatisch erkennen) |
-| `CTRL+ALT+I` | Item-Editor (Items erstellen, von Slots lernen) |
-| `CTRL+ALT+N` | Item-Scan Editor (Scans konfigurieren) |
+| `CTRL+ALT+N` | Item-Scan System (Slots, Items, Scans) |
 | `CTRL+ALT+L` | Gespeicherte Sequenz laden |
 | `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
 | `CTRL+ALT+T` | Farb-Analysator |
-| `CTRL+ALT+S` | Start/Stop der aktiven Sequenz |
+| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen) |
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
 | `CTRL+ALT+Q` | Programm beenden |
 
-## Slot-Editor (`CTRL+ALT+O`)
+## Item-Scan System (`CTRL+ALT+N`)
 
-Verwaltet Bereiche wo Items erscheinen können.
+Das Item-Scan System bietet ein Menü mit folgenden Optionen:
+- **[1] Slots bearbeiten** - Bereiche wo Items erscheinen können
+- **[2] Items bearbeiten** - Item-Profile für die Erkennung
+- **[3] Scans bearbeiten** - Slots und Items verknüpfen
 
-### Befehle
+### Slot-Editor (Menü → 1)
+
+Verwaltet Bereiche wo Items erscheinen können. Arbeitet mit **Presets** - wie beim Sequenz-Editor wird am Anfang nach einem Namen gefragt.
+
+**Ablauf:**
+1. [0] Neues Preset erstellen → Name eingeben
+2. [1-n] Bestehendes Preset bearbeiten
+3. Slots hinzufügen/bearbeiten/löschen
+4. `done` → Preset wird gespeichert
+5. `cancel` → Änderungen werden verworfen
+
+**Befehle im Editor:**
 
 | Befehl | Beschreibung |
 |--------|--------------|
-| `detect` | Automatische Slot-Erkennung mit OpenCV |
+| `auto` | Automatische Slot-Erkennung mit OpenCV |
 | `add` | Manuell einen Slot hinzufügen |
 | `del <Nr>` | Slot löschen |
 | `del <Start>-<Ende>` | Mehrere Slots löschen (z.B. `del 1-7`) |
 | `del all` | Alle Slots löschen |
 | `edit <Nr>` | Slot bearbeiten |
-| `list` | Alle Slots anzeigen |
-| `exit` | Editor verlassen |
+| `show` | Alle Slots anzeigen |
+| `done` | Preset speichern und Editor verlassen |
+| `cancel` | Änderungen verwerfen und Editor verlassen |
 
 ### Automatische Erkennung
 
-Mit `detect` werden Slots automatisch per Farbe erkannt:
-1. Screenshot aufnehmen oder aus Datei laden
-2. Hintergrundfarbe des Slots angeben
-3. Slots werden automatisch erkannt und nummeriert
+Mit `auto` werden Slots automatisch per Farbe erkannt:
+1. Region markieren (oben-links, unten-rechts)
+2. Screenshot wird erstellt
+3. Hintergrundfarbe des Slots angeben
+4. Slots werden automatisch erkannt und nummeriert
+5. Screenshot und Vorschau werden in `Screenshots/` gespeichert
 
-## Item-Editor (`CTRL+ALT+I`)
+### Item-Editor (Menü → 2)
 
-Verwaltet Item-Profile für die Erkennung.
+Verwaltet Item-Profile für die Erkennung. Arbeitet mit **Presets** - wie beim Sequenz-Editor wird am Anfang nach einem Namen gefragt.
 
-### Befehle
+**Ablauf:**
+1. [0] Neues Preset erstellen → Name eingeben
+2. [1-n] Bestehendes Preset bearbeiten
+3. Items lernen/hinzufügen/bearbeiten/löschen
+4. `done` → Preset wird gespeichert
+5. `cancel` → Änderungen werden verworfen
+
+**Befehle im Editor:**
 
 | Befehl | Beschreibung |
 |--------|--------------|
-| `learn <Nr>` | Item von Slot Nr. lernen (scannt Marker-Farben) |
+| `learn <Nr>` | Item von Slot Nr. lernen (scannt Marker-Farben + Template) |
 | `add` | Manuell ein Item hinzufügen |
+| `edit <Nr>` | Item bearbeiten (Priorität, Farben, Bestätigung) |
+| `rename <Nr>` | Item umbenennen (inkl. Template-Datei) |
 | `del <Nr>` | Item löschen |
+| `del <Start>-<Ende>` | Mehrere Items löschen (z.B. `del 1-5`) |
 | `del all` | Alle Items löschen |
-| `edit <Nr>` | Item bearbeiten (Name, Priorität, Bestätigung) |
-| `list` | Alle Items anzeigen |
-| `exit` | Editor verlassen |
+| `template <Nr>` | Template für Item setzen/entfernen |
+| `templates` | Verfügbare Templates anzeigen |
+| `show` | Alle Items anzeigen |
+| `done` | Preset speichern und Editor verlassen |
+| `cancel` | Änderungen verwerfen und Editor verlassen |
 
 ### Item lernen
 
@@ -107,8 +138,48 @@ Mit `learn <Nr>` wird ein Item vom entsprechenden Slot gelernt:
 1. Slot-Nummer eingeben
 2. 1 Sekunde warten (Item muss sichtbar sein)
 3. Marker-Farben werden automatisch gescannt
-4. Name und Priorität eingeben
-5. Optional: Bestätigungs-Klick konfigurieren
+4. Name, Priorität und **Kategorie** eingeben
+5. Optional: Template-Screenshot erstellen
+6. Optional: Bestätigungs-Klick konfigurieren
+
+### Kategorie-System
+
+Items können einer **Kategorie** zugeordnet werden (z.B. "Hosen", "Jacken", "Juwelen"):
+
+- Items **derselben Kategorie** konkurrieren - nur das mit der niedrigsten Priorität wird geklickt
+- Items **verschiedener Kategorien** konkurrieren nicht - alle werden geklickt
+- Ohne Kategorie ist jedes Item seine eigene Kategorie
+
+**Beispiel:**
+```
+Pinkes Juwel   [Kategorie: Juwelen]  Priorität 1  ← wird geklickt
+Blaues Juwel   [Kategorie: Juwelen]  Priorität 2  ← wird NICHT geklickt (P1 ist besser)
+Rote Jacke     [Kategorie: Jacken]   Priorität 1  ← wird geklickt (andere Kategorie)
+```
+
+**JSON-Format:**
+```json
+{
+  "Pinkes Juwel": {
+    "name": "Pinkes Juwel",
+    "priority": 1,
+    "template": "pinkes_juwel.png",
+    "min_confidence": 0.9,
+    "category": "Juwelen"
+  }
+}
+```
+
+### Template-Matching
+
+Items können per **Template-Matching** (Screenshot-Vergleich) erkannt werden:
+
+1. Bei `learn` wird automatisch ein Template erstellt
+2. Mit `template <Nr>` kann ein Template nachträglich gesetzt werden
+3. Templates werden in `items/templates/` gespeichert
+4. `min_confidence` (0.0-1.0) bestimmt wie genau das Match sein muss
+
+Template-Matching ist genauer als Marker-Farben, besonders bei ähnlichen Items.
 
 ## Sequenz-Editor (`CTRL+ALT+E`)
 
@@ -137,16 +208,20 @@ Eine Sequenz besteht aus drei Phasen:
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
 | `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
-| `scan <Name>` | Item-Scan ausführen, bestes Item klicken |
-| `scan <Name> all` | Item-Scan ausführen, ALLE Items klicken |
+| `scan <Name>` | Item-Scan ausführen (bestes pro Kategorie) |
+| `scan <Name> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
+| `scan <Name> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
 | `... else skip` | Bei Fehlschlag überspringen |
+| `... else restart` | Bei Fehlschlag Sequenz neu starten |
 | `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
+| `learn <Name>` | Neuen Punkt erstellen (direkt im Editor) |
+| `points` | Alle verfügbaren Punkte anzeigen |
 | `del <Nr>` | Schritt löschen |
 | `clear` | Alle Schritte löschen |
 | `show` | Aktuelle Schritte anzeigen |
-| `fertig` | Phase abschließen |
-| `abbruch` | Editor abbrechen |
+| `done` | Phase abschließen und speichern |
+| `cancel` | Editor abbrechen (ohne Speichern) |
 
 ### Verfügbare Tasten
 
@@ -161,19 +236,19 @@ Eine Sequenz besteht aus drei Phasen:
 [START: 0] > 1 5           # Punkt 1 klicken, 5s warten
 [START: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
 [START: 2] > key enter     # Enter-Taste drücken
-[START: 3] > fertig
+[START: 3] > done
 
 [Loop 1: 0] > 3 30-45      # Punkt 3 klicken, 30-45s zufällig warten
-[Loop 1: 1] > scan items   # Item-Scan "items" ausführen
+[Loop 1: 1] > scan items   # Item-Scan ausführen (bestes pro Kategorie)
 [Loop 1: 2] > wait 10-15   # 10-15s zufällig warten ohne Klick
 [Loop 1: 3] > 4 gone       # Warten bis Farbe verschwindet, dann Punkt 4 klicken
-[Loop 1: 4] > fertig
+[Loop 1: 4] > done
 
 Zyklen: 10                 # 10 Durchläufe
 
 [END: 0] > 5 0             # Am Ende: Punkt 5 klicken (z.B. Logout)
 [END: 1] > key enter       # Enter drücken
-[END: 2] > fertig
+[END: 2] > done
 ```
 
 ## Laufzeit-Steuerung
@@ -198,17 +273,38 @@ STATISTIKEN:
 
 ## Item-Scan System
 
-Das Item-Scan System erkennt Items anhand ihrer Marker-Farben:
+Das Item-Scan System erkennt Items anhand ihrer Marker-Farben oder Templates:
 
-1. **Slots erstellen** (`CTRL+ALT+O`): Bereiche wo Items erscheinen können
-2. **Items lernen** (`CTRL+ALT+I`): Mit `learn <Nr>` Marker-Farben von Slot scannen
-3. **Scan konfigurieren** (`CTRL+ALT+N`): Slots und Items verknüpfen
-4. **In Sequenz nutzen**: `scan <Name>` oder `scan <Name> all`
+1. **Slots erstellen** (`CTRL+ALT+N` → Menü 1): Bereiche wo Items erscheinen können
+2. **Items lernen** (`CTRL+ALT+N` → Menü 2): Mit `learn <Nr>` Marker-Farben + Template scannen
+3. **Kategorien zuweisen**: Items gruppieren (z.B. "Hosen", "Jacken")
+4. **Scan konfigurieren** (`CTRL+ALT+N` → Menü 3): Slots und Items verknüpfen
+5. **In Sequenz nutzen**: `scan <Name>`, `scan <Name> best` oder `scan <Name> every`
 
-### Ablauf
+### Scan-Modi
 
-- `scan items` → Scannt alle Slots, klickt das Item mit bester Priorität
-- `scan items all` → Scannt alle Slots, klickt ALLE erkannten Items
+| Modus | Beschreibung |
+|-------|-------------|
+| `scan items` | Bestes Item pro Kategorie (Standard) |
+| `scan items best` | Nur 1 Item total (das absolute Beste) |
+| `scan items every` | Alle Treffer ohne Filter (für Duplikate) |
+
+**Wann welchen Modus?**
+- **all** (Standard): Für Spiele wo jedes Item nur 1x im Inventar erscheint
+- **best**: Wenn nur das allerbeste Item geklickt werden soll
+- **every**: Für Spiele wo dasselbe Item in mehreren Slots liegen kann
+
+### Beispiel mit Kategorien
+
+Gefundene Items:
+- Pinkes Juwel (Kategorie: Juwelen, P1)
+- Blaues Juwel (Kategorie: Juwelen, P2)
+- Rote Jacke (Kategorie: Jacken, P1)
+
+Ergebnis von `scan items`:
+- ✓ Pinkes Juwel wird geklickt (bestes Juwel)
+- ✗ Blaues Juwel wird NICHT geklickt (P2 < P1)
+- ✓ Rote Jacke wird geklickt (bestes/einziges bei Jacken)
 
 ## Bedingte Logik (ELSE)
 
@@ -219,6 +315,7 @@ Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen de
 | Befehl | Beschreibung |
 |--------|--------------|
 | `else skip` | Schritt überspringen, Sequenz fortsetzen |
+| `else restart` | Sequenz komplett neu starten |
 | `else <Nr>` | Anderen Punkt klicken |
 | `else <Nr> <Sek>` | Warten, dann anderen Punkt klicken |
 | `else key <Taste>` | Taste drücken |
@@ -227,9 +324,11 @@ Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen de
 
 ```
 scan items else skip           # Wenn kein Item: überspringen
+scan items else restart        # Wenn kein Item: Sequenz neu starten
 scan items else 2              # Wenn kein Item: Punkt 2 klicken
 scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
 1 pixel else skip              # Wenn Timeout: überspringen
+1 pixel else restart           # Wenn Timeout: von vorne beginnen
 1 pixel else key enter         # Wenn Timeout: Enter drücken
 wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ```
@@ -259,7 +358,10 @@ Wird beim ersten Start automatisch erstellt:
   "scan_reverse": false,
   "marker_count": 5,
   "require_all_markers": true,
-  "min_markers_required": 2
+  "min_markers_required": 2,
+  "slot_hsv_tolerance": 25,
+  "slot_inset": 10,
+  "slot_color_distance": 25
 }
 ```
 
@@ -274,27 +376,38 @@ Wird beim ersten Start automatisch erstellt:
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
 | `require_all_markers` | Alle Marker müssen gefunden werden (true/false) |
 | `min_markers_required` | Mindestanzahl Marker wenn `require_all_markers: false` |
+| `slot_hsv_tolerance` | HSV-Toleranz für automatische Slot-Erkennung |
+| `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
+| `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
 
 ## Dateistruktur
 
 ```
 Autoclicker-Idleclans/
-├── autoclicker.py      # Hauptprogramm
-├── config.json         # Konfiguration (auto-generiert)
-├── README.md           # Diese Datei
-├── sequences/          # Gespeicherte Sequenzen
-│   ├── points.json     # Aufgenommene Punkte
-│   └── *.json          # Sequenz-Dateien
-├── slots/              # Slot-Definitionen
-│   ├── slots.json      # Gespeicherte Slots
-│   └── *.png           # Screenshots und Vorschauen
-├── items/              # Item-Profile
-│   └── items.json      # Gespeicherte Items
-├── item_scans/         # Item-Scan Konfigurationen
-│   └── *.json          # Scan-Konfigurationen
-└── tools/              # Hilfs-Skripte
-    ├── create_slots.py # Manuelles Slot-Erstellen
-    └── detect_slots.py # Standalone Slot-Erkennung
+├── autoclicker.py          # Hauptprogramm
+├── config.json             # Konfiguration (auto-generiert)
+├── README.md               # Diese Datei
+├── sequences/              # Gespeicherte Sequenzen
+│   ├── points.json         # Aufgenommene Punkte
+│   └── *.json              # Sequenz-Dateien
+├── slots/                  # Slot-Konfigurationen
+│   ├── slots.json          # Aktive Slots
+│   └── presets/            # Slot-Presets
+│       └── *.json          # Benannte Slot-Presets
+├── items/                  # Item-Konfigurationen
+│   ├── items.json          # Aktive Items
+│   ├── templates/          # Template-Bilder für Matching
+│   │   └── *.png           # Item-Screenshots
+│   └── presets/            # Item-Presets
+│       └── *.json          # Benannte Item-Presets
+├── Screenshots/            # Screenshots und Vorschau-Bilder
+│   ├── screenshot_*.png    # Original-Screenshots
+│   └── preview_*.png       # Vorschau mit Markierungen
+├── item_scans/             # Item-Scan Konfigurationen
+│   └── *.json              # Scan-Konfigurationen
+└── tools/                  # Hilfswerkzeuge
+    ├── sync_json.py        # JSON-Dateien synchronisieren
+    └── slot_tester.py      # Slot-Erkennung testen
 ```
 
 ## Technische Details
@@ -308,6 +421,58 @@ Autoclicker-Idleclans/
 - Thread-basierte Ausführung
 - JSON-Persistenz
 - Multi-Monitor Unterstützung
+- Sichere Dateinamen (Path-Traversal-Schutz)
+- Bounds-Checking für Bildschirmregionen
+
+## Tools
+
+### Sync-Tool (`tools/sync_json.py`)
+
+Bringt alle JSON-Dateien auf den aktuellen Code-Stand:
+
+```bash
+python tools/sync_json.py
+```
+
+- Fehlende Felder mit Standardwerten ergänzen
+- Alte Formate konvertieren (z.B. `confirm_point` int → Koordinaten)
+- Presets erben Werte von globalen Dateien
+
+### Slot-Tester (`tools/slot_tester.py`)
+
+Testet die automatische Slot-Erkennung mit Debug-Ausgaben:
+
+```bash
+python tools/slot_tester.py
+```
+
+## Changelog
+
+### Neueste Änderungen
+
+- **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
+- **Slot-Tester**: Debug-Tool für Slot-Erkennung
+- **confirm_point als Koordinaten**: Robuster bei Punkt-Änderungen
+- **Scan-Modus "every"**: Alle Treffer ohne Filter klicken (für Spiele mit Duplikaten)
+- **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
+- **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
+- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
+- **Befehle vereinheitlicht**: `done`/`cancel` statt `fertig`/`abbruch` (beide funktionieren)
+- **CTRL+ALT+S Auto-Load**: Öffnet Lade-Menü wenn keine Sequenz geladen
+- **Step-Editor**: `learn` und `points` Befehle zum Punkte erstellen
+- **Item-Editor**: `rename` Befehl zum Umbenennen (inkl. Template-Datei)
+- **Scan-Modus**: Default ist jetzt `all` (bestes pro Kategorie), `best` für nur 1 Item
+- **Unicode-Support**: Templates mit Umlauten (ü, ä, ö) funktionieren jetzt
+
+### Ältere Änderungen
+
+- **Preset-System**: Slots und Items werden als benannte Presets gespeichert
+- **Screenshots-Ordner**: Alle Screenshots landen jetzt in `Screenshots/`
+- **Konsistente Befehle**: `del all`, `del <Nr>-<Nr>` in allen Editoren
+- **Performance**: Early-Exit bei Marker-Erkennung
+- **Sicherheit**: Path-Traversal-Schutz für Dateinamen
+- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
+- **Konfigurierbar**: Neue Optionen für Slot-Erkennung
 
 ## Lizenz
 

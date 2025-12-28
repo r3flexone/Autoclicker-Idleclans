@@ -37,8 +37,19 @@ env/
 .DS_Store
 Thumbs.db
 
-# User data (sequences and points)
-sequences/
-
 # User config (auto-generated with defaults)
 config.json
+
+# User data folders (auto-generated)
+sequences/
+slots/
+items/
+item_scans/
+Screenshots/
+
+# Tools debug output (keep .gitkeep)
+tools/debug/*
+!tools/debug/.gitkeep
+
+# Logs
+*.log
