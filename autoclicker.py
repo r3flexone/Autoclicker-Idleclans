@@ -374,15 +374,16 @@ kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 # =============================================================================
 @dataclass
 class ClickPoint:
-    """Ein Klickpunkt mit x,y Koordinaten."""
+    """Ein Klickpunkt mit x,y Koordinaten und stabiler ID."""
     x: int
     y: int
     name: str = ""  # Optionaler Name für den Punkt
+    id: int = 0     # Stabile ID für Referenzierung (bleibt bei Umsortierung erhalten)
 
     def __str__(self) -> str:
         if self.name:
-            return f"{self.name} ({self.x}, {self.y})"
-        return f"({self.x}, {self.y})"
+            return f"#{self.id} {self.name} ({self.x}, {self.y})"
+        return f"#{self.id} ({self.x}, {self.y})"
 
 @dataclass
 class SequenceStep:
@@ -621,8 +622,8 @@ def save_data(state: AutoClickerState) -> None:
     """Speichert Punkte und Sequenzen in JSON-Dateien."""
     ensure_sequences_dir()
 
-    # Punkte speichern
-    points_data = [{"x": p.x, "y": p.y, "name": p.name} for p in state.points]
+    # Punkte speichern (mit stabiler ID)
+    points_data = [{"id": p.id, "x": p.x, "y": p.y, "name": p.name} for p in state.points]
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         json.dump(points_data, f, indent=2, ensure_ascii=False)
 
@@ -665,7 +666,11 @@ def load_points(state: AutoClickerState) -> None:
         try:
             with open(points_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                state.points = [ClickPoint(p["x"], p["y"], p.get("name", "")) for p in data]
+                # Lade Punkte mit ID (Fallback für alte Dateien ohne ID)
+                state.points = []
+                for i, p in enumerate(data):
+                    point_id = p.get("id", i + 1)  # Fallback: Index + 1 für alte Dateien
+                    state.points.append(ClickPoint(p["x"], p["y"], p.get("name", ""), point_id))
             print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"[WARNUNG] points.json konnte nicht geladen werden: {e}")
@@ -673,6 +678,19 @@ def load_points(state: AutoClickerState) -> None:
             state.points = []
     else:
         print("[INFO] Keine gespeicherten Punkte gefunden.")
+
+def get_next_point_id(state: 'AutoClickerState') -> int:
+    """Gibt die nächste freie Punkt-ID zurück."""
+    if not state.points:
+        return 1
+    return max(p.id for p in state.points) + 1
+
+def get_point_by_id(state: 'AutoClickerState', point_id: int) -> Optional[ClickPoint]:
+    """Findet einen Punkt anhand seiner ID."""
+    for p in state.points:
+        if p.id == point_id:
+            return p
+    return None
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
     """Lädt eine einzelne Sequenz-Datei (mit Start + mehreren Loop-Phasen)."""
@@ -1745,8 +1763,8 @@ def print_points(state: AutoClickerState) -> None:
         if not state.points:
             print("  Keine Punkte gespeichert.")
         else:
-            for i, p in enumerate(state.points):
-                print(f"  P{i+1}: {p}")
+            for p in state.points:
+                print(f"  {p}")
 
     print("\n" + "=" * 50)
     print("VERFÜGBARE SEQUENZEN:")
@@ -2520,15 +2538,16 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 confirm_delay = 0.5
                 print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
                 print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
-                confirm_input = input("  Punkt-Nr für Bestätigung (Enter = Nein): ").strip()
+                confirm_input = input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
                 if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Abgebrochen")
                     continue
                 if confirm_input:
                     try:
-                        point_nr = int(confirm_input)
-                        if point_nr >= 1 and point_nr <= len(state.points):
-                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                        point_id = int(confirm_input)
+                        found_point = get_point_by_id(state, point_id)
+                        if found_point:
+                            confirm_point = found_point  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
                             if delay_input:
                                 try:
@@ -2536,7 +2555,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                 except ValueError:
                                     pass
                         else:
-                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                            print(f"  → Punkt #{point_id} existiert nicht")
                     except ValueError:
                         print("  → Keine gültige Zahl, keine Bestätigung")
 
@@ -2637,12 +2656,13 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
                 confirm_delay = 0.5
-                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja): ").strip()
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-ID = Ja): ").strip()
                 if confirm_input:
                     try:
-                        point_nr = int(confirm_input)
-                        if point_nr >= 1 and point_nr <= len(state.points):
-                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                        point_id = int(confirm_input)
+                        found_point = get_point_by_id(state, point_id)
+                        if found_point:
+                            confirm_point = found_point  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
@@ -2650,7 +2670,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                 except ValueError:
                                     pass
                         else:
-                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                            print(f"  → Punkt #{point_id} existiert nicht")
                     except ValueError:
                         pass
 
@@ -2703,14 +2723,15 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
                             # Bestätigung
                             current_confirm = f"({item.confirm_point.x},{item.confirm_point.y})" if item.confirm_point else "Keine"
-                            confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-Nr=setzen, 0=entfernen, Enter=behalten): ").strip()
+                            confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-ID=setzen, 0=entfernen, Enter=behalten): ").strip()
                             if confirm_input == "0":
                                 item.confirm_point = None
                             elif confirm_input:
                                 try:
-                                    point_nr = int(confirm_input)
-                                    if point_nr >= 1 and point_nr <= len(state.points):
-                                        item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                    point_id = int(confirm_input)
+                                    found_point = get_point_by_id(state, point_id)
+                                    if found_point:
+                                        item.confirm_point = found_point  # Koordinaten speichern
                                         delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
                                         if delay_input:
                                             try:
@@ -2718,7 +2739,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                             except ValueError:
                                                 pass
                                     else:
-                                        print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                                        print(f"  → Punkt #{point_id} existiert nicht")
                                 except ValueError:
                                     pass
 
@@ -3346,17 +3367,18 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 # Bestätigungs-Klick?
                 confirm_point = None
                 confirm_delay = 0.5
-                confirm_input = input("  Bestätigungs-Punkt Nr (Enter=Nein): ").strip()
+                confirm_input = input("  Bestätigungs-Punkt ID (Enter=Nein): ").strip()
                 if confirm_input:
                     try:
-                        point_nr = int(confirm_input)
-                        if point_nr >= 1 and point_nr <= len(state.points):
-                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                        point_id = int(confirm_input)
+                        found_point = get_point_by_id(state, point_id)
+                        if found_point:
+                            confirm_point = found_point  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
                             if delay_input:
                                 confirm_delay = float(delay_input)
                         else:
-                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                            print(f"  → Punkt #{point_id} existiert nicht")
                     except ValueError:
                         pass
 
@@ -3728,15 +3750,16 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
                 confirm_delay = 0.5
-                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-Nr = Ja, 'cancel'): ").strip()
+                confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-ID = Ja, 'cancel'): ").strip()
                 if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
                     continue
                 if confirm_input:
                     try:
-                        point_nr = int(confirm_input)
-                        if point_nr >= 1 and point_nr <= len(state.points):
-                            confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                        point_id = int(confirm_input)
+                        found_point = get_point_by_id(state, point_id)
+                        if found_point:
+                            confirm_point = found_point  # Koordinaten speichern
                             delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
                             if delay_input:
                                 try:
@@ -3744,7 +3767,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 except ValueError:
                                     confirm_delay = 0.5
                         else:
-                            print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                            print(f"  → Punkt #{point_id} existiert nicht")
                     except ValueError:
                         print("  → Keine gültige Zahl, Bestätigung übersprungen")
 
@@ -3790,15 +3813,16 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                         # Bestätigung bearbeiten
                         current_confirm = f"({item.confirm_point.x},{item.confirm_point.y})" if item.confirm_point else "Keine"
-                        confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
+                        confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-ID=setzen, 0=entfernen, Enter=behalten): ").strip()
                         if confirm_input == "0":
                             item.confirm_point = None
                             print("  → Bestätigung entfernt")
                         elif confirm_input:
                             try:
-                                point_nr = int(confirm_input)
-                                if point_nr >= 1 and point_nr <= len(state.points):
-                                    item.confirm_point = state.points[point_nr - 1]  # Koordinaten speichern
+                                point_id = int(confirm_input)
+                                found_point = get_point_by_id(state, point_id)
+                                if found_point:
+                                    item.confirm_point = found_point  # Koordinaten speichern
                                     delay_input = input(f"  Wartezeit (aktuell {item.confirm_delay}s, Enter=behalten): ").strip()
                                     if delay_input:
                                         try:
@@ -3806,7 +3830,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                         except ValueError:
                                             pass
                                 else:
-                                    print(f"  → Punkt {point_nr} existiert nicht (max: {len(state.points)})")
+                                    print(f"  → Punkt #{point_id} existiert nicht")
                             except ValueError:
                                 pass
 
@@ -4228,8 +4252,8 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     # Verfügbare Punkte anzeigen
     with state.lock:
         print("\nVerfügbare Punkte:")
-        for i, p in enumerate(state.points):
-            print(f"  P{i+1}: {p}")
+        for p in state.points:
+            print(f"  {p}")
 
     # Erst START-Phase bearbeiten
     print("\n" + "=" * 60)
@@ -4490,17 +4514,17 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
         print(f"  → Unbekannte Taste: '{key_name}'")
         return {}
 
-    # else <Nr> [delay] - Punkt klicken
+    # else <ID> [delay] - Punkt klicken (per ID)
     try:
-        point_num = int(first)
+        point_id = int(first)
         with state.lock:
-            if 1 <= point_num <= len(state.points):
-                point = state.points[point_num - 1]
+            point = get_point_by_id(state, point_id)
+            if point:
                 result = {
                     "else_action": "click",
                     "else_x": point.x,
                     "else_y": point.y,
-                    "else_name": point.name or f"Punkt {point_num}"
+                    "else_name": point.name or f"Punkt #{point_id}"
                 }
                 # Optional: Delay
                 if len(else_parts) >= 2:
@@ -4510,7 +4534,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
                         pass
                 return result
             else:
-                print(f"  → Punkt {point_num} nicht gefunden! Verfügbar: 1-{len(state.points)}")
+                print(f"  → Punkt #{point_id} nicht gefunden!")
                 return {}
     except ValueError:
         pass
@@ -4603,8 +4627,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 with state.lock:
                     if state.points:
                         print("\n  Verfügbare Punkte:")
-                        for i, p in enumerate(state.points):
-                            print(f"    {i+1}. {p.name} ({p.x}, {p.y})")
+                        for p in state.points:
+                            print(f"    {p}")
                     else:
                         print("  (Keine Punkte vorhanden)")
                 continue
@@ -4627,13 +4651,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 x, y = get_cursor_pos()
 
                 with state.lock:
-                    new_point = ClickPoint(x, y, point_name)
+                    new_id = get_next_point_id(state)
+                    new_point = ClickPoint(x, y, point_name, new_id)
                     state.points.append(new_point)
-                    point_num = len(state.points)
 
                 save_data(state)
-                print(f"  ✓ Punkt {point_num} erstellt: '{point_name}' bei ({x}, {y})")
-                print(f"    → Verwenden mit: {point_num} <Zeit>")
+                print(f"  ✓ Punkt #{new_id} erstellt: '{point_name}' bei ({x}, {y})")
+                print(f"    → Verwenden mit: {new_id} <Zeit>")
                 continue
 
             elif user_input.lower().startswith("scan "):
@@ -4833,13 +4857,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 print("  → Format: <Nr> <Sek> | <Nr> pixel | <Nr> <Sek> pixel [else ...]")
                 continue
 
-            point_num = int(parts[0])
+            point_id = int(parts[0])
 
             with state.lock:
-                if point_num < 1 or point_num > len(state.points):
-                    print(f"  → Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
+                point = get_point_by_id(state, point_id)
+                if not point:
+                    print(f"  → Punkt #{point_id} nicht gefunden!")
                     continue
-                point = state.points[point_num - 1]
                 point_x = point.x
                 point_y = point.y
                 point_name = point.name
@@ -5559,15 +5583,15 @@ def handle_record(state: AutoClickerState) -> None:
     x, y = get_cursor_pos()
 
     with state.lock:
-        count = len(state.points) + 1
-        name = f"P{count}"
-        point = ClickPoint(x, y, name)
+        new_id = get_next_point_id(state)
+        name = f"P{new_id}"
+        point = ClickPoint(x, y, name, new_id)
         state.points.append(point)
 
     # Auto-speichern
     save_data(state)
 
-    print(f"\n[RECORD] {name} hinzugefügt: ({x}, {y})")
+    print(f"\n[RECORD] #{new_id} {name} hinzugefügt: ({x}, {y})")
     print_status(state)
 
 def handle_undo(state: AutoClickerState) -> None:
@@ -5712,37 +5736,37 @@ def handle_show(state: AutoClickerState) -> None:
             if not user_input:
                 return
 
-            # Löschen-Befehl
+            # Löschen-Befehl (per ID)
             if user_input.lower().startswith("del "):
                 try:
-                    del_num = int(user_input[4:])
+                    del_id = int(user_input[4:])
                     with state.lock:
-                        if del_num < 1 or del_num > len(state.points):
-                            print(f"[FEHLER] Ungültiger Punkt! Verfügbar: 1-{len(state.points)}")
+                        point_to_del = get_point_by_id(state, del_id)
+                        if not point_to_del:
+                            print(f"[FEHLER] Punkt #{del_id} nicht gefunden!")
                             continue
-                        removed = state.points.pop(del_num - 1)
+                        state.points.remove(point_to_del)
                         num_points = len(state.points)
                     save_data(state)
-                    print(f"[OK] Punkt {del_num} gelöscht: {removed}")
+                    print(f"[OK] Punkt #{del_id} gelöscht: {point_to_del}")
                     if num_points == 0:
                         print("[INFO] Keine Punkte mehr vorhanden.")
                         return
                 except ValueError:
-                    print("[FEHLER] Format: del <Nr>")
+                    print("[FEHLER] Format: del <ID>")
                 continue
 
             parts = user_input.split(maxsplit=1)
-            point_num = int(parts[0])
+            point_id = int(parts[0])
 
             with state.lock:
-                if point_num < 1 or point_num > num_points:
-                    print(f"[FEHLER] Ungültiger Punkt! Verfügbar: 1-{num_points}")
+                point = get_point_by_id(state, point_id)
+                if not point:
+                    print(f"[FEHLER] Punkt #{point_id} nicht gefunden!")
                     continue
 
-                point = state.points[point_num - 1]
-
             if len(parts) == 1:
-                # Nur Nummer → Testen (Maus hinbewegen)
+                # Nur ID → Testen (Maus hinbewegen)
                 print(f"[TEST] Bewege Maus zu {point.name} ({point.x}, {point.y})...")
                 set_cursor_pos(point.x, point.y)
                 print(f"[TEST] Maus ist jetzt bei {point.name}. Neuer Name? (Enter = behalten)")
@@ -5750,19 +5774,19 @@ def handle_show(state: AutoClickerState) -> None:
                 new_name = input("> ").strip()
                 if new_name:
                     with state.lock:
-                        state.points[point_num - 1].name = new_name
+                        point.name = new_name
                     save_data(state)
-                    print(f"[OK] Punkt {point_num} umbenannt zu '{new_name}'")
+                    print(f"[OK] Punkt #{point_id} umbenannt zu '{new_name}'")
                 else:
                     print(f"[OK] Name '{point.name}' beibehalten.")
 
             else:
-                # Nummer + Name → Direkt umbenennen
+                # ID + Name → Direkt umbenennen
                 new_name = parts[1]
                 with state.lock:
-                    state.points[point_num - 1].name = new_name
+                    point.name = new_name
                 save_data(state)
-                print(f"[OK] Punkt {point_num} umbenannt zu '{new_name}'")
+                print(f"[OK] Punkt #{point_id} umbenannt zu '{new_name}'")
 
         except ValueError:
             print("[FEHLER] Ungültige Eingabe!")
