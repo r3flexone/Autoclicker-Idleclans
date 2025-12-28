@@ -161,6 +161,7 @@ DEFAULT_CONFIG = {
     "slot_hsv_tolerance": 25,           # HSV-Toleranz für Slot-Erkennung
     "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand
     "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss
+    "default_min_confidence": 0.9,      # Standard-Konfidenz für Template-Matching (90%)
 
     # === DEBUG-EINSTELLUNGEN ===
     "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
@@ -223,6 +224,7 @@ CONFIG = load_config()
 CLICKS_PER_POINT: int = CONFIG["clicks_per_point"]
 MAX_TOTAL_CLICKS: Optional[int] = CONFIG["max_total_clicks"]
 FAILSAFE_ENABLED: bool = CONFIG["failsafe_enabled"]
+DEFAULT_MIN_CONFIDENCE: float = CONFIG["default_min_confidence"]
 
 # =============================================================================
 # WINDOWS API KONSTANTEN
@@ -535,7 +537,7 @@ class ItemProfile:
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
-    min_confidence: float = 0.9  # Mindest-Konfidenz für Template-Match (0.0-1.0)
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE  # Mindest-Konfidenz für Template-Match
 
     def __str__(self) -> str:
         if self.template:
@@ -920,7 +922,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                     confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.9)
+                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
                 )
                 items.append(item)
 
@@ -1100,7 +1102,7 @@ def load_global_items(state: AutoClickerState) -> None:
                 confirm_point=cp,
                 confirm_delay=i.get("confirm_delay", 0.5),
                 template=i.get("template"),
-                min_confidence=i.get("min_confidence", 0.9)
+                min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
@@ -1274,7 +1276,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
                     confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.9)
+                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
                 )
 
         # Auch in aktive Datei speichern
@@ -1440,7 +1442,7 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
                     return True
         return False
 
-def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = 0.9) -> tuple:
+def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = DEFAULT_MIN_CONFIDENCE) -> tuple:
     """
     Sucht ein Template-Bild im gegebenen Bild mittels OpenCV Template Matching.
 
@@ -3409,9 +3411,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                     pass
 
                 # Konfidenz
-                min_confidence = 0.9
+                min_confidence = DEFAULT_MIN_CONFIDENCE
                 try:
-                    conf_input = input("  Min. Konfidenz % (Enter=90): ").strip()
+                    conf_input = input(f"  Min. Konfidenz % (Enter={int(DEFAULT_MIN_CONFIDENCE * 100)}): ").strip()
                     if conf_input:
                         min_confidence = max(0.1, min(1.0, float(conf_input) / 100))
                 except ValueError:
