@@ -620,6 +620,9 @@ class AutoClickerState:
     restart_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
+    # Konfiguration (thread-safe über lock)
+    config: dict = field(default_factory=dict)
+
 # =============================================================================
 # PERSISTENZ (Speichern/Laden)
 # =============================================================================
@@ -1368,13 +1371,15 @@ def send_key(key_name: str) -> bool:
     user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
     return True
 
-def check_failsafe() -> bool:
+def check_failsafe(state: 'AutoClickerState' = None) -> bool:
     """Prüft, ob die Maus in der Fail-Safe-Ecke ist."""
     if not FAILSAFE_ENABLED:
         return False
     x, y = get_cursor_pos()
-    failsafe_x = CONFIG.get("failsafe_x", 5)
-    failsafe_y = CONFIG.get("failsafe_y", 5)
+    # Nutze state.config wenn vorhanden, sonst globale CONFIG
+    cfg = state.config if state else CONFIG
+    failsafe_x = cfg.get("failsafe_x", 5)
+    failsafe_y = cfg.get("failsafe_y", 5)
     return x <= failsafe_x and y <= failsafe_y
 
 def clear_line() -> None:
@@ -4228,7 +4233,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
     # Scan-Reihenfolge: normal (1,2,3,4) oder reverse (4,3,2,1)
     slots_to_scan = config.slots
-    if CONFIG.get("scan_reverse", False):
+    if state.config.get("scan_reverse", False):
         slots_to_scan = list(reversed(config.slots))
         direction = "rückwärts"
     else:
@@ -4240,7 +4245,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
     for slot_idx, slot in enumerate(slots_to_scan):
         # Delay zwischen Slots (außer beim ersten)
-        slot_delay = CONFIG.get("scan_slot_delay", 0)
+        slot_delay = state.config.get("scan_slot_delay", 0)
         if slot_idx > 0 and slot_delay > 0:
             time.sleep(slot_delay)
 
@@ -4249,7 +4254,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         if img is None:
             continue
 
-        if CONFIG.get("debug_detection", False):
+        if state.config.get("debug_detection", False):
             print(f"[DEBUG] Scanne {slot.name}...")
 
         # Prüfe alle Item-Profile für diesen Slot
@@ -4264,7 +4269,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                     continue
                 matched, confidence, pos = match_template_in_image(img, item.template, item.min_confidence)
 
-                if CONFIG.get("debug_detection", False):
+                if state.config.get("debug_detection", False):
                     status = "✓" if matched else "✗"
                     threshold_info = f"≥{item.min_confidence:.0%}" if not matched else ""
                     print(f"[DEBUG]   {status} {item.name}: {confidence:.0%} {threshold_info}")
@@ -4275,10 +4280,10 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
             # Methode 2: Marker-Farben (Fallback oder wenn kein Template)
             elif item.marker_colors:
                 # Berechne min_required vor der Schleife für Early-Exit
-                if CONFIG.get("require_all_markers", True):
+                if state.config.get("require_all_markers", True):
                     min_required = len(item.marker_colors)
                 else:
-                    min_required = min(CONFIG.get("min_markers_required", 2), len(item.marker_colors))
+                    min_required = min(state.config.get("min_markers_required", 2), len(item.marker_colors))
 
                 # Prüfe ob Marker-Farben vorhanden sind (mit Early-Exit-Optimierung)
                 markers_found = 0
@@ -4302,7 +4307,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                     item_matched = True
                     match_info = f"{markers_found}/{len(item.marker_colors)} Marker"
 
-                if CONFIG.get("debug_detection", False):
+                if state.config.get("debug_detection", False):
                     status = "✓" if item_matched else "✗"
                     print(f"[DEBUG]   {status} {item.name}: {markers_found}/{len(item.marker_colors)} Marker (min {min_required})")
 
@@ -4335,7 +4340,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 best_clicked_prio = state.clicked_categories[cat]
                 if priority >= best_clicked_prio:
                     # Item ist schlechter oder gleich → überspringen
-                    if CONFIG.get("debug_detection", False):
+                    if state.config.get("debug_detection", False):
                         print(f"[DEBUG]   → {item.name} (P{priority}) übersprungen ('{cat}' bereits mit P{best_clicked_prio} geklickt)")
                     continue
                 # Item ist besser → wird später geklickt (nicht überspringen)
@@ -4344,7 +4349,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
             best_per_category[cat] = (slot, item, priority)
 
     # Debug: Zeige Kategorie-Filterung
-    if CONFIG.get("debug_detection", False) and len(found_items) != len(best_per_category):
+    if state.config.get("debug_detection", False) and len(found_items) != len(best_per_category):
         print(f"[DEBUG] {len(found_items)} Items gefunden, {len(best_per_category)} nach Kategorie-Filter")
         for cat, (slot, item, prio) in best_per_category.items():
             print(f"[DEBUG]   [{cat}] → {item.name} (P{prio}) in {slot.name}")
@@ -5280,7 +5285,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
                          total_steps: int, message: str) -> bool:
     """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
     remaining = seconds
-    debug_active = CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False)
+    debug_active = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
     last_remaining = -1  # Track um doppelte Ausgaben zu vermeiden
 
     while remaining > 0:
@@ -5377,13 +5382,13 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
 
     # Fail-Safe prüfen
-    if check_failsafe():
+    if check_failsafe(state):
         print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
         state.stop_event.set()
         return False
 
     # Debug: Zeige Schritt-Details
-    if CONFIG.get("debug_mode", False):
+    if state.config.get("debug_mode", False):
         print(f"  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
               f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
 
@@ -5395,14 +5400,14 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
         scan_results = execute_item_scan(state, step.item_scan, mode)
-        if CONFIG.get("debug_detection", False):
+        if state.config.get("debug_detection", False):
             print(f"[DEBUG] scan_results = {scan_results}")
         if scan_results:
             # Klicke alle gefundenen Positionen
             for i, (pos, item, priority) in enumerate(scan_results):
                 if state.stop_event.is_set():
                     return False
-                if CONFIG.get("debug_detection", False):
+                if state.config.get("debug_detection", False):
                     print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
                 send_click(pos[0], pos[1])
                 with state.lock:
@@ -5417,12 +5422,12 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
                     confirm_x, confirm_y = item.confirm_point.x, item.confirm_point.y
-                    if CONFIG.get("debug_detection", False):
+                    if state.config.get("debug_detection", False):
                         print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
                     if item.confirm_delay > 0:
                         time.sleep(item.confirm_delay)
                     send_click(confirm_x, confirm_y)
-                    if CONFIG.get("debug_detection", False):
+                    if state.config.get("debug_detection", False):
                         print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                     with state.lock:
                         state.total_clicks += 1
@@ -5469,7 +5474,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 return False
 
         # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
-        if CONFIG.get("show_pixel_position", False):
+        if state.config.get("show_pixel_position", False):
             set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
             time.sleep(0.3)  # Kurz anzeigen wo geprüft wird
 
@@ -5500,12 +5505,12 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
                     # Bedingung: Farbe DA (dist <= Toleranz) oder Farbe WEG (dist > Toleranz)
                     # Toleranz dynamisch aus Config laden
-                    pixel_tolerance = CONFIG.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
+                    pixel_tolerance = state.config.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
                     color_matches = dist <= pixel_tolerance
                     condition_met = (not color_matches) if step.wait_until_gone else color_matches
 
                     # Debug-Ausgabe wenn aktiviert (persistente Ausgabe im Terminal)
-                    if CONFIG.get("debug_detection", False):
+                    if state.config.get("debug_detection", False):
                         current_name = get_color_name(current_color)
                         elapsed = time.time() - start_time
                         if step.wait_until_gone:
@@ -5518,7 +5523,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                             msg = "Farbe weg!"
                         else:
                             msg = "Farbe erkannt!"
-                        if CONFIG.get("debug_detection", False):
+                        if state.config.get("debug_detection", False):
                             # Debug: keine Zeilenüberschreibung
                             if step.wait_only:
                                 print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
@@ -5534,8 +5539,8 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                         break
 
                     # Wenn Debug aktiv, warte und continue
-                    if CONFIG.get("debug_detection", False):
-                        check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+                    if state.config.get("debug_detection", False):
+                        check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
                         if state.stop_event.wait(check_interval):
                             return False
                         continue
@@ -5544,7 +5549,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             if elapsed >= timeout:
                 # Timeout erreicht - Else-Aktion ausführen falls vorhanden
                 if step.else_action:
-                    if CONFIG.get("debug_detection", False):
+                    if state.config.get("debug_detection", False):
                         print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s")
                     else:
                         clear_line()
@@ -5555,24 +5560,24 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 return False
 
             # Status-Ausgabe (nur wenn NICHT im debug_detection Modus, da dort bereits ausgegeben)
-            if not CONFIG.get("debug_detection", False):
+            if not state.config.get("debug_detection", False):
                 clear_line()
                 print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
-            check_interval = CONFIG.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+            check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
             if state.stop_event.wait(check_interval):
                 return False
 
     elif step.delay_before > 0 or step.delay_max:
         # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
         actual_delay = step.get_actual_delay()
-        if CONFIG.get("debug_mode", False):
+        if state.config.get("debug_mode", False):
             print(f"  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
         action = "Warten" if step.wait_only else "Klicke in"
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
             return False
     else:
-        if CONFIG.get("debug_mode", False):
+        if state.config.get("debug_mode", False):
             print(f"  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
 
     if state.stop_event.is_set():
@@ -5580,7 +5585,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
-        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+        if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
             print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         else:
             clear_line()
@@ -5592,7 +5597,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         if state.stop_event.is_set():
             return False
 
-        if check_failsafe():
+        if check_failsafe(state):
             print("\n[FAILSAFE] Stoppe...")
             state.stop_event.set()
             return False
@@ -5602,7 +5607,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         with state.lock:
             state.total_clicks += 1
 
-        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+        if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})")
         else:
             clear_line()
@@ -5650,7 +5655,7 @@ def sequence_worker(state: AutoClickerState) -> None:
             return
 
         # Debug: Zeige alle Schritte (mit Rahmen damit es nicht überschrieben wird)
-        if CONFIG.get("debug_mode", False):
+        if state.config.get("debug_mode", False):
             print("\n" + "=" * 60)
             print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
             print("-" * 60)
@@ -5901,6 +5906,8 @@ def handle_reset(state: AutoClickerState) -> None:
         # Config auf Standard zurücksetzen
         global CONFIG
         CONFIG = DEFAULT_CONFIG.copy()
+        with state.lock:
+            state.config = DEFAULT_CONFIG.copy()
 
         print("\n[RESET] ✓ Factory Reset abgeschlossen!")
         print("[RESET] Das Programm ist jetzt wie frisch von GitHub.")
@@ -6229,6 +6236,7 @@ def main() -> int:
     print_help()
 
     state = AutoClickerState()
+    state.config = CONFIG.copy()  # Kopie der globalen Config für thread-sicheren Zugriff
     main_thread_id = kernel32.GetCurrentThreadId()
 
     # Ordner erstellen
