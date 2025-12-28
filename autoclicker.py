@@ -5284,7 +5284,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
                 # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
-                    confirm_x, confirm_y = item.confirm_point
+                    confirm_x, confirm_y = item.confirm_point.x, item.confirm_point.y
                     if CONFIG.get("debug_detection", False):
                         print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
                     if item.confirm_delay > 0:
