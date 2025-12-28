@@ -427,8 +427,8 @@ def sync_global_slots() -> tuple[int, int]:
     return len(updated), total_fixes
 
 
-def sync_slot_presets() -> tuple[int, int]:
-    """Synchronisiert slots/presets/*.json."""
+def sync_slot_presets(global_slots: dict) -> tuple[int, int]:
+    """Synchronisiert slots/presets/*.json mit globalen Slots."""
     if not SLOT_PRESETS_DIR.exists():
         return 0, 0
 
@@ -445,17 +445,36 @@ def sync_slot_presets() -> tuple[int, int]:
         fixes_in_file = 0
 
         for name, slot in data.items():
-            if isinstance(slot, dict):
+            if not isinstance(slot, dict):
+                continue
+
+            # Globalen Slot als Basis nehmen (falls vorhanden)
+            if name in global_slots:
+                global_slot = global_slots[name]
+                fixes = 0
+
+                # Felder von global übernehmen wenn lokal fehlt
+                for field in ["scan_region", "click_pos", "slot_color"]:
+                    if field not in slot or slot[field] is None:
+                        if global_slot.get(field) is not None:
+                            slot[field] = global_slot[field]
+                            fixes += 1
+
+                fixed, extra_fixes = sync_slot(name, slot)
+                updated[name] = fixed
+                fixes_in_file += fixes
+
+                if fixes > 0:
+                    print(f"      {name}: {fixes} von global uebernommen")
+            else:
+                # Slot nicht in global -> nur normalisieren
                 fixed, fixes = sync_slot(name, slot)
                 updated[name] = fixed
                 fixes_in_file += fixes
 
-        if fixes_in_file > 0:
-            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
-            total_fixes += fixes_in_file
-
         save_json(preset_file, updated)
         total_count += 1
+        total_fixes += fixes_in_file
 
     return total_count, total_fixes
 
@@ -536,8 +555,8 @@ def sync_global_items() -> tuple[int, int]:
     return len(updated), total_fixes
 
 
-def sync_item_presets() -> tuple[int, int]:
-    """Synchronisiert items/presets/*.json."""
+def sync_item_presets(global_items: dict) -> tuple[int, int]:
+    """Synchronisiert items/presets/*.json mit globalen Items."""
     if not ITEM_PRESETS_DIR.exists():
         return 0, 0
 
@@ -554,17 +573,39 @@ def sync_item_presets() -> tuple[int, int]:
         fixes_in_file = 0
 
         for name, item in data.items():
-            if isinstance(item, dict):
-                fixed, fixes = sync_item(name, item)
+            if not isinstance(item, dict):
+                continue
+
+            # Globales Item als Basis nehmen (falls vorhanden)
+            if name in global_items:
+                global_item = global_items[name]
+                fixes = 0
+
+                # Felder von global übernehmen wenn lokal fehlt
+                for field in ["category", "priority", "confirm_point", "confirm_delay",
+                              "template", "min_confidence"]:
+                    if field not in item or item[field] is None:
+                        if global_item.get(field) is not None:
+                            item[field] = global_item[field]
+                            fixes += 1
+
+                fixed, extra_fixes = sync_item(name, item)
                 updated[name] = fixed
                 fixes_in_file += fixes
 
-        if fixes_in_file > 0:
-            print(f"    {preset_file.name}: {fixes_in_file} Korrekturen")
-            total_fixes += fixes_in_file
+                if fixes > 0:
+                    print(f"      {name}: {fixes} von global uebernommen")
+            else:
+                # Item nicht in global -> nur Defaults
+                fixed, fixes = sync_item(name, item)
+                updated[name] = fixed
+                fixes_in_file += fixes
+                if fixes > 0:
+                    print(f"      {name}: {fixes} Fixes (nicht in global)")
 
         save_json(preset_file, updated)
         total_count += 1
+        total_fixes += fixes_in_file
 
     return total_count, total_fixes
 
@@ -707,28 +748,29 @@ def main():
     print(f"\n  [4/8] Slots global...")
     count, fixes = sync_global_slots()
     print(f"        {count} Slots, {fixes} Fixes")
+    global_slots = load_json_safe(SLOTS_FILE) or {}
 
     # 5. Items (global)
     print(f"\n  [5/8] Items global...")
     count, fixes = sync_global_items()
     print(f"        {count} Items, {fixes} Fixes")
+    global_items = load_json_safe(ITEMS_FILE) or {}
 
     # 6. Scans (global)
     print(f"\n  [6/8] Scans global...")
-    global_items = load_json_safe(ITEMS_FILE) or {}
     updated, fixed, user = sync_scan_configs(global_items)
     print(f"        {updated} Scans, {fixed} Fixes")
 
     print("\n  === UNTERORDNER (PRESETS) ===")
 
-    # 7. Slot presets
+    # 7. Slot presets (mit globalen Slots)
     print(f"\n  [7/8] Slot presets...")
-    count, fixes = sync_slot_presets()
+    count, fixes = sync_slot_presets(global_slots)
     print(f"        {count} Presets, {fixes} Fixes")
 
-    # 8. Item presets
+    # 8. Item presets (mit globalen Items)
     print(f"\n  [8/8] Item presets...")
-    count, fixes = sync_item_presets()
+    count, fixes = sync_item_presets(global_items)
     print(f"        {count} Presets, {fixes} Fixes")
 
     print("\n" + "=" * 60)
