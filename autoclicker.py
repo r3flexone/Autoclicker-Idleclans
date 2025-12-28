@@ -5403,6 +5403,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
     if state.config.get("debug_detection", False):
+        print()  # Neue Zeile nach end=""
         print(f"[DEBUG] scan_results = {scan_results}")
 
     if scan_results:
@@ -5535,9 +5536,9 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                     msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
                     if state.config.get("debug_detection", False):
                         if step.wait_only:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}")
                         else:
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...")
                     else:
                         clear_line()
                         if step.wait_only:
@@ -5563,7 +5564,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                     clear_line()
                     print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
                 return execute_else_action(state, step, phase, step_num, total_steps)
-            print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
+            print(f"[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
             state.stop_event.set()
             return False
 
@@ -5621,7 +5622,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
     # Debug: Zeige Schritt-Details
     if state.config.get("debug_mode", False):
-        print(f"  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
+        print(f"[DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
               f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
 
     # === SONDERFALL: Item-Scan Schritt ===
@@ -5640,13 +5641,13 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
         actual_delay = step.get_actual_delay()
         if state.config.get("debug_mode", False):
-            print(f"  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
+            print(f"[DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
         action = "Warten" if step.wait_only else "Klicke in"
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
             return False
     else:
         if state.config.get("debug_mode", False):
-            print(f"  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
+            print(f"[DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
 
     if state.stop_event.is_set():
         return False
@@ -5654,7 +5655,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
         if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
-            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
