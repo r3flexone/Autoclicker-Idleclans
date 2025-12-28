@@ -350,28 +350,32 @@ Wird beim ersten Start automatisch erstellt:
   "clicks_per_point": 1,
   "max_total_clicks": null,
   "failsafe_enabled": true,
-  "color_tolerance": 40,
+  "color_tolerance": 0,
   "pixel_wait_tolerance": 10,
-  "pixel_wait_timeout": 60,
+  "pixel_wait_timeout": 300,
   "pixel_check_interval": 1,
-  "debug_detection": true,
   "scan_reverse": false,
   "marker_count": 5,
   "require_all_markers": true,
   "min_markers_required": 2,
   "slot_hsv_tolerance": 25,
   "slot_inset": 10,
-  "slot_color_distance": 25
+  "slot_color_distance": 25,
+  "debug_mode": false,
+  "debug_detection": false,
+  "show_pixel_position": false
 }
 ```
 
 | Option | Beschreibung |
 |--------|--------------|
-| `color_tolerance` | Toleranz für Item-Scan (höher = toleranter) |
+| `clicks_per_point` | Anzahl Klicks pro Punkt (Standard: 1) |
+| `max_total_clicks` | Maximale Klicks gesamt (`null` = unendlich) |
+| `failsafe_enabled` | Fail-Safe: Maus in Ecke stoppt alles |
+| `color_tolerance` | Toleranz für Item-Scan (0 = exakt, höher = toleranter) |
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
 | `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
-| `debug_detection` | Debug-Ausgaben für Farberkennung |
 | `scan_reverse` | Slots von hinten nach vorne scannen |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
 | `require_all_markers` | Alle Marker müssen gefunden werden (true/false) |
@@ -379,6 +383,9 @@ Wird beim ersten Start automatisch erstellt:
 | `slot_hsv_tolerance` | HSV-Toleranz für automatische Slot-Erkennung |
 | `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
 | `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
+| `debug_mode` | Zeigt Schritte VOR Start und wartet auf Enter |
+| `debug_detection` | Alle Ausgaben persistent (nicht überschrieben) |
+| `show_pixel_position` | Maus kurz zum Prüf-Pixel bewegen beim Start |
 
 ## Dateistruktur
 
