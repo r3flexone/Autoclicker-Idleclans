@@ -5254,7 +5254,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
 
     # Debug: Zeige Schritt-Details
     if CONFIG.get("debug_mode", False):
-        print(f"\n  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
+        print(f"  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
               f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
 
     # === SONDERFALL: Item-Scan Schritt ===
@@ -5432,13 +5432,13 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
         # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
         actual_delay = step.get_actual_delay()
         if CONFIG.get("debug_mode", False):
-            print(f"\n  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
+            print(f"  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
         action = "Warten" if step.wait_only else "Klicke in"
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
             return False
     else:
         if CONFIG.get("debug_mode", False):
-            print(f"\n  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
+            print(f"  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
 
     if state.stop_event.is_set():
         return False
