@@ -159,6 +159,7 @@ DEFAULT_CONFIG = {
     # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
     "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
+    "item_click_delay": 1.0,            # Pause nach Item-Klick in Sekunden
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden
     "min_markers_required": 2,          # Minimum Marker (nur wenn require_all_markers=False)
@@ -5434,7 +5435,10 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                 with state.lock:
                     state.total_clicks += 1
 
-            time.sleep(1.0)  # Pause nach jedem Klick
+            # Konfigurierbare Pause nach Item-Klick
+            click_delay = state.config.get("item_click_delay", 1.0)
+            if click_delay > 0:
+                time.sleep(click_delay)
 
         clear_line()
         print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)! "
@@ -5943,9 +5947,7 @@ def handle_reset(state: AutoClickerState) -> None:
         for folder in [ITEMS_DIR, SLOTS_DIR, ITEM_SCANS_DIR]:
             Path(folder).mkdir(exist_ok=True)
 
-        # Config auf Standard zurücksetzen
-        global CONFIG
-        CONFIG = DEFAULT_CONFIG.copy()
+        # Config auf Standard zurücksetzen (nur state.config, nicht globale Variable)
         with state.lock:
             state.config = DEFAULT_CONFIG.copy()
 
