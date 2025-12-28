@@ -247,6 +247,16 @@ def sync_points() -> tuple[int, int]:
         if not isinstance(point, dict):
             continue
 
+        point_fixes = 0
+
+        # Fehlende Felder pruefen
+        if "x" not in point:
+            point_fixes += 1
+        if "y" not in point:
+            point_fixes += 1
+        if "name" not in point:
+            point_fixes += 1
+
         # Normalisieren
         fixed = {
             "x": int(point.get("x", 0)),
@@ -254,9 +264,9 @@ def sync_points() -> tuple[int, int]:
             "name": str(point.get("name", ""))
         }
 
-        # Fehlende Felder zaehlen
-        if "name" not in point:
-            fixes += 1
+        if point_fixes > 0:
+            print(f"      Punkt {i+1}: {point_fixes} Feld(er) ergaenzt")
+            fixes += point_fixes
 
         updated.append(fixed)
         POINTS.append([fixed["x"], fixed["y"]])
@@ -689,7 +699,13 @@ def main():
     # 2. Points (laedt auch POINTS fuer spaeter)
     print(f"\n  [2/8] Points...")
     count, fixes = sync_points()
-    print(f"        {count} Punkte geladen")
+    if count:
+        if fixes:
+            print(f"        {count} Punkte, {fixes} Korrekturen")
+        else:
+            print(f"        {count} Punkte - OK")
+    else:
+        print("        - keine vorhanden")
 
     # 3. Sequences
     print(f"\n  [3/8] Sequences...")
