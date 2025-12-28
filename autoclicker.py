@@ -5165,7 +5165,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         if state.skip_event.is_set():
             state.skip_event.clear()
             if debug_active:
-                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!")
             else:
                 clear_line()
                 print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
@@ -5179,7 +5179,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         current_remaining = int(remaining)
         if current_remaining != last_remaining:
             if debug_active:
-                print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...")
             else:
                 clear_line()
                 print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
@@ -5413,7 +5413,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 # Timeout erreicht - Else-Aktion ausführen falls vorhanden
                 if step.else_action:
                     if CONFIG.get("debug_detection", False):
-                        print(f"\n[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s")
                     else:
                         clear_line()
                         print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
@@ -5449,7 +5449,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
         if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
-            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
@@ -5471,7 +5471,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             state.total_clicks += 1
 
         if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
-            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})")
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
