@@ -1480,12 +1480,14 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             logger.error(f"Konnte Template nicht laden: {template_path}")
             return (False, 0.0, None)
 
-        # Debug: Aktuelles Scan-Bild speichern zum Vergleich
-        if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
+        # Debug: Scan-Bild und Template speichern zum Vergleich
+        if CONFIG.get("debug_mode", False):
             debug_dir = os.path.join(ITEMS_DIR, "debug")
             os.makedirs(debug_dir, exist_ok=True)
-            debug_path = os.path.join(debug_dir, "last_scan.png")
-            img.save(debug_path)
+            # Aktuelles Scan-Bild (was im Slot ist)
+            img.save(os.path.join(debug_dir, "last_scan.png"))
+            # Template/Maske (was cv2 zum Vergleich verwendet)
+            cv2.imwrite(os.path.join(debug_dir, "last_template.png"), template_cv)
 
         # Template Matching mit TM_CCOEFF_NORMED (beste Methode für farbige Bilder)
         result = cv2.matchTemplate(img_cv, template_cv, cv2.TM_CCOEFF_NORMED)
