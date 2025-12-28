@@ -428,7 +428,6 @@ Autoclicker-Idleclans/
 - JSON-Persistenz
 - Multi-Monitor Unterstützung
 - Sichere Dateinamen (Path-Traversal-Schutz)
-- Bounds-Checking für Bildschirmregionen
 
 ## Tools
 
