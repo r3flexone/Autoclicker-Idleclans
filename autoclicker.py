@@ -544,7 +544,7 @@ class ItemProfile:
             if len(self.marker_colors) > 3:
                 colors_str += f" (+{len(self.marker_colors)-3})"
             template_str = colors_str if colors_str else "keine Marker"
-        confirm_str = f" → ({self.confirm_point[0]},{self.confirm_point[1]})" if self.confirm_point else ""
+        confirm_str = f" → ({self.confirm_point.x},{self.confirm_point.y})" if self.confirm_point else ""
         category_str = f" [{self.category}]" if self.category else ""
         return f"[P{self.priority}]{category_str} {self.name}: {template_str}{confirm_str}"
 
@@ -2570,7 +2570,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 with state.lock:
                     state.global_items[item_name] = item
 
-                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
+                confirm_str = f" → ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
                 template_str = f" + Template" if item.template else ""
                 print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
                 continue
@@ -2657,7 +2657,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 with state.lock:
                     state.global_items[item_name] = item
-                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]})" if confirm_point else ""
+                confirm_str = f" → ({confirm_point.x},{confirm_point.y})" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
                 print(f"  ✓ Item '{item_name}'{cat_str} hinzugefügt!{confirm_str}")
                 continue
@@ -2702,7 +2702,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                     item.marker_colors = new_colors
 
                             # Bestätigung
-                            current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
+                            current_confirm = f"({item.confirm_point.x},{item.confirm_point.y})" if item.confirm_point else "Keine"
                             confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Punkt-Nr=setzen, 0=entfernen, Enter=behalten): ").strip()
                             if confirm_input == "0":
                                 item.confirm_point = None
@@ -3750,7 +3750,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                 item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
                 items.append(item)
-                confirm_str = f" → ({confirm_point[0]},{confirm_point[1]}) nach {confirm_delay}s" if confirm_point else ""
+                confirm_str = f" → ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
                 cat_str = f" [{category}]" if category else ""
                 print(f"  ✓ {item_name}{cat_str} hinzugefügt mit {len(marker_colors)} Marker-Farben{confirm_str}")
                 continue
@@ -3789,7 +3789,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                                 item.marker_colors = new_colors
 
                         # Bestätigung bearbeiten
-                        current_confirm = f"({item.confirm_point[0]},{item.confirm_point[1]})" if item.confirm_point else "Keine"
+                        current_confirm = f"({item.confirm_point.x},{item.confirm_point.y})" if item.confirm_point else "Keine"
                         confirm_input = input(f"  Bestätigung (aktuell {current_confirm}, Enter=behalten, 0=entfernen): ").strip()
                         if confirm_input == "0":
                             item.confirm_point = None
