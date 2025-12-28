@@ -2473,6 +2473,248 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     edit_item_preset(state, preset_name)
 
 
+def _item_learn_command(state: AutoClickerState, user_input: str) -> bool:
+    """Verarbeitet den learn-Befehl (Bulk und Single). Gibt True zurück wenn verarbeitet."""
+    with state.lock:
+        slot_list = list(state.global_slots.values())
+
+    if not slot_list:
+        print("  → Keine Slots vorhanden! Erst Slots mit 'auto' im Slot-Editor erstellen.")
+        return True
+
+    # Bulk-Learn: learn 5-10 [template|simple]
+    learn_arg = user_input[5:].strip() if user_input.startswith("learn ") else ""
+    if "-" in learn_arg:
+        parts = learn_arg.split()
+        range_part = parts[0]
+        mode_part = parts[1] if len(parts) > 1 else "template"
+
+        try:
+            range_parts = range_part.split("-")
+            start_slot = int(range_parts[0])
+            end_slot = int(range_parts[1])
+
+            if start_slot < 1 or end_slot > len(slot_list) or start_slot > end_slot:
+                print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slot_list)}")
+                return True
+
+            use_template = mode_part.lower() in ("template", "t")
+            mode_str = "MIT Template" if use_template else "OHNE Template"
+
+            print(f"\n  === BULK LEARN: Slots {start_slot}-{end_slot} ({mode_str}) ===")
+
+            # Kategorie einmal für alle abfragen
+            print("  Kategorie für alle Items (Enter = keine):")
+            category = select_category(state, show_explanation=False)
+
+            # Bestätigungs-Punkt einmal für alle abfragen
+            confirm_point = None
+            confirm_delay = 0.5
+            confirm_input = input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
+            if confirm_input:
+                try:
+                    point_id = int(confirm_input)
+                    found_point = get_point_by_id(state, point_id)
+                    if found_point:
+                        confirm_point = found_point
+                        delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                        if delay_input:
+                            try:
+                                confirm_delay = float(delay_input)
+                            except ValueError:
+                                pass
+                except ValueError:
+                    pass
+
+            created_count = 0
+            for slot_idx in range(start_slot - 1, end_slot):
+                slot = slot_list[slot_idx]
+                item_name = f"{slot.name} Item"
+
+                # Eindeutigen Namen sicherstellen
+                base_name = item_name
+                counter = 1
+                while item_name in state.global_items:
+                    counter += 1
+                    item_name = f"{base_name} {counter}"
+
+                priority = slot_idx - start_slot + 2
+
+                # Item erstellen
+                item = ItemProfile(
+                    name=item_name,
+                    marker_colors=[],
+                    category=category,
+                    priority=priority,
+                    confirm_point=confirm_point,
+                    confirm_delay=confirm_delay,
+                    min_confidence=DEFAULT_MIN_CONFIDENCE
+                )
+
+                # Template speichern wenn gewünscht
+                if use_template and OPENCV_AVAILABLE:
+                    template_img = take_screenshot(slot.scan_region)
+                    if template_img:
+                        safe_name = sanitize_filename(item_name)
+                        template_file = f"{safe_name}.png"
+                        template_path = Path(TEMPLATES_DIR) / template_file
+                        template_img.save(template_path)
+                        item.template = template_file
+
+                with state.lock:
+                    state.global_items[item_name] = item
+                created_count += 1
+
+                template_str = f" + {item.template}" if item.template else ""
+                print(f"    ✓ {item_name} (P{priority}){template_str}")
+
+            save_global_items(state)
+            print(f"\n  === {created_count} Items erstellt! ===")
+            return True
+
+        except (ValueError, IndexError):
+            print("  → Format: learn <von>-<bis> [template|simple]")
+            print("    Beispiel: learn 1-5 template  (mit Screenshot)")
+            print("    Beispiel: learn 1-5 simple    (ohne Screenshot)")
+            return True
+
+    # Single-Learn: Slot-Nummer aus Befehl oder nachfragen
+    slot_num = None
+    if user_input.startswith("learn "):
+        try:
+            slot_num = int(user_input[6:])
+        except ValueError:
+            pass
+
+    if slot_num is None:
+        print(f"\n  Verfügbare Slots (1-{len(slot_list)}):")
+        for i, slot in enumerate(slot_list):
+            print(f"    {i+1}. {slot.name}")
+        try:
+            slot_input = input("  Slot-Nr wo das Item liegt: ").strip()
+            if slot_input.lower() in ("cancel", "abbruch"):
+                return True
+            slot_num = int(slot_input)
+        except ValueError:
+            print("  → Ungültige Eingabe!")
+            return True
+
+    if slot_num < 1 or slot_num > len(slot_list):
+        print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
+        return True
+
+    selected_slot = slot_list[slot_num - 1]
+    print(f"\n  Scanne Slot '{selected_slot.name}'...")
+
+    # Item-Name abfragen
+    item_num = len(state.global_items) + 1
+    item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
+    if item_name.lower() in ("cancel", "abbruch"):
+        return True
+    if not item_name:
+        item_name = f"Item {item_num}"
+
+    # Prüfen ob Name schon existiert
+    with state.lock:
+        if item_name in state.global_items:
+            print(f"  → Item '{item_name}' existiert bereits!")
+            return True
+
+    # Kategorie zuerst (für Prioritäts-Verschiebung)
+    category = select_category(state)
+
+    # Priorität
+    priority = 1
+    try:
+        prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
+        if prio_input.lower() in ("cancel", "abbruch"):
+            print("  → Abgebrochen")
+            return True
+        if prio_input:
+            prio_val = int(prio_input)
+            if prio_val == 0:
+                if category:
+                    shift_category_priorities(state, category)
+                    priority = 1
+                else:
+                    print("  → Priorität 0 nur mit Kategorie möglich!")
+                    priority = 1
+            else:
+                priority = max(1, prio_val)
+    except ValueError:
+        pass
+
+    # Screenshot des Slots machen und Farben extrahieren
+    print(f"  Scanne Farben in Region {selected_slot.scan_region}...")
+    marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
+
+    if not marker_colors:
+        print("  → Keine Farben gefunden!")
+        return True
+
+    # Bestätigungs-Klick abfragen
+    confirm_point = None
+    confirm_delay = 0.5
+    print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
+    print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
+    confirm_input = input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
+    if confirm_input.lower() in ("cancel", "abbruch"):
+        print("  → Abgebrochen")
+        return True
+    if confirm_input:
+        try:
+            point_id = int(confirm_input)
+            found_point = get_point_by_id(state, point_id)
+            if found_point:
+                confirm_point = found_point
+                delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
+                if delay_input:
+                    try:
+                        confirm_delay = float(delay_input)
+                    except ValueError:
+                        pass
+            else:
+                print(f"  → Punkt #{point_id} existiert nicht")
+        except ValueError:
+            print("  → Keine gültige Zahl, keine Bestätigung")
+
+    # Item erstellen und speichern
+    item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
+
+    # Optional: Auch als Template speichern?
+    if OPENCV_AVAILABLE:
+        save_template = input("  Auch als Template speichern? (j/n, Enter=n): ").strip().lower()
+        if save_template == "j":
+            template_img = take_screenshot(selected_slot.scan_region)
+            if template_img:
+                safe_name = sanitize_filename(item_name)
+                template_file = f"{safe_name}.png"
+                template_path = Path(TEMPLATES_DIR) / template_file
+                template_img.save(template_path)
+                item.template = template_file
+
+                # Konfidenz abfragen
+                conf_input = input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
+                if conf_input:
+                    try:
+                        conf = float(conf_input.replace("%", "")) / 100
+                        item.min_confidence = max(0.1, min(1.0, conf))
+                    except ValueError:
+                        pass
+
+                print(f"  ✓ Template gespeichert: {template_file}")
+
+    with state.lock:
+        state.global_items[item_name] = item
+
+    save_global_items(state)
+
+    confirm_str = f" → ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
+    template_str = f" + Template" if item.template else ""
+    print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
+    return True
+
+
 def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
     """Bearbeitet ein Item-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
@@ -2537,247 +2779,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                 continue
 
             elif user_input.startswith("learn"):
-                # Learn: Item aus Slot lernen
-                with state.lock:
-                    slot_list = list(state.global_slots.values())
-
-                if not slot_list:
-                    print("  → Keine Slots vorhanden! Erst Slots mit 'auto' im Slot-Editor erstellen.")
-                    continue
-
-                # Bulk-Learn: learn 5-10 [template|simple]
-                learn_arg = user_input[5:].strip() if user_input.startswith("learn ") else ""
-                if "-" in learn_arg:
-                    # Bulk mode: parse range and mode
-                    parts = learn_arg.split()
-                    range_part = parts[0]
-                    mode_part = parts[1] if len(parts) > 1 else "template"  # Default: mit Template
-
-                    try:
-                        range_parts = range_part.split("-")
-                        start_slot = int(range_parts[0])
-                        end_slot = int(range_parts[1])
-
-                        if start_slot < 1 or end_slot > len(slot_list) or start_slot > end_slot:
-                            print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(slot_list)}")
-                            continue
-
-                        use_template = mode_part.lower() in ("template", "t")
-                        mode_str = "MIT Template" if use_template else "OHNE Template"
-
-                        print(f"\n  === BULK LEARN: Slots {start_slot}-{end_slot} ({mode_str}) ===")
-
-                        # Kategorie einmal für alle abfragen
-                        print("  Kategorie für alle Items (Enter = keine):")
-                        category = select_category(state, show_explanation=False)
-
-                        # Bestätigungs-Punkt einmal für alle abfragen
-                        confirm_point = None
-                        confirm_delay = 0.5
-                        confirm_input = input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
-                        if confirm_input:
-                            try:
-                                point_id = int(confirm_input)
-                                found_point = get_point_by_id(state, point_id)
-                                if found_point:
-                                    confirm_point = found_point
-                                    delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
-                                    if delay_input:
-                                        try:
-                                            confirm_delay = float(delay_input)
-                                        except ValueError:
-                                            pass
-                            except ValueError:
-                                pass
-
-                        created_count = 0
-                        for slot_idx in range(start_slot - 1, end_slot):
-                            slot = slot_list[slot_idx]
-                            item_name = f"{slot.name} Item"
-
-                            # Eindeutigen Namen sicherstellen
-                            base_name = item_name
-                            counter = 1
-                            while item_name in state.global_items:
-                                counter += 1
-                                item_name = f"{base_name} {counter}"
-
-                            priority = slot_idx - start_slot + 2  # P1, P2, P3, ...
-
-                            # Item erstellen
-                            item = ItemProfile(
-                                name=item_name,
-                                marker_colors=[],
-                                category=category,
-                                priority=priority,
-                                confirm_point=confirm_point,
-                                confirm_delay=confirm_delay,
-                                min_confidence=DEFAULT_MIN_CONFIDENCE
-                            )
-
-                            # Template speichern wenn gewünscht
-                            if use_template and OPENCV_AVAILABLE:
-                                template_img = take_screenshot(slot.scan_region)
-                                if template_img:
-                                    safe_name = sanitize_filename(item_name)
-                                    template_file = f"{safe_name}.png"
-                                    template_path = Path(TEMPLATES_DIR) / template_file
-                                    template_img.save(template_path)
-                                    item.template = template_file
-
-                            with state.lock:
-                                state.global_items[item_name] = item
-                            created_count += 1
-
-                            template_str = f" + {item.template}" if item.template else ""
-                            print(f"    ✓ {item_name} (P{priority}){template_str}")
-
-                        save_global_items(state)
-                        print(f"\n  === {created_count} Items erstellt! ===")
-                        continue
-
-                    except (ValueError, IndexError):
-                        print("  → Format: learn <von>-<bis> [template|simple]")
-                        print("    Beispiel: learn 1-5 template  (mit Screenshot)")
-                        print("    Beispiel: learn 1-5 simple    (ohne Screenshot)")
-                        continue
-
-                # Slot-Nummer aus Befehl oder nachfragen
-                slot_num = None
-                if user_input.startswith("learn "):
-                    try:
-                        slot_num = int(user_input[6:])
-                    except ValueError:
-                        pass
-
-                if slot_num is None:
-                    print(f"\n  Verfügbare Slots (1-{len(slot_list)}):")
-                    for i, slot in enumerate(slot_list):
-                        print(f"    {i+1}. {slot.name}")
-                    try:
-                        slot_input = input("  Slot-Nr wo das Item liegt: ").strip()
-                        if slot_input.lower() in ("cancel", "abbruch"):
-                            continue
-                        slot_num = int(slot_input)
-                    except ValueError:
-                        print("  → Ungültige Eingabe!")
-                        continue
-
-                if slot_num < 1 or slot_num > len(slot_list):
-                    print(f"  → Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
-                    continue
-
-                selected_slot = slot_list[slot_num - 1]
-                print(f"\n  Scanne Slot '{selected_slot.name}'...")
-
-                # Item-Name abfragen
-                item_num = len(state.global_items) + 1
-                item_name = input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
-                if item_name.lower() in ("cancel", "abbruch"):
-                    continue
-                if not item_name:
-                    item_name = f"Item {item_num}"
-
-                # Prüfen ob Name schon existiert
-                with state.lock:
-                    if item_name in state.global_items:
-                        print(f"  → Item '{item_name}' existiert bereits!")
-                        continue
-
-                # Kategorie zuerst (für Prioritäts-Verschiebung)
-                category = select_category(state)
-
-                # Priorität (0 = alle in Kategorie verschieben und P1 werden)
-                priority = 1
-                try:
-                    prio_input = input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
-                    if prio_input.lower() in ("cancel", "abbruch"):
-                        print("  → Abgebrochen")
-                        continue
-                    if prio_input:
-                        prio_val = int(prio_input)
-                        if prio_val == 0:
-                            if category:
-                                shift_category_priorities(state, category)
-                                priority = 1
-                            else:
-                                print("  → Priorität 0 nur mit Kategorie möglich!")
-                                priority = 1
-                        else:
-                            priority = max(1, prio_val)
-                except ValueError:
-                    pass
-
-                # Screenshot des Slots machen und Farben extrahieren
-                print(f"  Scanne Farben in Region {selected_slot.scan_region}...")
-                marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
-
-                if not marker_colors:
-                    print("  → Keine Farben gefunden!")
-                    continue
-
-                # Bestätigungs-Klick abfragen (z.B. für "Accept" Button)
-                confirm_point = None
-                confirm_delay = 0.5
-                print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
-                print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
-                confirm_input = input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
-                if confirm_input.lower() in ("cancel", "abbruch"):
-                    print("  → Abgebrochen")
-                    continue
-                if confirm_input:
-                    try:
-                        point_id = int(confirm_input)
-                        found_point = get_point_by_id(state, point_id)
-                        if found_point:
-                            confirm_point = found_point  # Koordinaten speichern
-                            delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
-                            if delay_input:
-                                try:
-                                    confirm_delay = float(delay_input)
-                                except ValueError:
-                                    pass
-                        else:
-                            print(f"  → Punkt #{point_id} existiert nicht")
-                    except ValueError:
-                        print("  → Keine gültige Zahl, keine Bestätigung")
-
-                # Item erstellen und speichern
-                item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
-
-                # Optional: Auch als Template speichern?
-                if OPENCV_AVAILABLE:
-                    save_template = input("  Auch als Template speichern? (j/n, Enter=n): ").strip().lower()
-                    if save_template == "j":
-                        # Screenshot der Scan-Region als Template speichern
-                        template_img = take_screenshot(selected_slot.scan_region)
-                        if template_img:
-                            safe_name = sanitize_filename(item_name)
-                            template_file = f"{safe_name}.png"
-                            template_path = Path(TEMPLATES_DIR) / template_file
-                            template_img.save(template_path)
-                            item.template = template_file
-
-                            # Konfidenz abfragen
-                            conf_input = input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
-                            if conf_input:
-                                try:
-                                    conf = float(conf_input.replace("%", "")) / 100
-                                    item.min_confidence = max(0.1, min(1.0, conf))
-                                except ValueError:
-                                    pass
-
-                            print(f"  ✓ Template gespeichert: {template_file}")
-
-                with state.lock:
-                    state.global_items[item_name] = item
-
-                # Items speichern
-                save_global_items(state)
-
-                confirm_str = f" → ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
-                template_str = f" + Template" if item.template else ""
-                print(f"  ✓ Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
+                _item_learn_command(state, user_input)
                 continue
 
             elif user_input == "del all":
