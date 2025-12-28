@@ -604,8 +604,9 @@ class AutoClickerState:
     key_presses: int = 0
     start_time: Optional[float] = None
 
-    # Bereits geklickte Kategorien im aktuellen Zyklus (verhindert doppelte Klicks)
-    clicked_categories: set = field(default_factory=set)
+    # Bereits geklickte Kategorien im aktuellen Zyklus mit bester Priorität
+    # Dict: {kategorie: beste_priorität} - verhindert schlechtere Items derselben Kategorie
+    clicked_categories: dict = field(default_factory=dict)
 
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
@@ -4218,12 +4219,16 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     for slot, item, priority in found_items:
         cat = item.category or item.name  # Fallback auf Item-Name
 
-        # Überspringe wenn Kategorie bereits in diesem Zyklus geklickt wurde
+        # Überspringe wenn Kategorie bereits mit besserer/gleicher Priorität geklickt wurde
         with state.lock:
             if cat in state.clicked_categories:
-                if CONFIG.get("debug_detection", False):
-                    print(f"[DEBUG]   → {item.name} übersprungen (Kategorie '{cat}' bereits geklickt)")
-                continue
+                best_clicked_prio = state.clicked_categories[cat]
+                if priority >= best_clicked_prio:
+                    # Item ist schlechter oder gleich → überspringen
+                    if CONFIG.get("debug_detection", False):
+                        print(f"[DEBUG]   → {item.name} (P{priority}) übersprungen ('{cat}' bereits mit P{best_clicked_prio} geklickt)")
+                    continue
+                # Item ist besser → wird später geklickt (nicht überspringen)
 
         if cat not in best_per_category or priority < best_per_category[cat][2]:
             best_per_category[cat] = (slot, item, priority)
@@ -4237,15 +4242,15 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     filtered_items = list(best_per_category.values())
 
     if mode == "all":
-        # Alle besten pro Kategorie zurückgeben
+        # Alle besten pro Kategorie zurückgeben (mit Priorität für clicked_categories)
         print(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!")
-        return [(slot.click_pos, item) for slot, item, priority in filtered_items]
+        return [(slot.click_pos, item, priority) for slot, item, priority in filtered_items]
     else:
         # Nur das absolute beste Item zurückgeben
         filtered_items.sort(key=lambda x: x[2])  # Nach Priorität sortieren
         best_slot, best_item, best_priority = filtered_items[0]
         print(f"[SCAN] Bestes Item: {best_item.name} in {best_slot.name} (P{best_priority})")
-        return [(best_slot.click_pos, best_item)]
+        return [(best_slot.click_pos, best_item, best_priority)]
 
 
 # =============================================================================
@@ -5284,18 +5289,20 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             print(f"[DEBUG] scan_results = {scan_results}")
         if scan_results:
             # Klicke alle gefundenen Positionen
-            for i, (pos, item) in enumerate(scan_results):
+            for i, (pos, item, priority) in enumerate(scan_results):
                 if state.stop_event.is_set():
                     return False
                 if CONFIG.get("debug_detection", False):
-                    print(f"[DEBUG] Klicke Item '{item.name}' bei ({pos[0]}, {pos[1]})")
+                    print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
                 send_click(pos[0], pos[1])
                 with state.lock:
                     state.total_clicks += 1
                     state.items_found += 1
-                    # Kategorie als geklickt markieren (verhindert schlechtere Items derselben Kategorie)
+                    # Kategorie mit Priorität speichern (verhindert schlechtere Items derselben Kategorie)
                     cat = item.category or item.name
-                    state.clicked_categories.add(cat)
+                    # Nur aktualisieren wenn besser als bisherige Priorität
+                    if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
+                        state.clicked_categories[cat] = priority
 
                 # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
