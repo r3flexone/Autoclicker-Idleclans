@@ -2619,7 +2619,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                             item.template = template_file
 
                             # Konfidenz abfragen
-                            conf_input = input(f"  Min. Konfidenz für Template (Enter=80%): ").strip()
+                            conf_input = input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
                             if conf_input:
                                 try:
                                     conf = float(conf_input.replace("%", "")) / 100
@@ -2952,7 +2952,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                                         item.template = template_file
 
                                         # Konfidenz abfragen
-                                        conf_input = input(f"  Min. Konfidenz (Enter=80%): ").strip()
+                                        conf_input = input(f"  Min. Konfidenz (Enter={item.min_confidence:.0%}): ").strip()
                                         if conf_input:
                                             try:
                                                 conf = float(conf_input.replace("%", "")) / 100
