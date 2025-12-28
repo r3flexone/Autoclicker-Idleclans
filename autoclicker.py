@@ -167,6 +167,7 @@ DEFAULT_CONFIG = {
     "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
     "debug_detection": False,           # Alle Ausgaben persistent (nicht überschrieben)
     "show_pixel_position": False,       # Maus kurz zum Prüf-Pixel bewegen beim Start
+    "debug_save_templates": False,      # Speichert Scan+Template in items/debug/ (für Template-Debugging)
 }
 
 def load_config() -> dict:
@@ -1481,13 +1482,15 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             return (False, 0.0, None)
 
         # Debug: Scan-Bild und Template speichern zum Vergleich
-        if CONFIG.get("debug_mode", False):
+        if CONFIG.get("debug_save_templates", False):
             debug_dir = os.path.join(ITEMS_DIR, "debug")
             os.makedirs(debug_dir, exist_ok=True)
+            # Basis-Name aus Template (ohne .png)
+            base_name = os.path.splitext(template_name)[0]
             # Aktuelles Scan-Bild (was im Slot ist)
-            img.save(os.path.join(debug_dir, "last_scan.png"))
+            img.save(os.path.join(debug_dir, f"{base_name}_scan.png"))
             # Template/Maske (was cv2 zum Vergleich verwendet)
-            cv2.imwrite(os.path.join(debug_dir, "last_template.png"), template_cv)
+            cv2.imwrite(os.path.join(debug_dir, f"{base_name}_template.png"), template_cv)
 
         # Template Matching mit TM_CCOEFF_NORMED (beste Methode für farbige Bilder)
         result = cv2.matchTemplate(img_cv, template_cv, cv2.TM_CCOEFF_NORMED)
