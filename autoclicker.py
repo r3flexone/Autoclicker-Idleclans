@@ -920,7 +920,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                     confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8)
+                    min_confidence=i.get("min_confidence", 0.9)
                 )
                 items.append(item)
 
@@ -1100,7 +1100,7 @@ def load_global_items(state: AutoClickerState) -> None:
                 confirm_point=cp,
                 confirm_delay=i.get("confirm_delay", 0.5),
                 template=i.get("template"),
-                min_confidence=i.get("min_confidence", 0.8)
+                min_confidence=i.get("min_confidence", 0.9)
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
@@ -1274,7 +1274,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
                     confirm_point=cp,
                     confirm_delay=i.get("confirm_delay", 0.5),
                     template=i.get("template"),
-                    min_confidence=i.get("min_confidence", 0.8)
+                    min_confidence=i.get("min_confidence", 0.9)
                 )
 
         # Auch in aktive Datei speichern
@@ -1440,7 +1440,7 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
                     return True
         return False
 
-def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = 0.8) -> tuple:
+def match_template_in_image(img: 'Image.Image', template_name: str, min_confidence: float = 0.9) -> tuple:
     """
     Sucht ein Template-Bild im gegebenen Bild mittels OpenCV Template Matching.
 
@@ -3409,9 +3409,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                     pass
 
                 # Konfidenz
-                min_confidence = 0.8
+                min_confidence = 0.9
                 try:
-                    conf_input = input("  Min. Konfidenz % (Enter=80): ").strip()
+                    conf_input = input("  Min. Konfidenz % (Enter=90): ").strip()
                     if conf_input:
                         min_confidence = max(0.1, min(1.0, float(conf_input) / 100))
                 except ValueError:
