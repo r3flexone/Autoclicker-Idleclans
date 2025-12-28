@@ -166,7 +166,7 @@ DEFAULT_CONFIG = {
     "slot_hsv_tolerance": 25,           # HSV-Toleranz für Slot-Erkennung
     "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand
     "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss
-    "default_min_confidence": 0.9,      # Standard-Konfidenz für Template-Matching (90%)
+    "default_min_confidence": 0.8,      # Standard-Konfidenz für Template-Matching (80%)
 
     # === DEBUG-EINSTELLUNGEN ===
     "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
