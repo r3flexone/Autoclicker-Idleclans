@@ -4718,29 +4718,46 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             elif user_input.lower().startswith("scan "):
                 # Item-Scan Schritt hinzufügen
                 # Format: "scan <Name> [all|best|every] [else ...]"
-                scan_parts = user_input[5:].strip().split()
-                if not scan_parts:
+                scan_input = user_input[5:].strip()
+                if not scan_input:
                     print("  → Format: scan <Name> [all|best|every] [else ...]")
                     print("    all:   bestes Item pro Kategorie (Standard)")
                     print("    best:  nur 1 Item total (das absolute Beste)")
                     print("    every: alle Treffer ohne Filter (für Duplikate)")
                     continue
 
-                scan_name = scan_parts[0]
                 scan_mode = "all"  # Standard: bestes pro Kategorie
                 else_data = {}
 
-                # Parse den Rest (Modus und/oder else)
-                rest_parts = scan_parts[1:]
-                if rest_parts and rest_parts[0].lower() in ("best", "all", "every"):
-                    scan_mode = rest_parts[0].lower()
-                    rest_parts = rest_parts[1:]
+                # Von hinten parsen: erst "else ...", dann Modus, dann Name
+                scan_parts = scan_input.split()
 
-                # Prüfe auf else
-                if rest_parts and rest_parts[0].lower() == "else":
-                    else_data = parse_else_condition(rest_parts[1:], state)
-                    if not else_data and rest_parts[1:]:
-                        continue  # Fehler wurde schon ausgegeben
+                # 1. Prüfe auf "else" und extrahiere alles danach
+                else_index = -1
+                for i, part in enumerate(scan_parts):
+                    if part.lower() == "else":
+                        else_index = i
+                        break
+
+                if else_index >= 0:
+                    else_parts = scan_parts[else_index + 1:]
+                    scan_parts = scan_parts[:else_index]
+                    if else_parts:
+                        else_data = parse_else_condition(else_parts, state)
+                        if not else_data:
+                            continue  # Fehler wurde schon ausgegeben
+
+                # 2. Prüfe ob letztes Wort ein Modus ist
+                if scan_parts and scan_parts[-1].lower() in ("best", "all", "every"):
+                    scan_mode = scan_parts[-1].lower()
+                    scan_parts = scan_parts[:-1]
+
+                # 3. Rest ist der Name (kann mehrere Wörter haben)
+                scan_name = " ".join(scan_parts)
+
+                if not scan_name:
+                    print("  → Kein Scan-Name angegeben!")
+                    continue
 
                 # Prüfen ob Item-Scan existiert
                 with state.lock:
