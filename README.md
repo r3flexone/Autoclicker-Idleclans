@@ -26,7 +26,6 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
-- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
 
 ## Voraussetzungen
 
