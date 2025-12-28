@@ -1573,23 +1573,25 @@ def get_color_name(rgb: tuple) -> str:
 def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
     """
     Nimmt einen Screenshot auf. region=(x1, y1, x2, y2) oder None für Vollbild.
+    Verwendet BitBlt (schneller, besser für Spiele) mit ImageGrab-Fallback.
     Unterstützt mehrere Monitore (auch negative Koordinaten für linke Monitore).
     """
+    # Versuche BitBlt (schneller, besser für DirectX-Spiele)
+    img = take_screenshot_bitblt(region)
+    if img is not None:
+        return img
+
+    # Fallback auf ImageGrab (falls BitBlt fehlschlägt, z.B. kein NumPy)
     if not PILLOW_AVAILABLE:
         return None
     try:
-        # all_screens=True ermöglicht Erfassung aller Monitore
         if region:
             # Bei Region: Erst alle Screens erfassen, dann zuschneiden
             full_screenshot = ImageGrab.grab(all_screens=True)
-            # Koordinaten anpassen (all_screens verschiebt den Ursprung)
-            # Hole die tatsächlichen Bildschirmgrenzen
             SM_XVIRTUALSCREEN = 76
             SM_YVIRTUALSCREEN = 77
             x_offset = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
             y_offset = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
-
-            # Region relativ zum virtuellen Desktop anpassen
             adjusted_region = (
                 region[0] - x_offset,
                 region[1] - y_offset,
@@ -1599,33 +1601,45 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
             return full_screenshot.crop(adjusted_region)
         else:
             return ImageGrab.grab(all_screens=True)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.error(f"Screenshot fehlgeschlagen: {e}")
         return None
 
 def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
     """
     Screenshot mit BitBlt (Windows API) - funktioniert besser mit Spielen!
+    Unterstützt Multi-Monitor (auch negative Koordinaten für linke Monitore).
     Returns: PIL Image oder None
     """
     try:
+        # Virtual Screen Metriken für Multi-Monitor-Support
+        SM_XVIRTUALSCREEN = 76   # Linke Kante des virtuellen Desktops
+        SM_YVIRTUALSCREEN = 77   # Obere Kante des virtuellen Desktops
+        SM_CXVIRTUALSCREEN = 78  # Breite des virtuellen Desktops
+        SM_CYVIRTUALSCREEN = 79  # Höhe des virtuellen Desktops
+
+        virtual_left = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        virtual_top = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+
         if region:
             left, top, right, bottom = region
             width = right - left
             height = bottom - top
         else:
-            left, top = 0, 0
-            width = ctypes.windll.user32.GetSystemMetrics(0)
-            height = ctypes.windll.user32.GetSystemMetrics(1)
+            # Vollbild: gesamter virtueller Desktop (alle Monitore)
+            left = virtual_left
+            top = virtual_top
+            width = ctypes.windll.user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            height = ctypes.windll.user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
 
-        # Device Contexts
+        # Device Contexts - GetWindowDC(GetDesktopWindow()) liefert DC für gesamten virtuellen Desktop
         hwnd = ctypes.windll.user32.GetDesktopWindow()
         hwndDC = ctypes.windll.user32.GetWindowDC(hwnd)
         memDC = ctypes.windll.gdi32.CreateCompatibleDC(hwndDC)
         bmp = ctypes.windll.gdi32.CreateCompatibleBitmap(hwndDC, width, height)
         old_bmp = ctypes.windll.gdi32.SelectObject(memDC, bmp)
 
-        # BitBlt
+        # BitBlt - Koordinaten funktionieren auch negativ (linker Monitor)
         ctypes.windll.gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)
 
         # Bitmap-Daten auslesen
@@ -1663,7 +1677,7 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         # BGRA -> RGB
         img_rgb = img_array[:, :, [2, 1, 0]]
         return Image.fromarray(img_rgb)
-    except Exception as e:
+    except (OSError, ValueError, AttributeError) as e:
         logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
 
