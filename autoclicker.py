@@ -829,7 +829,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
             else:
                 return Sequence(data["name"], [], [], [], 1)
 
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
@@ -945,7 +945,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
                 color_tolerance=data.get("color_tolerance", 40)
             )
 
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Konnte {filepath} nicht laden: {e}")
         return None
 
@@ -1010,7 +1010,7 @@ def load_global_slots(state: AutoClickerState) -> None:
             )
         if state.global_slots:
             print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 def save_global_items(state: AutoClickerState) -> None:
@@ -1084,7 +1084,7 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 updated_scans += 1
 
-        except Exception as e:
+        except (json.JSONDecodeError, IOError, KeyError) as e:
             print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
 
     return updated_scans
@@ -1118,7 +1118,7 @@ def load_global_items(state: AutoClickerState) -> None:
             )
         if state.global_items:
             print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Items laden fehlgeschlagen: {e}")
 
 # =============================================================================
@@ -1198,7 +1198,7 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
         save_global_slots(state)
         print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
         return True
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
         return False
 
@@ -1295,7 +1295,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         save_global_items(state)
         print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
         return True
-    except Exception as e:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
         return False
 
@@ -1520,7 +1520,7 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
         else:
             return (False, max_val, None)
 
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         logger.error(f"Template Matching Fehler: {e}")
         return (False, 0.0, None)
 
@@ -2216,7 +2216,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                         cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
                     cv2_save.imwrite(preview_path, preview)
                     print(f"  Vorschau: {preview_path}")
-                except Exception as e:
+                except (OSError, IOError, ValueError) as e:
                     print(f"  [WARNUNG] Screenshots speichern: {e}")
 
                 # Slots werden am Ende beim "fertig" gespeichert
