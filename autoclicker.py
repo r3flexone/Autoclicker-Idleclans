@@ -1970,6 +1970,202 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     edit_slot_preset(state, preset_name)
 
 
+def _slot_auto_detect(state: AutoClickerState) -> bool:
+    """Automatische Slot-Erkennung. Gibt True zurück wenn erfolgreich."""
+    print("\n" + "=" * 50)
+    print("  AUTOMATISCHE SLOT-ERKENNUNG")
+    print("=" * 50)
+    print("\nMarkiere den Bereich mit den Slots:")
+    print("  1. Maus auf OBEN-LINKS, ENTER")
+    print("  2. Maus auf UNTEN-RECHTS, ENTER")
+
+    region = select_region()
+    if not region:
+        print("  → Keine Region ausgewählt")
+        return False
+
+    offset_x, offset_y = region[0], region[1]
+    print(f"\n  Region: {region}")
+    print("  Mache Screenshot mit BitBlt in 2 Sekunden...")
+    time.sleep(2)
+
+    # Screenshot mit BitBlt (funktioniert mit Spielen)
+    img = take_screenshot_bitblt(region)
+    if img is None:
+        print("  [FEHLER] Screenshot fehlgeschlagen!")
+        return False
+
+    print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
+
+    # Farbe für Slot-Erkennung scannen
+    print("\n  Bewege Maus auf den SLOT-HINTERGRUND...")
+    input("  ENTER wenn bereit...")
+    mx, my = get_cursor_pos()
+
+    # Farbe vom Bildschirm lesen
+    hdc = ctypes.windll.user32.GetDC(0)
+    color = ctypes.windll.gdi32.GetPixel(hdc, mx, my)
+    ctypes.windll.user32.ReleaseDC(0, hdc)
+
+    if color == -1:
+        print("  [FEHLER] Konnte Farbe nicht lesen!")
+        return False
+
+    r = color & 0xFF
+    g = (color >> 8) & 0xFF
+    b = (color >> 16) & 0xFF
+    print(f"  Farbe: RGB({r}, {g}, {b})")
+
+    # RGB zu HSV
+    r_n, g_n, b_n = r / 255, g / 255, b / 255
+    max_c, min_c = max(r_n, g_n, b_n), min(r_n, g_n, b_n)
+    diff = max_c - min_c
+
+    if diff == 0:
+        h = 0
+    elif max_c == r_n:
+        h = (60 * ((g_n - b_n) / diff) + 360) % 360
+    elif max_c == g_n:
+        h = (60 * ((b_n - r_n) / diff) + 120) % 360
+    else:
+        h = (60 * ((r_n - g_n) / diff) + 240) % 360
+
+    s = 0 if max_c == 0 else (diff / max_c) * 255
+    v = max_c * 255
+    h = h / 2  # OpenCV Hue: 0-180
+
+    print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
+
+    # Slots im Bild suchen (benötigt NumPy)
+    if not NUMPY_AVAILABLE:
+        print("  [FEHLER] NumPy nicht installiert! pip install numpy")
+        return False
+
+    img_array = np.array(img)
+    img_bgr = img_array[:, :, ::-1].copy()
+
+    try:
+        import cv2
+    except ImportError:
+        print("  [FEHLER] OpenCV nicht installiert! pip install opencv-python")
+        return False
+
+    hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    tol = state.config.get("slot_hsv_tolerance", 25)
+    lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
+    upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
+
+    mask = cv2.inRange(hsv_img, lower, upper)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Slots filtern
+    detected_slots = []
+    for contour in contours:
+        x, y, w, h_box = cv2.boundingRect(contour)
+        if w >= 40 and h_box >= 40:
+            aspect = w / h_box
+            if 0.5 < aspect < 2.0:
+                detected_slots.append((x, y, w, h_box))
+
+    detected_slots.sort(key=lambda s: (s[1] // 50, s[0]))
+
+    if not detected_slots:
+        print("\n  [FEHLER] Keine Slots erkannt!")
+        print("  Versuche es mit einer anderen Farbe.")
+        return False
+
+    # Größen normalisieren
+    if len(detected_slots) >= 2:
+        widths = [s[2] for s in detected_slots]
+        heights = [s[3] for s in detected_slots]
+        median_w = sorted(widths)[len(widths) // 2]
+        median_h = sorted(heights)[len(heights) // 2]
+
+        normalized = []
+        for x, y, w, h_box in detected_slots:
+            if 0.7 * median_w <= w <= 1.3 * median_w:
+                new_x = x + (w - median_w) // 2
+                new_y = y + (h_box - median_h) // 2
+                normalized.append((new_x, new_y, median_w, median_h))
+        detected_slots = normalized
+
+    print(f"\n  {len(detected_slots)} Slots erkannt!")
+
+    # Hintergrundfarbe
+    slot_color = [r, g, b]
+
+    # Slots hinzufügen
+    inset = state.config.get("slot_inset", 10)
+    added = 0
+    start_num = len(state.global_slots) + 1
+
+    for i, (x, y, w, h_box) in enumerate(detected_slots):
+        slot_name = f"Slot {start_num + i}"
+
+        # Mit Offset und Inset
+        abs_x = x + offset_x + inset
+        abs_y = y + offset_y + inset
+        abs_w = w - (2 * inset)
+        abs_h = h_box - (2 * inset)
+
+        scan_region = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
+        click_pos = (abs_x + abs_w // 2, abs_y + abs_h // 2)
+
+        new_slot = ItemSlot(
+            name=slot_name,
+            scan_region=scan_region,
+            click_pos=click_pos,
+            slot_color=slot_color
+        )
+
+        with state.lock:
+            state.global_slots[slot_name] = new_slot
+        added += 1
+        print(f"    + {slot_name}: {scan_region}")
+
+    print(f"\n  [OK] {added} Slots hinzugefügt!")
+
+    # Screenshots speichern
+    try:
+        import cv2 as cv2_save
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+
+        screenshot_path = os.path.join(SCREENSHOTS_DIR, f"screenshot_{timestamp}.png")
+        img.save(screenshot_path)
+        print(f"  Screenshot: {screenshot_path}")
+
+        # Vorschau mit Markierungen
+        preview_path = os.path.join(SCREENSHOTS_DIR, f"preview_{timestamp}.png")
+        preview = img_bgr.copy()
+        for i, (dx, dy, dw, dh) in enumerate(detected_slots):
+            cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
+            cv2_save.rectangle(preview, (dx + inset, dy + inset),
+                              (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
+
+            click_x = dx + dw // 2
+            click_y = dy + dh // 2
+            cross_size = 8
+            cv2_save.line(preview, (click_x - cross_size, click_y), (click_x + cross_size, click_y), (0, 0, 255), 2)
+            cv2_save.line(preview, (click_x, click_y - cross_size), (click_x, click_y + cross_size), (0, 0, 255), 2)
+
+            slot_num_text = str(start_num + i)
+            font = cv2_save.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            text_x = dx + 5
+            text_y = dy + 20
+            (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
+            cv2_save.rectangle(preview, (text_x - 2, text_y - text_h - 2),
+                              (text_x + text_w + 2, text_y + 2), (0, 0, 0), -1)
+            cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+        cv2_save.imwrite(preview_path, preview)
+        print(f"  Vorschau: {preview_path}")
+    except (OSError, IOError, ValueError) as e:
+        print(f"  [WARNUNG] Screenshots speichern: {e}")
+
+    return True
+
+
 def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
     """Bearbeitet ein Slot-Preset (alle Änderungen werden unter diesem Namen gespeichert)."""
 
@@ -2021,206 +2217,7 @@ def edit_slot_preset(state: AutoClickerState, preset_name: str) -> None:
                 continue
 
             elif user_input == "auto":
-                # Automatische Slot-Erkennung
-                print("\n" + "=" * 50)
-                print("  AUTOMATISCHE SLOT-ERKENNUNG")
-                print("=" * 50)
-                print("\nMarkiere den Bereich mit den Slots:")
-                print("  1. Maus auf OBEN-LINKS, ENTER")
-                print("  2. Maus auf UNTEN-RECHTS, ENTER")
-
-                region = select_region()
-                if not region:
-                    print("  → Keine Region ausgewählt")
-                    continue
-
-                offset_x, offset_y = region[0], region[1]
-                print(f"\n  Region: {region}")
-                print("  Mache Screenshot mit BitBlt in 2 Sekunden...")
-                time.sleep(2)
-
-                # Screenshot mit BitBlt (funktioniert mit Spielen)
-                img = take_screenshot_bitblt(region)
-                if img is None:
-                    print("  [FEHLER] Screenshot fehlgeschlagen!")
-                    continue
-
-                print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
-
-                # Farbe für Slot-Erkennung scannen
-                print("\n  Bewege Maus auf den SLOT-HINTERGRUND...")
-                input("  ENTER wenn bereit...")
-                mx, my = get_cursor_pos()
-
-                # Farbe vom Bildschirm lesen
-                hdc = ctypes.windll.user32.GetDC(0)
-                color = ctypes.windll.gdi32.GetPixel(hdc, mx, my)
-                ctypes.windll.user32.ReleaseDC(0, hdc)
-
-                if color == -1:
-                    print("  [FEHLER] Konnte Farbe nicht lesen!")
-                    continue
-
-                r = color & 0xFF
-                g = (color >> 8) & 0xFF
-                b = (color >> 16) & 0xFF
-                print(f"  Farbe: RGB({r}, {g}, {b})")
-
-                # RGB zu HSV
-                r_n, g_n, b_n = r / 255, g / 255, b / 255
-                max_c, min_c = max(r_n, g_n, b_n), min(r_n, g_n, b_n)
-                diff = max_c - min_c
-
-                if diff == 0:
-                    h = 0
-                elif max_c == r_n:
-                    h = (60 * ((g_n - b_n) / diff) + 360) % 360
-                elif max_c == g_n:
-                    h = (60 * ((b_n - r_n) / diff) + 120) % 360
-                else:
-                    h = (60 * ((r_n - g_n) / diff) + 240) % 360
-
-                s = 0 if max_c == 0 else (diff / max_c) * 255
-                v = max_c * 255
-                h = h / 2  # OpenCV Hue: 0-180
-
-                print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
-
-                # Slots im Bild suchen (benötigt NumPy)
-                if not NUMPY_AVAILABLE:
-                    print("  [FEHLER] NumPy nicht installiert! pip install numpy")
-                    continue
-                img_array = np.array(img)
-                # RGB zu BGR für OpenCV
-                img_bgr = img_array[:, :, ::-1].copy()
-
-                try:
-                    import cv2
-                except ImportError:
-                    print("  [FEHLER] OpenCV nicht installiert! pip install opencv-python")
-                    continue
-
-                hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-                tol = CONFIG.get("slot_hsv_tolerance", 25)
-                lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
-                upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
-
-                mask = cv2.inRange(hsv_img, lower, upper)
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                # Slots filtern
-                detected_slots = []
-                for contour in contours:
-                    x, y, w, h_box = cv2.boundingRect(contour)
-                    if w >= 40 and h_box >= 40:
-                        aspect = w / h_box
-                        if 0.5 < aspect < 2.0:
-                            detected_slots.append((x, y, w, h_box))
-
-                detected_slots.sort(key=lambda s: (s[1] // 50, s[0]))  # Zeile, dann X
-
-                if not detected_slots:
-                    print("\n  [FEHLER] Keine Slots erkannt!")
-                    print("  Versuche es mit einer anderen Farbe.")
-                    continue
-
-                # Größen normalisieren
-                if len(detected_slots) >= 2:
-                    widths = [s[2] for s in detected_slots]
-                    heights = [s[3] for s in detected_slots]
-                    median_w = sorted(widths)[len(widths) // 2]
-                    median_h = sorted(heights)[len(heights) // 2]
-
-                    normalized = []
-                    for x, y, w, h_box in detected_slots:
-                        if 0.7 * median_w <= w <= 1.3 * median_w:
-                            new_x = x + (w - median_w) // 2
-                            new_y = y + (h_box - median_h) // 2
-                            normalized.append((new_x, new_y, median_w, median_h))
-                    detected_slots = normalized
-
-                print(f"\n  {len(detected_slots)} Slots erkannt!")
-
-                # Hintergrundfarbe
-                slot_color = [r, g, b]
-
-                # Slots hinzufügen
-                inset = CONFIG.get("slot_inset", 10)
-                added = 0
-                start_num = len(state.global_slots) + 1
-
-                for i, (x, y, w, h_box) in enumerate(detected_slots):
-                    slot_name = f"Slot {start_num + i}"
-
-                    # Mit Offset und Inset
-                    abs_x = x + offset_x + inset
-                    abs_y = y + offset_y + inset
-                    abs_w = w - (2 * inset)
-                    abs_h = h_box - (2 * inset)
-
-                    scan_region = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
-                    click_pos = (abs_x + abs_w // 2, abs_y + abs_h // 2)
-
-                    new_slot = ItemSlot(
-                        name=slot_name,
-                        scan_region=scan_region,
-                        click_pos=click_pos,
-                        slot_color=slot_color
-                    )
-
-                    with state.lock:
-                        state.global_slots[slot_name] = new_slot
-                    added += 1
-                    print(f"    + {slot_name}: {scan_region}")
-
-                print(f"\n  [OK] {added} Slots hinzugefügt!")
-
-                # Screenshots speichern
-                try:
-                    import cv2 as cv2_save
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-                    # Original Screenshot
-                    screenshot_path = os.path.join(SCREENSHOTS_DIR, f"screenshot_{timestamp}.png")
-                    img.save(screenshot_path)
-                    print(f"  Screenshot: {screenshot_path}")
-
-                    # Vorschau mit Markierungen, Nummerierung und Klick-Position erstellen
-                    preview_path = os.path.join(SCREENSHOTS_DIR, f"preview_{timestamp}.png")
-                    preview = img_bgr.copy()
-                    for i, (dx, dy, dw, dh) in enumerate(detected_slots):
-                        # Rechtecke zeichnen (grün = erkannter Bereich, gelb = Scan-Bereich mit Inset)
-                        cv2_save.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
-                        cv2_save.rectangle(preview, (dx + inset, dy + inset),
-                                          (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
-
-                        # Klick-Position markieren (rotes Kreuz in der Mitte)
-                        click_x = dx + dw // 2
-                        click_y = dy + dh // 2
-                        cross_size = 8
-                        cv2_save.line(preview, (click_x - cross_size, click_y), (click_x + cross_size, click_y), (0, 0, 255), 2)
-                        cv2_save.line(preview, (click_x, click_y - cross_size), (click_x, click_y + cross_size), (0, 0, 255), 2)
-
-                        # Slot-Nummer hinzufügen (oben links im Slot)
-                        slot_num_text = str(start_num + i)
-                        font = cv2_save.FONT_HERSHEY_SIMPLEX
-                        font_scale = 0.6
-                        thickness = 2
-                        # Text oben links positionieren
-                        text_x = dx + 5
-                        text_y = dy + 20
-                        # Schwarzer Hintergrund für bessere Lesbarkeit
-                        (text_w, text_h), _ = cv2_save.getTextSize(slot_num_text, font, font_scale, thickness)
-                        cv2_save.rectangle(preview, (text_x - 2, text_y - text_h - 2),
-                                          (text_x + text_w + 2, text_y + 2), (0, 0, 0), -1)
-                        # Weiße Nummer
-                        cv2_save.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
-                    cv2_save.imwrite(preview_path, preview)
-                    print(f"  Vorschau: {preview_path}")
-                except (OSError, IOError, ValueError) as e:
-                    print(f"  [WARNUNG] Screenshots speichern: {e}")
-
-                # Slots werden am Ende beim "fertig" gespeichert
+                _slot_auto_detect(state)
                 continue
 
             elif user_input == "add":
