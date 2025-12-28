@@ -179,7 +179,7 @@ Rote Jacke     [Kategorie: Jacken]   Priorität 1  ← wird geklickt (andere Kat
     "name": "Pinkes Juwel",
     "priority": 1,
     "template": "pinkes_juwel.png",
-    "min_confidence": 0.9,
+    "min_confidence": 0.8,
     "category": "Juwelen"
   }
 }
@@ -380,7 +380,7 @@ Wird beim ersten Start automatisch erstellt:
   "slot_hsv_tolerance": 25,
   "slot_inset": 10,
   "slot_color_distance": 25,
-  "default_min_confidence": 0.9,
+  "default_min_confidence": 0.8,
   "debug_mode": false,
   "debug_detection": false,
   "show_pixel_position": false,
@@ -425,7 +425,7 @@ Wird beim ersten Start automatisch erstellt:
 | `slot_hsv_tolerance` | HSV-Toleranz für automatische Slot-Erkennung |
 | `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
 | `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
-| `default_min_confidence` | Standard-Konfidenz für Template-Matching (Standard: 0.9 = 90%) |
+| `default_min_confidence` | Standard-Konfidenz für Template-Matching (Standard: 0.8 = 80%) |
 
 ### Debug-Einstellungen
 
