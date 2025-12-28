@@ -531,7 +531,7 @@ class ItemProfile:
     # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
     category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
     priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
-    confirm_point: Optional[tuple] = None  # (x, y) Koordinaten für Bestätigung nach Klick
+    confirm_point: Optional[ClickPoint] = None  # ClickPoint für Bestätigung nach Klick
     confirm_delay: float = 0.5  # Wartezeit vor Bestätigungs-Klick
     # Template Matching (optional - überschreibt marker_colors wenn gesetzt)
     template: Optional[str] = None  # Dateiname des Template-Bildes (in items/templates/)
@@ -692,6 +692,45 @@ def get_point_by_id(state: 'AutoClickerState', point_id: int) -> Optional[ClickP
             return p
     return None
 
+def get_existing_categories(state: 'AutoClickerState') -> list[str]:
+    """Sammelt alle existierenden Kategorien aus den Items."""
+    categories = set()
+    for item in state.global_items.values():
+        if item.category:
+            categories.add(item.category)
+    return sorted(categories)
+
+def select_category(state: 'AutoClickerState', show_explanation: bool = True) -> Optional[str]:
+    """Zeigt existierende Kategorien an und lässt Benutzer wählen oder neue eingeben."""
+    categories = get_existing_categories(state)
+
+    if show_explanation:
+        print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
+        print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
+
+    if categories:
+        print("  Vorhandene Kategorien:")
+        for i, cat in enumerate(categories, 1):
+            print(f"    {i}. {cat}")
+        print("  (Nummer wählen oder neuen Namen eingeben)")
+
+    user_input = input("  Kategorie (Enter = keine): ").strip()
+
+    if not user_input:
+        return None
+
+    # Prüfe ob es eine Nummer ist
+    try:
+        num = int(user_input)
+        if 1 <= num <= len(categories):
+            return categories[num - 1]
+        else:
+            # Nummer außerhalb des Bereichs - als neuer Name behandeln
+            return user_input
+    except ValueError:
+        # Keine Nummer - neuer Kategorie-Name
+        return user_input
+
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
     """Lädt eine einzelne Sequenz-Datei (mit Start + mehreren Loop-Phasen)."""
     try:
@@ -829,7 +868,7 @@ def save_item_scan(config: ItemScanConfig) -> None:
                 "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
                 "category": item.category,
                 "priority": item.priority,
-                "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+                "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
                 "confirm_delay": item.confirm_delay,
                 "template": item.template,
                 "min_confidence": item.min_confidence
@@ -865,12 +904,14 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             items = []
             for i in data.get("items", []):
-                # confirm_point: kann [x,y] Liste sein oder None
-                cp = i.get("confirm_point")
-                if cp and isinstance(cp, list) and len(cp) == 2:
-                    cp = tuple(cp)
-                else:
-                    cp = None  # Alte int-Werte ignorieren
+                # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
+                cp_data = i.get("confirm_point")
+                cp = None
+                if cp_data:
+                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
+                        cp = ClickPoint(cp_data["x"], cp_data["y"])
+                    elif isinstance(cp_data, list) and len(cp_data) == 2:
+                        cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
                 item = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
@@ -966,7 +1007,7 @@ def save_global_items(state: AutoClickerState) -> None:
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "category": item.category,
             "priority": item.priority,
-            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
             "min_confidence": item.min_confidence
@@ -1043,12 +1084,14 @@ def load_global_items(state: AutoClickerState) -> None:
         with open(ITEMS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         for name, i in data.items():
-            # confirm_point: kann [x,y] Liste sein oder None
-            cp = i.get("confirm_point")
-            if cp and isinstance(cp, list) and len(cp) == 2:
-                cp = tuple(cp)
-            else:
-                cp = None  # Alte int-Werte ignorieren
+            # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
+            cp_data = i.get("confirm_point")
+            cp = None
+            if cp_data:
+                if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
+                    cp = ClickPoint(cp_data["x"], cp_data["y"])
+                elif isinstance(cp_data, list) and len(cp_data) == 2:
+                    cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
             state.global_items[name] = ItemProfile(
                 name=i["name"],
                 marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
@@ -1185,7 +1228,7 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
             "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
             "category": item.category,
             "priority": item.priority,
-            "confirm_point": list(item.confirm_point) if item.confirm_point else None,
+            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
             "confirm_delay": item.confirm_delay,
             "template": item.template,
             "min_confidence": item.min_confidence
@@ -1215,12 +1258,14 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         with state.lock:
             state.global_items.clear()
             for name, i in data.items():
-                # confirm_point: kann [x,y] Liste sein oder None
-                cp = i.get("confirm_point")
-                if cp and isinstance(cp, list) and len(cp) == 2:
-                    cp = tuple(cp)
-                else:
-                    cp = None  # Alte int-Werte ignorieren
+                # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
+                cp_data = i.get("confirm_point")
+                cp = None
+                if cp_data:
+                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
+                        cp = ClickPoint(cp_data["x"], cp_data["y"])
+                    elif isinstance(cp_data, list) and len(cp_data) == 2:
+                        cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
                 state.global_items[name] = ItemProfile(
                     name=i["name"],
                     marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
@@ -2500,9 +2545,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         continue
 
                 # Kategorie zuerst (für Prioritäts-Verschiebung)
-                print("\n  Kategorie (z.B. 'Hosen', 'Jacken', 'Juwelen')")
-                print("  Items derselben Kategorie konkurrieren - nur das beste wird geklickt.")
-                category = input("  Kategorie (Enter = keine): ").strip() or None
+                category = select_category(state)
 
                 # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
@@ -2624,7 +2667,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         continue
 
                 # Kategorie zuerst (für Prioritäts-Verschiebung)
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+                category = select_category(state)
 
                 # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
@@ -3335,7 +3378,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 template_img.save(template_path)
 
                 # Kategorie zuerst (für Prioritäts-Verschiebung)
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+                category = select_category(state)
 
                 # Priorität (0 = alle in Kategorie verschieben und P1 werden)
                 priority = 1
@@ -3703,7 +3746,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                     item_name = f"Item {item_num}"
 
                 # Kategorie zuerst
-                category = input("  Kategorie (z.B. 'Hosen', Enter = keine): ").strip() or None
+                category = select_category(state)
 
                 # Priorität
                 priority = 1
