@@ -5378,221 +5378,193 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 
     return True
 
-def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
-    """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
 
-    # Fail-Safe prüfen
-    if check_failsafe(state):
-        print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
-        state.stop_event.set()
-        return False
+def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
+                            step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen Item-Scan Schritt aus. Gibt False zurück wenn abgebrochen."""
+    mode = step.item_scan_mode
+    mode_str = "alle" if mode == "all" else "bestes"
+    clear_line()
+    print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
-    # Debug: Zeige Schritt-Details
-    if state.config.get("debug_mode", False):
-        print(f"  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
-              f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
+    scan_results = execute_item_scan(state, step.item_scan, mode)
+    if state.config.get("debug_detection", False):
+        print(f"[DEBUG] scan_results = {scan_results}")
 
-    # === SONDERFALL: Item-Scan Schritt ===
-    if step.item_scan:
-        mode = step.item_scan_mode
-        mode_str = "alle" if mode == "all" else "bestes"
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
+    if scan_results:
+        # Klicke alle gefundenen Positionen
+        for i, (pos, item, priority) in enumerate(scan_results):
+            if state.stop_event.is_set():
+                return False
+            if state.config.get("debug_detection", False):
+                print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
+            send_click(pos[0], pos[1])
+            with state.lock:
+                state.total_clicks += 1
+                state.items_found += 1
+                # Kategorie mit Priorität speichern
+                cat = item.category or item.name
+                if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
+                    state.clicked_categories[cat] = priority
 
-        scan_results = execute_item_scan(state, step.item_scan, mode)
-        if state.config.get("debug_detection", False):
-            print(f"[DEBUG] scan_results = {scan_results}")
-        if scan_results:
-            # Klicke alle gefundenen Positionen
-            for i, (pos, item, priority) in enumerate(scan_results):
-                if state.stop_event.is_set():
-                    return False
+            # Bestätigungs-Klick falls definiert
+            if item.confirm_point is not None:
+                confirm_x, confirm_y = item.confirm_point.x, item.confirm_point.y
                 if state.config.get("debug_detection", False):
-                    print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
-                send_click(pos[0], pos[1])
+                    print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
+                if item.confirm_delay > 0:
+                    time.sleep(item.confirm_delay)
+                send_click(confirm_x, confirm_y)
+                if state.config.get("debug_detection", False):
+                    print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                 with state.lock:
                     state.total_clicks += 1
-                    state.items_found += 1
-                    # Kategorie mit Priorität speichern (verhindert schlechtere Items derselben Kategorie)
-                    cat = item.category or item.name
-                    # Nur aktualisieren wenn besser als bisherige Priorität
-                    if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
-                        state.clicked_categories[cat] = priority
 
-                # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
-                if item.confirm_point is not None:
-                    confirm_x, confirm_y = item.confirm_point.x, item.confirm_point.y
-                    if state.config.get("debug_detection", False):
-                        print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
-                    if item.confirm_delay > 0:
-                        time.sleep(item.confirm_delay)
-                    send_click(confirm_x, confirm_y)
-                    if state.config.get("debug_detection", False):
-                        print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
-                    with state.lock:
-                        state.total_clicks += 1
+            time.sleep(1.0)  # Pause nach jedem Klick
 
-                # 1 Sekunde Pause nach jedem Klick
-                time.sleep(1.0)
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)! (Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
-        else:
-            # Kein Item gefunden - Else-Aktion ausführen
-            if step.else_action:
-                return execute_else_action(state, step, phase, step_num, total_steps)
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
-        return True
-
-    # === SONDERFALL: Tastendruck ===
-    if step.key_press:
-        # Erst warten (mit zufälliger Verzögerung)
-        actual_delay = step.get_actual_delay()
-        if actual_delay > 0:
-            if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
-                                        f"Taste '{step.key_press}' in"):
-                return False
-
-        if state.stop_event.is_set():
-            return False
-
-        # Taste drücken
-        if send_key(step.key_press):
-            with state.lock:
-                state.key_presses += 1
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'! (Tasten: {state.key_presses})", end="", flush=True)
-        return True
-
-    # === PHASE 1: Warten VOR dem Klick (Zeit oder Farbe) ===
-    if step.wait_pixel and step.wait_color:
-        # Optional: Erst delay_before warten, dann auf Farbe prüfen
-        actual_delay = step.get_actual_delay()
-        if actual_delay > 0:
-            if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
-                                        "Vor Farbprüfung"):
-                return False
-
-        # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
-        if state.config.get("show_pixel_position", False):
-            set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
-            time.sleep(0.3)  # Kurz anzeigen wo geprüft wird
-
-        # Warten auf Farbe an Pixel-Position (oder warten bis Farbe WEG ist)
-        timeout = PIXEL_WAIT_TIMEOUT  # Aus Config
-        start_time = time.time()
-        expected_name = get_color_name(step.wait_color)
-        wait_mode = "WEG" if step.wait_until_gone else "DA"
-        while not state.stop_event.is_set():
-            # Check skip
-            if state.skip_event.is_set():
-                state.skip_event.clear()
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", end="", flush=True)
-                break
-
-            # Check pause
-            if not wait_while_paused(state, "Warte auf Farbe..."):
-                break
-
-            # Prüfe Farbe
-            if PILLOW_AVAILABLE:
-                img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
-                                      step.wait_pixel[0]+1, step.wait_pixel[1]+1))
-                if img:
-                    current_color = img.getpixel((0, 0))[:3]
-                    dist = color_distance(current_color, step.wait_color)
-
-                    # Bedingung: Farbe DA (dist <= Toleranz) oder Farbe WEG (dist > Toleranz)
-                    # Toleranz dynamisch aus Config laden
-                    pixel_tolerance = state.config.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
-                    color_matches = dist <= pixel_tolerance
-                    condition_met = (not color_matches) if step.wait_until_gone else color_matches
-
-                    # Debug-Ausgabe wenn aktiviert (persistente Ausgabe im Terminal)
-                    if state.config.get("debug_detection", False):
-                        current_name = get_color_name(current_color)
-                        elapsed = time.time() - start_time
-                        if step.wait_until_gone:
-                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Warte auf WEG: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
-                        else:
-                            print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | Erwartet: RGB{step.wait_color} ({expected_name}) | Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
-
-                    if condition_met:
-                        if step.wait_until_gone:
-                            msg = "Farbe weg!"
-                        else:
-                            msg = "Farbe erkannt!"
-                        if state.config.get("debug_detection", False):
-                            # Debug: keine Zeilenüberschreibung
-                            if step.wait_only:
-                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
-                            else:
-                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
-                        else:
-                            # Normal: Zeile überschreiben
-                            clear_line()
-                            if step.wait_only:
-                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
-                            else:
-                                print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
-                        break
-
-                    # Wenn Debug aktiv, warte und continue
-                    if state.config.get("debug_detection", False):
-                        check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
-                        if state.stop_event.wait(check_interval):
-                            return False
-                        continue
-
-            elapsed = time.time() - start_time
-            if elapsed >= timeout:
-                # Timeout erreicht - Else-Aktion ausführen falls vorhanden
-                if step.else_action:
-                    if state.config.get("debug_detection", False):
-                        print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s")
-                    else:
-                        clear_line()
-                        print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
-                    return execute_else_action(state, step, phase, step_num, total_steps)
-                print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
-                state.stop_event.set()  # Stoppt die ganze Sequenz
-                return False
-
-            # Status-Ausgabe (nur wenn NICHT im debug_detection Modus, da dort bereits ausgegeben)
-            if not state.config.get("debug_detection", False):
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
-
-            check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
-            if state.stop_event.wait(check_interval):
-                return False
-
-    elif step.delay_before > 0 or step.delay_max:
-        # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
-        actual_delay = step.get_actual_delay()
-        if state.config.get("debug_mode", False):
-            print(f"  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
-        action = "Warten" if step.wait_only else "Klicke in"
-        if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
-            return False
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)! "
+              f"(Items: {state.items_found}, Klicks: {state.total_clicks})", end="", flush=True)
     else:
-        if state.config.get("debug_mode", False):
-            print(f"  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
+        # Kein Item gefunden - Else-Aktion ausführen
+        if step.else_action:
+            return execute_else_action(state, step, phase, step_num, total_steps)
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
+
+    return True
+
+
+def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
+                            step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen Tastendruck-Schritt aus. Gibt False zurück wenn abgebrochen."""
+    # Erst warten (mit zufälliger Verzögerung)
+    actual_delay = step.get_actual_delay()
+    if actual_delay > 0:
+        if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
+                                    f"Taste '{step.key_press}' in"):
+            return False
 
     if state.stop_event.is_set():
         return False
 
-    # === SONDERFALL: Nur warten, kein Klick ===
-    if step.wait_only:
-        if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
-            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
-        return True
+    # Taste drücken
+    if send_key(step.key_press):
+        with state.lock:
+            state.key_presses += 1
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'! "
+              f"(Tasten: {state.key_presses})", end="", flush=True)
 
-    # === PHASE 2: Klick ausführen ===
+    return True
+
+
+def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
+                            step_num: int, total_steps: int, phase: str) -> bool:
+    """Wartet auf eine Farbe an einer Pixel-Position. Gibt False zurück wenn abgebrochen."""
+    # Optional: Erst delay_before warten
+    actual_delay = step.get_actual_delay()
+    if actual_delay > 0:
+        if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, "Vor Farbprüfung"):
+            return False
+
+    # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
+    if state.config.get("show_pixel_position", False):
+        set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
+        time.sleep(0.3)
+
+    timeout = PIXEL_WAIT_TIMEOUT
+    start_time = time.time()
+    expected_name = get_color_name(step.wait_color)
+    wait_mode = "WEG" if step.wait_until_gone else "DA"
+
+    while not state.stop_event.is_set():
+        # Check skip
+        if state.skip_event.is_set():
+            state.skip_event.clear()
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", end="", flush=True)
+            break
+
+        # Check pause
+        if not wait_while_paused(state, "Warte auf Farbe..."):
+            break
+
+        # Prüfe Farbe
+        if PILLOW_AVAILABLE:
+            img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
+                                  step.wait_pixel[0]+1, step.wait_pixel[1]+1))
+            if img:
+                current_color = img.getpixel((0, 0))[:3]
+                dist = color_distance(current_color, step.wait_color)
+                pixel_tolerance = state.config.get("pixel_wait_tolerance", PIXEL_WAIT_TOLERANCE)
+                color_matches = dist <= pixel_tolerance
+                condition_met = (not color_matches) if step.wait_until_gone else color_matches
+
+                # Debug-Ausgabe
+                if state.config.get("debug_detection", False):
+                    current_name = get_color_name(current_color)
+                    elapsed = time.time() - start_time
+                    if step.wait_until_gone:
+                        print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | "
+                              f"Warte auf WEG: RGB{step.wait_color} ({expected_name}) | "
+                              f"Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
+                    else:
+                        print(f"[DEBUG] Aktuell: RGB{current_color} ({current_name}) | "
+                              f"Erwartet: RGB{step.wait_color} ({expected_name}) | "
+                              f"Diff: {dist:.0f} (Tol: {pixel_tolerance}) | Match: {color_matches} ({elapsed:.0f}s)")
+
+                if condition_met:
+                    msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
+                    if state.config.get("debug_detection", False):
+                        if step.wait_only:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                        else:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                    else:
+                        clear_line()
+                        if step.wait_only:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                        else:
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
+                    break
+
+                # Debug: warte und continue
+                if state.config.get("debug_detection", False):
+                    check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+                    if state.stop_event.wait(check_interval):
+                        return False
+                    continue
+
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
+            # Timeout - Else-Aktion ausführen falls vorhanden
+            if step.else_action:
+                if state.config.get("debug_detection", False):
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s")
+                else:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT nach {timeout}s", end="", flush=True)
+                return execute_else_action(state, step, phase, step_num, total_steps)
+            print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s - Sequenz gestoppt!")
+            state.stop_event.set()
+            return False
+
+        # Status-Ausgabe
+        if not state.config.get("debug_detection", False):
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
+
+        check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
+        if state.stop_event.wait(check_interval):
+            return False
+
+    return True
+
+
+def _execute_click(state: AutoClickerState, step: SequenceStep,
+                   step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt den eigentlichen Klick aus. Gibt False zurück wenn abgebrochen."""
     for _ in range(CLICKS_PER_POINT):
         if state.stop_event.is_set():
             return False
@@ -5619,6 +5591,60 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
             return False
 
     return True
+
+
+def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken. Gibt False zurück wenn abgebrochen."""
+
+    # Fail-Safe prüfen
+    if check_failsafe(state):
+        print("\n[FAILSAFE] Maus in Ecke erkannt! Stoppe...")
+        state.stop_event.set()
+        return False
+
+    # Debug: Zeige Schritt-Details
+    if state.config.get("debug_mode", False):
+        print(f"  [DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}, "
+              f"delay_before={step.delay_before}, wait_pixel={step.wait_pixel}, wait_only={step.wait_only}")
+
+    # === SONDERFALL: Item-Scan Schritt ===
+    if step.item_scan:
+        return _execute_item_scan_step(state, step, step_num, total_steps, phase)
+
+    # === SONDERFALL: Tastendruck ===
+    if step.key_press:
+        return _execute_key_press_step(state, step, step_num, total_steps, phase)
+
+    # === PHASE 1: Warten VOR dem Klick (Zeit oder Farbe) ===
+    if step.wait_pixel and step.wait_color:
+        if not _execute_wait_for_color(state, step, step_num, total_steps, phase):
+            return False
+    elif step.delay_before > 0 or step.delay_max:
+        # Zeit-basierte Wartezeit VOR dem Klick (mit zufälliger Verzögerung)
+        actual_delay = step.get_actual_delay()
+        if state.config.get("debug_mode", False):
+            print(f"  [DEBUG] Step {step_num}: Warte {actual_delay:.1f}s")
+        action = "Warten" if step.wait_only else "Klicke in"
+        if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, action):
+            return False
+    else:
+        if state.config.get("debug_mode", False):
+            print(f"  [DEBUG] Step {step_num}: Keine Wartezeit -> sofort klicken")
+
+    if state.stop_event.is_set():
+        return False
+
+    # === SONDERFALL: Nur warten, kein Klick ===
+    if step.wait_only:
+        if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+        return True
+
+    # === PHASE 2: Klick ausführen ===
+    return _execute_click(state, step, step_num, total_steps, phase)
 
 
 def format_duration(seconds: float) -> str:
