@@ -691,73 +691,45 @@ def main():
     # 1. Config (global)
     print(f"\n  [1/8] Config...")
     count, fixes = sync_config()
-    if fixes:
-        print(f"        {len(CONFIG_DEFAULTS)} Optionen, {fixes} ergaenzt")
-    else:
-        print(f"        {len(CONFIG_DEFAULTS)} Optionen - OK")
+    print(f"        {len(CONFIG_DEFAULTS)} Optionen, {fixes} Fixes")
 
     # 2. Points (laedt auch POINTS fuer spaeter)
     print(f"\n  [2/8] Points...")
     count, fixes = sync_points()
-    if count:
-        if fixes:
-            print(f"        {count} Punkte, {fixes} Korrekturen")
-        else:
-            print(f"        {count} Punkte - OK")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Punkte, {fixes} Fixes")
 
     # 3. Sequences
     print(f"\n  [3/8] Sequences...")
     count, fixes = sync_sequences()
-    if count:
-        print(f"        {count} Sequenz(en), {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Sequenzen, {fixes} Fixes")
 
     # 4. Slots (global)
     print(f"\n  [4/8] Slots global...")
     count, fixes = sync_global_slots()
-    if count:
-        print(f"        {count} Slots, {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Slots, {fixes} Fixes")
 
     # 5. Items (global)
     print(f"\n  [5/8] Items global...")
     count, fixes = sync_global_items()
-    if count:
-        print(f"        {count} Items, {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Items, {fixes} Fixes")
 
     # 6. Scans (global)
     print(f"\n  [6/8] Scans global...")
     global_items = load_json_safe(ITEMS_FILE) or {}
-
-    if global_items:
-        updated, fixed, user = sync_scan_configs(global_items)
-        print(f"\n        Aktualisiert: {updated}, Auto-Fixes: {fixed}, User-Input: {user}")
-    else:
-        print("        - Keine Items zum Abgleich")
+    updated, fixed, user = sync_scan_configs(global_items)
+    print(f"        {updated} Scans, {fixed} Fixes")
 
     print("\n  === UNTERORDNER (PRESETS) ===")
 
     # 7. Slot presets
     print(f"\n  [7/8] Slot presets...")
     count, fixes = sync_slot_presets()
-    if count:
-        print(f"        {count} Preset(s), {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Presets, {fixes} Fixes")
 
     # 8. Item presets
     print(f"\n  [8/8] Item presets...")
     count, fixes = sync_item_presets()
-    if count:
-        print(f"        {count} Preset(s), {fixes} Korrekturen")
-    else:
-        print("        - keine vorhanden")
+    print(f"        {count} Presets, {fixes} Fixes")
 
     print("\n" + "=" * 60)
     print("  SYNC abgeschlossen!")
