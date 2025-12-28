@@ -405,8 +405,9 @@ Autoclicker-Idleclans/
 │   └── preview_*.png       # Vorschau mit Markierungen
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen
-└── configs/                # Config-Presets
-    └── *.json              # Gespeicherte Konfigurationen
+└── tools/                  # Hilfswerkzeuge
+    ├── sync_json.py        # JSON-Dateien synchronisieren
+    └── slot_tester.py      # Slot-Erkennung testen
 ```
 
 ## Technische Details
@@ -423,10 +424,35 @@ Autoclicker-Idleclans/
 - Sichere Dateinamen (Path-Traversal-Schutz)
 - Bounds-Checking für Bildschirmregionen
 
+## Tools
+
+### Sync-Tool (`tools/sync_json.py`)
+
+Bringt alle JSON-Dateien auf den aktuellen Code-Stand:
+
+```bash
+python tools/sync_json.py
+```
+
+- Fehlende Felder mit Standardwerten ergänzen
+- Alte Formate konvertieren (z.B. `confirm_point` int → Koordinaten)
+- Presets erben Werte von globalen Dateien
+
+### Slot-Tester (`tools/slot_tester.py`)
+
+Testet die automatische Slot-Erkennung mit Debug-Ausgaben:
+
+```bash
+python tools/slot_tester.py
+```
+
 ## Changelog
 
 ### Neueste Änderungen
 
+- **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
+- **Slot-Tester**: Debug-Tool für Slot-Erkennung
+- **confirm_point als Koordinaten**: Robuster bei Punkt-Änderungen
 - **Scan-Modus "every"**: Alle Treffer ohne Filter klicken (für Spiele mit Duplikaten)
 - **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
 - **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken

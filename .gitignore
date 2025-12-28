@@ -45,8 +45,11 @@ sequences/
 slots/
 items/
 item_scans/
-configs/
 Screenshots/
+
+# Tools debug output (keep .gitkeep)
+tools/debug/*
+!tools/debug/.gitkeep
 
 # Logs
 *.log
