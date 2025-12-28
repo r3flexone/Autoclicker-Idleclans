@@ -692,9 +692,9 @@ def main():
     print(f"\n  [1/8] Config...")
     count, fixes = sync_config()
     if fixes:
-        print(f"        {fixes} Felder ergaenzt/korrigiert")
+        print(f"        {len(CONFIG_DEFAULTS)} Optionen, {fixes} ergaenzt")
     else:
-        print("        OK")
+        print(f"        {len(CONFIG_DEFAULTS)} Optionen - OK")
 
     # 2. Points (laedt auch POINTS fuer spaeter)
     print(f"\n  [2/8] Points...")
