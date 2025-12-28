@@ -604,6 +604,9 @@ class AutoClickerState:
     key_presses: int = 0
     start_time: Optional[float] = None
 
+    # Bereits geklickte Kategorien im aktuellen Zyklus (verhindert doppelte Klicks)
+    clicked_categories: set = field(default_factory=set)
+
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
     quit_event: threading.Event = field(default_factory=threading.Event)
@@ -4210,9 +4213,18 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
     # Gruppiere nach Kategorie und behalte nur das beste pro Kategorie
     # Kategorie = item.category oder item.name (falls keine Kategorie gesetzt)
+    # Überspringe Kategorien, die in diesem Zyklus bereits geklickt wurden
     best_per_category = {}  # {category: (slot, item, priority)}
     for slot, item, priority in found_items:
         cat = item.category or item.name  # Fallback auf Item-Name
+
+        # Überspringe wenn Kategorie bereits in diesem Zyklus geklickt wurde
+        with state.lock:
+            if cat in state.clicked_categories:
+                if CONFIG.get("debug_detection", False):
+                    print(f"[DEBUG]   → {item.name} übersprungen (Kategorie '{cat}' bereits geklickt)")
+                continue
+
         if cat not in best_per_category or priority < best_per_category[cat][2]:
             best_per_category[cat] = (slot, item, priority)
 
@@ -5281,6 +5293,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
                 with state.lock:
                     state.total_clicks += 1
                     state.items_found += 1
+                    # Kategorie als geklickt markieren (verhindert schlechtere Items derselben Kategorie)
+                    cat = item.category or item.name
+                    state.clicked_categories.add(cat)
 
                 # Bestätigungs-Klick falls für dieses Item definiert (Koordinaten direkt gespeichert)
                 if item.confirm_point is not None:
@@ -5551,6 +5566,10 @@ def sequence_worker(state: AutoClickerState) -> None:
             print("\n[RESTART] Sequenz wird neu gestartet...")
 
         cycle_count += 1
+
+        # Geklickte Kategorien zurücksetzen für neuen Zyklus
+        with state.lock:
+            state.clicked_categories.clear()
 
         # Prüfen ob max Zyklen erreicht (0 = unendlich)
         if total_cycles > 0 and cycle_count > total_cycles:
