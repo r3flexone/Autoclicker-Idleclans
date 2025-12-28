@@ -155,6 +155,7 @@ DEFAULT_CONFIG = {
 
     # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
+    "scan_slot_delay": 0,               # Pause zwischen Slot-Scans in Sekunden (0 = keine)
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
     "require_all_markers": True,        # True = ALLE Marker müssen gefunden werden
     "min_markers_required": 2,          # Minimum Marker (nur wenn require_all_markers=False)
@@ -4133,7 +4134,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     mode_str = mode_names.get(mode, mode)
     print(f"\n[SCAN] Scanne {len(slots_to_scan)} Slots für '{scan_name}' ({direction}, Modus: {mode_str})...")
 
-    for slot in slots_to_scan:
+    for slot_idx, slot in enumerate(slots_to_scan):
+        # Delay zwischen Slots (außer beim ersten)
+        slot_delay = CONFIG.get("scan_slot_delay", 0)
+        if slot_idx > 0 and slot_delay > 0:
+            time.sleep(slot_delay)
+
         # Screenshot der Scan-Region
         img = take_screenshot(slot.scan_region)
         if img is None:
@@ -5471,7 +5477,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int, tot
     # === SONDERFALL: Nur warten, kein Klick ===
     if step.wait_only:
         if CONFIG.get("debug_mode", False) or CONFIG.get("debug_detection", False):
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
+            print(f"\n[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
         else:
             clear_line()
             print(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)")
