@@ -38,11 +38,12 @@ Fail-Safe: Maus in obere linke Ecke (x<=2, y<=2) stoppt den Klicker.
 import ctypes
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
-except Exception:
+except (AttributeError, OSError):
+    # shcore nicht verfügbar (älteres Windows)
     try:
         ctypes.windll.user32.SetProcessDPIAware()  # Fallback für ältere Windows
-    except Exception:
-        pass
+    except (AttributeError, OSError):
+        pass  # DPI-Awareness nicht unterstützt
 
 import ctypes.wintypes as wintypes
 import threading
@@ -843,8 +844,8 @@ def list_available_sequences() -> list[tuple[str, Path]]:
                     data = json.load(file)
                     name = data.get("name", f.stem)
                     sequences.append((name, f))
-            except Exception:
-                pass
+            except (json.JSONDecodeError, IOError, KeyError):
+                pass  # Ungültige/korrupte Datei überspringen
     return sequences
 
 # =============================================================================
@@ -958,8 +959,8 @@ def list_available_item_scans() -> list[tuple[str, Path]]:
                 data = json.load(file)
                 name = data.get("name", f.stem)
                 scans.append((name, f))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, IOError, KeyError):
+            pass  # Ungültige/korrupte Datei überspringen
     return scans
 
 def load_all_item_scans(state: AutoClickerState) -> None:
@@ -1140,8 +1141,8 @@ def list_slot_presets() -> list[tuple[str, Path]]:
                 name = f.stem
                 count = len(data)
                 presets.append((name, f, count))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, IOError, KeyError, TypeError):
+            pass  # Ungültige/korrupte Datei überspringen
     return presets
 
 def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
@@ -1222,8 +1223,8 @@ def list_item_presets() -> list[tuple[str, Path]]:
                 name = f.stem
                 count = len(data)
                 presets.append((name, f, count))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, IOError, KeyError, TypeError):
+            pass  # Ungültige/korrupte Datei überspringen
     return presets
 
 def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
@@ -1323,8 +1324,8 @@ def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
         img = ImageGrab.grab(bbox=(x, y, x + 1, y + 1), all_screens=True)
         if img:
             return img.getpixel((0, 0))[:3]
-    except Exception:
-        pass
+    except (OSError, ValueError):
+        pass  # Screenshot fehlgeschlagen
     return None
 
 def set_cursor_pos(x: int, y: int) -> bool:
@@ -4089,7 +4090,7 @@ def collect_marker_colors_free() -> list[tuple]:
                 exclude_color = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
                 color_name = get_color_name(exclude_color)
                 print(f"  → Hintergrund: RGB{exclude_color} ({color_name}) wird ausgeschlossen")
-        except Exception:
+        except (OSError, TypeError, AttributeError):
             print("  → Konnte Hintergrundfarbe nicht aufnehmen, fahre ohne fort")
 
     return collect_marker_colors(region, exclude_color)
