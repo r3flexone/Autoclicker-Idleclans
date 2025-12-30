@@ -140,6 +140,7 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
         2h, 2std    → 2 Stunden
         14:30       → Sekunden bis 14:30 Uhr (heute oder morgen)
         +30m        → In 30 Minuten (relativ)
+        +2          → In 2 Minuten (+ ohne Einheit = Minuten)
 
     Returns:
         (sekunden: float, beschreibung: str)
@@ -153,8 +154,9 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
     if not time_str:
         return (-1, "Keine Zeit angegeben")
 
-    # Relative Zeit mit + Präfix: +30m, +2h
-    if time_str.startswith("+"):
+    # Relative Zeit mit + Präfix: +30m, +2h, +2 (ohne Einheit = Minuten)
+    has_plus_prefix = time_str.startswith("+")
+    if has_plus_prefix:
         time_str = time_str[1:]
 
     # Format: HH:MM (Uhrzeit)
@@ -185,7 +187,8 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
     # Format: Zahl mit optionaler Einheit (30, 30s, 30m, 30min, 2h, 2std)
     try:
         # Einheit extrahieren
-        unit = "s"
+        # Bei + Präfix ohne Einheit: Default = Minuten (für Zeitplan sinnvoller)
+        unit = "m" if has_plus_prefix else "s"
         value_str = time_str
 
         if time_str.endswith("std"):
