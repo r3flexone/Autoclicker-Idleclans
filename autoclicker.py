@@ -4922,12 +4922,30 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  del <Nr>          - Schritt löschen")
     print("  del <Nr>-<Nr>     - Bereich löschen (z.B. del 1-5)")
     print("  del all           - ALLE Schritte löschen")
+    print("  ins <Nr>          - Nächsten Schritt an Position einfügen")
     print("  show | done | cancel")
     print("-" * 60)
 
+    insert_position = None  # None = am Ende anfügen, Zahl = an Position einfügen
+
+    def add_step(step):
+        """Fügt Schritt hinzu - entweder an insert_position oder am Ende."""
+        nonlocal insert_position
+        if insert_position is not None:
+            steps.insert(insert_position - 1, step)
+            print(f"  ✓ Eingefügt an Position {insert_position}: {step}")
+            insert_position = None  # Reset nach Einfügen
+        else:
+            steps.append(step)
+            print(f"  ✓ Hinzugefügt: {step}")
+
     while True:
         try:
-            prompt = f"[{phase_name}: {len(steps)}]"
+            # Zeige Insert-Modus im Prompt an
+            if insert_position is not None:
+                prompt = f"[{phase_name}: {len(steps)}] (ins→{insert_position})"
+            else:
+                prompt = f"[{phase_name}: {len(steps)}]"
             user_input = input(f"{prompt} > ").strip()
 
             if user_input.lower() == "done":
@@ -4982,6 +5000,31 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         print(f"  → Ungültiger Schritt! Verfügbar: 1-{len(steps)}")
                 except ValueError:
                     print("  → Format: del <Nr>")
+                continue
+
+            elif user_input.lower().startswith("ins "):
+                # Insert-Modus: nächster Schritt wird an Position eingefügt
+                try:
+                    pos = int(user_input[4:])
+                    if pos < 1:
+                        print("  → Position muss >= 1 sein!")
+                        continue
+                    if pos > len(steps) + 1:
+                        print(f"  → Position zu groß! Max: {len(steps) + 1}")
+                        continue
+                    insert_position = pos
+                    print(f"  ✓ Insert-Modus: Nächster Schritt wird an Position {pos} eingefügt")
+                    print(f"    (Abbrechen mit 'ins 0' oder 'ins end')")
+                except ValueError:
+                    print("  → Format: ins <Nr>")
+                continue
+
+            elif user_input.lower() in ("ins 0", "ins end"):
+                if insert_position is not None:
+                    insert_position = None
+                    print("  ✓ Insert-Modus beendet - Schritte werden wieder am Ende angefügt")
+                else:
+                    print("  → Insert-Modus war nicht aktiv")
                 continue
 
             elif user_input.lower() == "points":
@@ -5089,8 +5132,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     else_key=else_data.get("else_key"),
                     else_name=else_data.get("else_name", "")
                 )
-                steps.append(step)
-                print(f"  ✓ Hinzugefügt: {step}")
+                add_step(step)
                 continue
 
             elif user_input.lower().startswith("key "):
@@ -5139,8 +5181,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
                 step = SequenceStep(x=0, y=0, delay_before=delay_min, name=f"Key:{key_name}",
                                    key_press=key_name, delay_max=delay_max)
-                steps.append(step)
-                print(f"  ✓ Hinzugefügt: {step}")
+                add_step(step)
                 continue
 
             elif user_input.lower().startswith("wait "):
@@ -5194,8 +5235,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                                 else_key=else_data.get("else_key"),
                                 else_name=else_data.get("else_name", "")
                             )
-                            steps.append(step)
-                            print(f"  ✓ Hinzugefügt: {step}")
+                            add_step(step)
                         else:
                             print("  → Fehler: Konnte Farbe nicht lesen!")
                     else:
@@ -5211,8 +5251,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             continue
                         step = SequenceStep(x=0, y=0, delay_before=wait_min, name="Wait",
                                            wait_only=True, delay_max=wait_max)
-                        steps.append(step)
-                        print(f"  ✓ Hinzugefügt: {step}")
+                        add_step(step)
                     except (ValueError, IndexError):
                         print("  → Format: wait <Min>-<Max>")
                 else:
@@ -5223,8 +5262,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         print("  → Format: wait <Sek> | wait 30m | wait 2h | wait 14:30 | wait pixel")
                         continue
                     step = SequenceStep(x=0, y=0, delay_before=seconds, name=f"Wait ({desc})", wait_only=True)
-                    steps.append(step)
-                    print(f"  ✓ Hinzugefügt: {step}")
+                    add_step(step)
                 continue
 
             # Neuen Schritt hinzufügen (Punkt + Zeit oder Pixel)
@@ -5323,8 +5361,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             else_key=else_data.get("else_key"),
                             else_name=else_data.get("else_name", "")
                         )
-                        steps.append(step)
-                        print(f"  ✓ Hinzugefügt: {step}")
+                        add_step(step)
                     else:
                         print("  → Fehler: Konnte Farbe nicht lesen!")
                 else:
@@ -5356,8 +5393,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
                 step = SequenceStep(x=point_x, y=point_y, delay_before=delay_min,
                                    name=point_name, delay_max=delay_max)
-                steps.append(step)
-                print(f"  ✓ Hinzugefügt: {step}")
+                add_step(step)
 
         except ValueError:
             print("  → Ungültige Eingabe!")
