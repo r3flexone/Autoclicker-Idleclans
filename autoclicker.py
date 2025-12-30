@@ -131,6 +131,99 @@ def sanitize_filename(name: str) -> str:
     return name.lower()
 
 
+def parse_time_input(time_str: str) -> tuple[float, str]:
+    """Parst Zeit-Eingaben in verschiedenen Formaten.
+
+    Unterstützte Formate:
+        30, 30s     → 30 Sekunden
+        30m, 30min  → 30 Minuten
+        2h, 2std    → 2 Stunden
+        14:30       → Sekunden bis 14:30 Uhr (heute oder morgen)
+        +30m        → In 30 Minuten (relativ)
+
+    Returns:
+        (sekunden: float, beschreibung: str)
+        Bei Fehler: (-1, fehlermeldung)
+    """
+    from datetime import datetime, timedelta
+
+    time_str = time_str.strip().lower()
+
+    # Leere Eingabe
+    if not time_str:
+        return (-1, "Keine Zeit angegeben")
+
+    # Relative Zeit mit + Präfix: +30m, +2h
+    if time_str.startswith("+"):
+        time_str = time_str[1:]
+
+    # Format: HH:MM (Uhrzeit)
+    if ":" in time_str:
+        try:
+            parts = time_str.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                return (-1, f"Ungültige Uhrzeit: {time_str}")
+
+            now = datetime.now()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # Wenn Zielzeit bereits vorbei ist, nimm morgen
+            if target <= now:
+                target += timedelta(days=1)
+                day_str = "morgen"
+            else:
+                day_str = "heute"
+
+            seconds = (target - now).total_seconds()
+            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}")
+        except ValueError:
+            return (-1, f"Ungültiges Zeitformat: {time_str}")
+
+    # Format: Zahl mit optionaler Einheit (30, 30s, 30m, 30min, 2h, 2std)
+    try:
+        # Einheit extrahieren
+        unit = "s"
+        value_str = time_str
+
+        if time_str.endswith("std"):
+            unit = "h"
+            value_str = time_str[:-3]
+        elif time_str.endswith("min"):
+            unit = "m"
+            value_str = time_str[:-3]
+        elif time_str.endswith("h"):
+            unit = "h"
+            value_str = time_str[:-1]
+        elif time_str.endswith("m"):
+            unit = "m"
+            value_str = time_str[:-1]
+        elif time_str.endswith("s"):
+            unit = "s"
+            value_str = time_str[:-1]
+
+        value = float(value_str)
+
+        if value < 0:
+            return (-1, "Zeit muss positiv sein")
+
+        if unit == "h":
+            seconds = value * 3600
+            desc = f"{value:.0f}h" if value == int(value) else f"{value}h"
+        elif unit == "m":
+            seconds = value * 60
+            desc = f"{value:.0f}m" if value == int(value) else f"{value}m"
+        else:
+            seconds = value
+            desc = f"{value:.0f}s" if value == int(value) else f"{value}s"
+
+        return (seconds, desc)
+    except ValueError:
+        return (-1, f"Ungültige Zahl: {time_str}")
+
+
 # =============================================================================
 # KONFIGURATION
 # =============================================================================
@@ -254,6 +347,7 @@ VK_Q = 0x51  # Quit
 VK_G = 0x47  # Pause/Resume (G statt R wegen Konflikten)
 VK_K = 0x4B  # Skip current wait
 VK_W = 0x57  # Quick-Switch (Wechseln)
+VK_Z = 0x5A  # Schedule (Zeitplan)
 
 # Hotkey IDs
 HOTKEY_RECORD = 1
@@ -270,6 +364,7 @@ HOTKEY_QUIT = 11
 HOTKEY_PAUSE = 12
 HOTKEY_SKIP = 13
 HOTKEY_SWITCH = 14
+HOTKEY_SCHEDULE = 15
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -5074,8 +5169,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print("  → Fehler: Konnte Farbe nicht lesen!")
                     else:
                         print("  → Fehler: Pillow nicht installiert!")
-                elif "-" in wait_parts[0]:
-                    # Zufällige Wartezeit: wait 30-45
+                elif "-" in wait_parts[0] and not any(c.isalpha() for c in wait_parts[0]):
+                    # Zufällige Wartezeit: wait 30-45 (nur Zahlen, keine Einheiten)
                     try:
                         parts_range = wait_parts[0].split("-")
                         wait_min = float(parts_range[0])
@@ -5090,17 +5185,15 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     except (ValueError, IndexError):
                         print("  → Format: wait <Min>-<Max>")
                 else:
-                    # Zeit warten ohne Klick
-                    try:
-                        wait_time = float(wait_parts[0])
-                        if wait_time < 0:
-                            print("  → Wartezeit muss >= 0 sein!")
-                            continue
-                        step = SequenceStep(x=0, y=0, delay_before=wait_time, name="Wait", wait_only=True)
-                        steps.append(step)
-                        print(f"  ✓ Hinzugefügt: {step}")
-                    except ValueError:
-                        print("  → Format: wait <Sekunden> | wait <Min>-<Max> | wait pixel")
+                    # Zeit warten mit optionaler Einheit: wait 30, wait 30s, wait 30m, wait 2h, wait 14:30
+                    seconds, desc = parse_time_input(wait_parts[0])
+                    if seconds < 0:
+                        print(f"  → Fehler: {desc}")
+                        print("  → Format: wait <Sek> | wait 30m | wait 2h | wait 14:30 | wait pixel")
+                        continue
+                    step = SequenceStep(x=0, y=0, delay_before=seconds, name=f"Wait ({desc})", wait_only=True)
+                    steps.append(step)
+                    print(f"  ✓ Hinzugefügt: {step}")
                 continue
 
             # Neuen Schritt hinzufügen (Punkt + Zeit oder Pixel)
@@ -6184,6 +6277,89 @@ def handle_switch(state: AutoClickerState) -> None:
     except (KeyboardInterrupt, EOFError):
         pass
 
+def handle_schedule(state: AutoClickerState) -> None:
+    """Plant den Start einer Sequenz zu einem bestimmten Zeitpunkt."""
+    from datetime import datetime
+
+    with state.lock:
+        if state.is_running:
+            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            return
+
+    # Prüfe ob Sequenz geladen
+    if not state.active_sequence:
+        print("\n[INFO] Keine Sequenz geladen!")
+        print("  Lade zuerst eine Sequenz (CTRL+ALT+L) oder erstelle eine (CTRL+ALT+E)")
+        return
+
+    print("\n" + "=" * 50)
+    print("ZEITPLAN: Sequenz zu bestimmter Zeit starten")
+    print("=" * 50)
+    print(f"\nAktive Sequenz: {state.active_sequence.name}")
+    print("\nZeit-Formate:")
+    print("  14:30    → Startet um 14:30 Uhr")
+    print("  +30m     → Startet in 30 Minuten")
+    print("  +2h      → Startet in 2 Stunden")
+    print("  30m      → Wartet 30 Minuten")
+    print("\nZeit eingeben (oder 'cancel'):")
+
+    try:
+        time_input = input("> ").strip()
+
+        if not time_input or time_input.lower() == "cancel":
+            print("[ABBRUCH]")
+            return
+
+        seconds, desc = parse_time_input(time_input)
+
+        if seconds < 0:
+            print(f"[FEHLER] {desc}")
+            return
+
+        if seconds < 1:
+            print("[INFO] Zeit zu kurz - starte sofort...")
+            # Starte sofort
+            handle_toggle(state)
+            return
+
+        # Zeige Countdown-Info
+        target_time = datetime.now().timestamp() + seconds
+        target_dt = datetime.fromtimestamp(target_time)
+        print(f"\n[GEPLANT] Sequenz '{state.active_sequence.name}' startet {desc}")
+        print(f"          Zielzeit: {target_dt.strftime('%H:%M:%S')}")
+        print(f"          Wartezeit: {format_duration(seconds)}")
+        print("\n          Abbrechen mit CTRL+ALT+S")
+
+        # Warte bis zur Startzeit
+        start_time = time.time()
+        while not state.stop_event.is_set() and not state.quit_event.is_set():
+            remaining = seconds - (time.time() - start_time)
+
+            if remaining <= 0:
+                break
+
+            # Zeige Countdown
+            print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}...    ", end="", flush=True)
+
+            # Warte 1 Sekunde (oder bis Stop-Event)
+            if state.stop_event.wait(min(1.0, remaining)):
+                print("\n[ABBRUCH] Zeitplan abgebrochen.")
+                state.stop_event.clear()  # Reset für nächsten Start
+                return
+
+        if state.quit_event.is_set():
+            return
+
+        # Zeit erreicht - starte Sequenz
+        print("\n[START] Zeit erreicht - starte Sequenz!")
+        state.stop_event.clear()  # Reset falls gesetzt
+        handle_toggle(state)
+
+    except (KeyboardInterrupt, EOFError):
+        print("\n[ABBRUCH]")
+    except ValueError as e:
+        print(f"[FEHLER] {e}")
+
 def handle_analyze(state: AutoClickerState) -> None:
     """Startet den Farb-Analysator."""
     with state.lock:
@@ -6222,6 +6398,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_PAUSE, VK_G, "CTRL+ALT+G (Pause/Resume)"),
         (HOTKEY_SKIP, VK_K, "CTRL+ALT+K (Skip Wartezeit)"),
         (HOTKEY_SWITCH, VK_W, "CTRL+ALT+W (Quick-Switch)"),
+        (HOTKEY_SCHEDULE, VK_Z, "CTRL+ALT+Z (Zeitplan)"),
         (HOTKEY_ANALYZE, VK_T, "CTRL+ALT+T (Farb-Analysator)"),
         (HOTKEY_QUIT, VK_Q, "CTRL+ALT+Q (Beenden)"),
     ]
@@ -6245,7 +6422,7 @@ def unregister_hotkeys() -> None:
     for hk_id in [HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
                   HOTKEY_EDITOR, HOTKEY_ITEM_SCAN, HOTKEY_LOAD, HOTKEY_SHOW,
                   HOTKEY_TOGGLE, HOTKEY_PAUSE, HOTKEY_SKIP, HOTKEY_SWITCH,
-                  HOTKEY_ANALYZE, HOTKEY_QUIT]:
+                  HOTKEY_SCHEDULE, HOTKEY_ANALYZE, HOTKEY_QUIT]:
         user32.UnregisterHotKey(None, hk_id)
 
 # =============================================================================
@@ -6271,6 +6448,7 @@ def print_help() -> None:
     print("  CTRL+ALT+G  - Pause/Resume (während Sequenz läuft)")
     print("  CTRL+ALT+K  - Skip (aktuelle Wartezeit überspringen)")
     print("  CTRL+ALT+W  - Quick-Switch (schnell Sequenz wechseln)")
+    print("  CTRL+ALT+Z  - Zeitplan (Start zu bestimmter Zeit)")
     print("  CTRL+ALT+Q  - Programm beenden")
     print()
     print("So funktioniert's:")
@@ -6333,6 +6511,7 @@ def main() -> int:
         HOTKEY_PAUSE: handle_pause,
         HOTKEY_SKIP: handle_skip,
         HOTKEY_SWITCH: handle_switch,
+        HOTKEY_SCHEDULE: handle_schedule,
         HOTKEY_ANALYZE: handle_analyze,
     }
 

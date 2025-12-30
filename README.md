@@ -23,6 +23,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
 - **Quick-Switch**: Schnell zwischen Sequenzen wechseln
+- **Zeitplan**: Sequenz zu bestimmter Zeit starten (z.B. 14:30, +30m, 2h)
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
@@ -60,6 +61,7 @@ python autoclicker.py
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
+| `CTRL+ALT+Z` | Zeitplan (Sequenz zu bestimmter Zeit starten) |
 | `CTRL+ALT+Q` | Programm beenden |
 
 ## Item-Scan System (`CTRL+ALT+N`)
@@ -216,8 +218,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `<Nr> pixel` | Warte auf Farbe, dann klicke |
 | `<Nr> gone` | Warte bis Farbe VERSCHWINDET, dann klicke |
 | `<Nr> <Zeit> pixel` | Warte X Sek, dann auf Farbe warten, dann klicke |
-| `wait <Zeit>` | Nur warten, KEIN Klick |
+| `wait <Zeit>` | Nur warten, KEIN Klick (z.B. `wait 30`, `wait 30m`, `wait 2h`) |
 | `wait <Min>-<Max>` | Zufällig warten, KEIN Klick (z.B. `wait 30-45`) |
+| `wait 14:30` | Warte bis 14:30 Uhr (heute oder morgen), KEIN Klick |
 | `wait pixel` | Auf Farbe warten, KEIN Klick |
 | `wait gone` | Warten bis Farbe VERSCHWINDET, KEIN Klick |
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
@@ -285,6 +288,20 @@ STATISTIKEN:
   Items:        56
   Tasten:       12
 ```
+
+### Zeitplan (`CTRL+ALT+Z`)
+
+Startet eine Sequenz zu einem bestimmten Zeitpunkt. Unterstützte Formate:
+
+| Format | Beschreibung |
+|--------|-------------|
+| `14:30` | Startet um 14:30 Uhr (heute, oder morgen wenn Zeit vorbei) |
+| `+30m` | Startet in 30 Minuten (relativ) |
+| `+2h` | Startet in 2 Stunden |
+| `30m` | Wartet 30 Minuten |
+| `2h` | Wartet 2 Stunden |
+
+Der Countdown kann mit `CTRL+ALT+S` abgebrochen werden.
 
 ## Item-Scan System
 
