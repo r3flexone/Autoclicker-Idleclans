@@ -6314,11 +6314,13 @@ def handle_schedule(state: AutoClickerState) -> None:
             print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
             return
 
-    # Prüfe ob Sequenz geladen
+    # Keine Sequenz geladen → automatisch Lade-Menü öffnen
     if not state.active_sequence:
-        print("\n[INFO] Keine Sequenz geladen!")
-        print("  Lade zuerst eine Sequenz (CTRL+ALT+L) oder erstelle eine (CTRL+ALT+E)")
-        return
+        print("\n[INFO] Keine Sequenz geladen - öffne Lade-Menü...")
+        run_sequence_loader(state)
+        # Nach dem Laden prüfen ob jetzt eine Sequenz da ist
+        if not state.active_sequence:
+            return  # Nichts geladen
 
     print("\n" + "=" * 50)
     print("ZEITPLAN: Sequenz zu bestimmter Zeit starten")
