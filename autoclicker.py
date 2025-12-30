@@ -719,6 +719,9 @@ class AutoClickerState:
     restart_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
+    # Flag für geplanten Start (überspringt Debug-Enter-Prompt)
+    scheduled_start: bool = False
+
     # Konfiguration (thread-safe über lock)
     config: dict = field(default_factory=dict)
 
@@ -5850,8 +5853,13 @@ def sequence_worker(state: AutoClickerState) -> None:
             for i, step in enumerate(sequence.end_steps):
                 print(f"  END[{i+1}]: {step.name or 'unnamed'} | delay={step.delay_before}s")
             print("=" * 60)
-            print("[DEBUG] Drücke Enter zum Starten...")
-            input()  # Warte auf Bestätigung damit man die Werte sehen kann
+            # Bei geplantem Start kein Enter nötig (wurde bereits vorher bestätigt)
+            if state.scheduled_start:
+                state.scheduled_start = False  # Reset für nächstes Mal
+                print("[DEBUG] Geplanter Start - überspringe Enter-Bestätigung")
+            else:
+                print("[DEBUG] Drücke Enter zum Starten...")
+                input()  # Warte auf Bestätigung damit man die Werte sehen kann
 
         # Statistiken zurücksetzen
         state.total_clicks = 0
@@ -6396,6 +6404,7 @@ def handle_schedule(state: AutoClickerState) -> None:
         # Zeit erreicht - starte Sequenz
         print("\n[START] Zeit erreicht - starte Sequenz!")
         state.stop_event.clear()  # Reset falls gesetzt
+        state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
         handle_toggle(state)
 
     except (KeyboardInterrupt, EOFError):
