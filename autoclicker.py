@@ -4914,7 +4914,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  learn <Name>      - Neuen Punkt erstellen")
     print("  points            - Alle Punkte anzeigen")
     print("  del <Nr>          - Schritt löschen")
-    print("  clear | show | done | cancel")
+    print("  del <Nr>-<Nr>     - Bereich löschen (z.B. del 1-5)")
+    print("  del all           - ALLE Schritte löschen")
+    print("  show | done | cancel")
     print("-" * 60)
 
     while True:
@@ -4937,9 +4939,32 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 else:
                     print("  (Keine Schritte)")
                 continue
-            elif user_input.lower() == "clear":
+            elif user_input.lower() == "del all":
+                if not steps:
+                    print("  → Keine Schritte vorhanden!")
+                    continue
+                count = len(steps)
                 steps.clear()
-                print("  ✓ Alle Schritte gelöscht")
+                print(f"  ✓ Alle {count} Schritte gelöscht")
+                continue
+            elif user_input.lower().startswith("del ") and "-" in user_input[4:]:
+                # Bereich löschen: del 1-5
+                try:
+                    range_str = user_input[4:].strip()
+                    parts = range_str.split("-")
+                    start = int(parts[0])
+                    end = int(parts[1])
+                    if start < 1 or end > len(steps) or start > end:
+                        print(f"  → Ungültiger Bereich! Verfügbar: 1-{len(steps)}")
+                        continue
+                    # Von hinten löschen um Indexe nicht zu verschieben
+                    removed_count = 0
+                    for i in range(end, start - 1, -1):
+                        steps.pop(i - 1)
+                        removed_count += 1
+                    print(f"  ✓ {removed_count} Schritte gelöscht ({start}-{end})")
+                except (ValueError, IndexError):
+                    print("  → Format: del <start>-<end> (z.B. del 1-5)")
                 continue
             elif user_input.lower().startswith("del "):
                 try:
