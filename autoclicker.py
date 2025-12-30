@@ -5570,13 +5570,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                             print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg} Klicke...", end="", flush=True)
                     break
 
-                # Debug: warte und continue
-                if state.config.get("debug_detection", False):
-                    check_interval = state.config.get("pixel_check_interval", PIXEL_CHECK_INTERVAL)
-                    if state.stop_event.wait(check_interval):
-                        return False
-                    continue
-
+        # Timeout-Check (MUSS vor dem wait kommen, sonst wird er bei debug_detection übersprungen)
         elapsed = time.time() - start_time
         if elapsed >= timeout:
             # Timeout - Else-Aktion ausführen falls vorhanden
