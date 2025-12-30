@@ -6350,13 +6350,26 @@ def handle_schedule(state: AutoClickerState) -> None:
             handle_toggle(state)
             return
 
-        # Zeige Countdown-Info
+        # Zeige Countdown-Info und warte auf Bestätigung
         target_time = datetime.now().timestamp() + seconds
         target_dt = datetime.fromtimestamp(target_time)
         print(f"\n[GEPLANT] Sequenz '{state.active_sequence.name}' startet {desc}")
         print(f"          Zielzeit: {target_dt.strftime('%H:%M:%S')}")
         print(f"          Wartezeit: {format_duration(seconds)}")
-        print("\n          Abbrechen mit CTRL+ALT+S")
+        print("\n          Enter drücken zum Starten, 'cancel' zum Abbrechen")
+
+        # Bestätigung abwarten
+        confirm = input("> ").strip().lower()
+        if confirm == "cancel":
+            print("[ABBRUCH]")
+            return
+
+        # Jetzt startet der Countdown - ab hier läuft alles automatisch
+        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit CTRL+ALT+S)")
+
+        # Zeitpunkt neu berechnen (nach Enter-Bestätigung)
+        target_time = datetime.now().timestamp() + seconds
+        target_dt = datetime.fromtimestamp(target_time)
 
         # Warte bis zur Startzeit
         start_time = time.time()
