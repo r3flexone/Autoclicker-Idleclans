@@ -1444,10 +1444,10 @@ def set_cursor_pos(x: int, y: int) -> bool:
     """Setzt die Mausposition."""
     return bool(user32.SetCursorPos(x, y))
 
-def send_click(x: int, y: int) -> None:
+def send_click(x: int, y: int, move_delay: float = 0.01) -> None:
     """Führt einen Linksklick an der angegebenen Position aus."""
     set_cursor_pos(x, y)
-    time.sleep(0.01)
+    time.sleep(move_delay)
 
     inputs = (INPUT * 2)()
     inputs[0].type = INPUT_MOUSE
@@ -1534,7 +1534,7 @@ def color_distance(c1: tuple, c2: tuple) -> float:
     """Berechnet die Distanz zwischen zwei RGB-Farben."""
     return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2 + (c1[2]-c2[2])**2) ** 0.5
 
-def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: float) -> bool:
+def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: float, pixel_step: int = 2) -> bool:
     """
     Prüft ob eine Farbe im Bild vorhanden ist (optimiert mit NumPy wenn verfügbar).
 
@@ -1542,6 +1542,7 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
         img: PIL Image
         target_color: RGB-Tuple (r, g, b)
         tolerance: Maximale Farbdistanz
+        pixel_step: Schrittweite beim Scannen (1=genau, 2=schneller)
 
     Returns:
         True wenn Farbe gefunden, sonst False
@@ -1550,19 +1551,19 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
         # Schnelle NumPy-Version (ca. 100x schneller)
         img_array = np.array(img)
         if len(img_array.shape) == 3 and img_array.shape[2] >= 3:
-            # Nur RGB-Kanäle verwenden
-            rgb = img_array[:, :, :3].astype(np.float32)
+            # Nur RGB-Kanäle verwenden, mit pixel_step für Performance
+            rgb = img_array[::pixel_step, ::pixel_step, :3].astype(np.float32)
             target = np.array(target_color, dtype=np.float32)
             # Euklidische Distanz für alle Pixel gleichzeitig berechnen
             distances = np.sqrt(np.sum((rgb - target) ** 2, axis=2))
             return bool(np.any(distances <= tolerance))
         return False
     else:
-        # Fallback: Langsame PIL-Version (jeden 2. Pixel prüfen)
+        # Fallback: Langsame PIL-Version
         pixels = img.load()
         width, height = img.size
-        for x in range(0, width, 2):
-            for y in range(0, height, 2):
+        for x in range(0, width, pixel_step):
+            for y in range(0, height, pixel_step):
                 pixel = pixels[x, y][:3]
                 if color_distance(pixel, target_color) <= tolerance:
                     return True
@@ -1791,7 +1792,7 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
 
-def analyze_screen_colors(region: tuple = None) -> dict:
+def analyze_screen_colors(region: tuple = None, pixel_step: int = 2) -> dict:
     """
     Analysiert die häufigsten Farben in einem Screenshot.
     Nützlich um die richtigen Farben für die Erkennung zu finden.
@@ -1809,8 +1810,8 @@ def analyze_screen_colors(region: tuple = None) -> dict:
     pixels = img.load()
     width, height = img.size
 
-    for x in range(0, width, 2):  # Jeden 2. Pixel für Geschwindigkeit
-        for y in range(0, height, 2):
+    for x in range(0, width, pixel_step):
+        for y in range(0, height, pixel_step):
             pixel = pixels[x, y][:3]
             # Runde auf 5er-Schritte für Gruppierung
             rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
@@ -4418,8 +4419,9 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 markers_missing = 0
                 max_allowed_missing = len(item.marker_colors) - min_required
 
+                pixel_step = state.config.get("scan_pixel_step", 2)
                 for marker_color in item.marker_colors:
-                    if find_color_in_image(img, marker_color, config.color_tolerance):
+                    if find_color_in_image(img, marker_color, config.color_tolerance, pixel_step):
                         markers_found += 1
                         # Early exit: Genug Marker gefunden
                         if markers_found >= min_required:
@@ -5550,7 +5552,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         if state.stop_event.is_set():
             return False
 
-        send_click(step.else_x, step.else_y)
+        send_click(step.else_x, step.else_y, state.config.get("click_move_delay", 0.01))
         with state.lock:
             state.total_clicks += 1
         name = step.else_name or f"({step.else_x},{step.else_y})"
@@ -5604,7 +5606,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                 return False
             if state.config.get("debug_detection", False):
                 print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
-            send_click(pos[0], pos[1])
+            send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01))
             with state.lock:
                 state.total_clicks += 1
                 state.items_found += 1
@@ -5620,7 +5622,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                     print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
                 if item.confirm_delay > 0:
                     time.sleep(item.confirm_delay)
-                send_click(confirm_x, confirm_y)
+                send_click(confirm_x, confirm_y, state.config.get("click_move_delay", 0.01))
                 if state.config.get("debug_detection", False):
                     print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                 with state.lock:
@@ -5777,7 +5779,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
             state.stop_event.set()
             return False
 
-        send_click(step.x, step.y)
+        send_click(step.x, step.y, state.config.get("click_move_delay", 0.01))
 
         with state.lock:
             state.total_clicks += 1
