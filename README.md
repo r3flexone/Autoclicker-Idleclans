@@ -381,6 +381,7 @@ Wird beim ersten Start automatisch erstellt:
 {
   "clicks_per_point": 1,
   "max_total_clicks": null,
+  "click_move_delay": 0.01,
   "failsafe_enabled": true,
   "failsafe_x": 5,
   "failsafe_y": 5,
@@ -388,6 +389,8 @@ Wird beim ersten Start automatisch erstellt:
   "pixel_wait_tolerance": 10,
   "pixel_wait_timeout": 300,
   "pixel_check_interval": 1,
+  "scan_pixel_step": 2,
+  "show_pixel_delay": 0.3,
   "scan_reverse": false,
   "scan_slot_delay": 0.1,
   "item_click_delay": 1.0,
@@ -398,6 +401,8 @@ Wird beim ersten Start automatisch erstellt:
   "slot_inset": 10,
   "slot_color_distance": 25,
   "default_min_confidence": 0.8,
+  "default_confirm_delay": 0.5,
+  "pause_check_interval": 0.5,
   "debug_mode": false,
   "debug_detection": false,
   "show_pixel_position": false,
@@ -411,6 +416,7 @@ Wird beim ersten Start automatisch erstellt:
 |--------|--------------|
 | `clicks_per_point` | Anzahl Klicks pro Punkt (Standard: 1) |
 | `max_total_clicks` | Maximale Klicks gesamt (`null` = unendlich) |
+| `click_move_delay` | Pause zwischen Mausbewegung und Klick in Sekunden (Standard: 0.01) |
 
 ### Sicherheit
 
@@ -428,6 +434,8 @@ Wird beim ersten Start automatisch erstellt:
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
 | `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300) |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
+| `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
+| `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
 
 ### Item-Scan Einstellungen
 
@@ -443,6 +451,13 @@ Wird beim ersten Start automatisch erstellt:
 | `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
 | `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
 | `default_min_confidence` | Standard-Konfidenz für Template-Matching (Standard: 0.8 = 80%) |
+| `default_confirm_delay` | Standard-Wartezeit vor Bestätigungs-Klick in Sekunden (Standard: 0.5) |
+
+### Timing
+
+| Option | Beschreibung |
+|--------|--------------|
+| `pause_check_interval` | Prüf-Intervall während Pause in Sekunden (Standard: 0.5) |
 
 ### Debug-Einstellungen
 

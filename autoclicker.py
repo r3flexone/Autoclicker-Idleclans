@@ -240,6 +240,7 @@ DEFAULT_CONFIG = {
     # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
     "max_total_clicks": None,           # None = unendlich
+    "click_move_delay": 0.01,           # Pause zwischen Mausbewegung und Klick (Sekunden)
 
     # === SICHERHEIT ===
     "failsafe_enabled": True,           # Fail-Safe: Maus in Ecke stoppt alles
@@ -251,6 +252,8 @@ DEFAULT_CONFIG = {
     "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
     "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
     "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
+    "scan_pixel_step": 2,               # Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller)
+    "show_pixel_delay": 0.3,            # Wie lange Pixel-Position angezeigt wird (Sekunden)
 
     # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
@@ -263,6 +266,10 @@ DEFAULT_CONFIG = {
     "slot_inset": 10,                   # Pixel-Einzug vom Slot-Rand
     "slot_color_distance": 25,          # Farbdistanz für Hintergrund-Ausschluss
     "default_min_confidence": 0.8,      # Standard-Konfidenz für Template-Matching (80%)
+    "default_confirm_delay": 0.5,       # Standard-Wartezeit vor Bestätigungs-Klick (Sekunden)
+
+    # === TIMING ===
+    "pause_check_interval": 0.5,        # Prüf-Intervall während Pause (Sekunden)
 
     # === DEBUG-EINSTELLUNGEN ===
     "debug_mode": False,                # Zeigt Schritte VOR Start + wartet auf Enter
@@ -1499,10 +1506,11 @@ def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:
     Returns:
         True wenn fortgesetzt, False wenn gestoppt
     """
+    pause_interval = state.config.get("pause_check_interval", 0.5)
     while state.pause_event.is_set() and not state.stop_event.is_set():
         clear_line()
         print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
-        time.sleep(0.5)
+        time.sleep(pause_interval)
     return not state.stop_event.is_set()
 
 def require_pillow(func_name: str) -> bool:
@@ -2610,7 +2618,7 @@ def _item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
             # Bestätigungs-Punkt einmal für alle abfragen
             confirm_point = None
-            confirm_delay = 0.5
+            confirm_delay = state.config.get("default_confirm_delay", 0.5)
             confirm_input = input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
             if confirm_input:
                 try:
@@ -2618,7 +2626,7 @@ def _item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                     found_point = get_point_by_id(state, point_id)
                     if found_point:
                         confirm_point = found_point
-                        delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                        delay_input = input(f"  Wartezeit vor Bestätigung (Enter = {confirm_delay}s): ").strip()
                         if delay_input:
                             try:
                                 confirm_delay = float(delay_input)
@@ -2755,7 +2763,7 @@ def _item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
     # Bestätigungs-Klick abfragen
     confirm_point = None
-    confirm_delay = 0.5
+    confirm_delay = state.config.get("default_confirm_delay", 0.5)
     print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
     print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
     confirm_input = input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
@@ -2768,7 +2776,7 @@ def _item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             found_point = get_point_by_id(state, point_id)
             if found_point:
                 confirm_point = found_point
-                delay_input = input("  Wartezeit vor Bestätigung in Sek (Enter = 0.5): ").strip()
+                delay_input = input(f"  Wartezeit vor Bestätigung in Sek (Enter = {confirm_delay}): ").strip()
                 if delay_input:
                     try:
                         confirm_delay = float(delay_input)
@@ -2944,7 +2952,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
 
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
-                confirm_delay = 0.5
+                confirm_delay = state.config.get("default_confirm_delay", 0.5)
                 confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-ID = Ja): ").strip()
                 if confirm_input:
                     try:
@@ -2952,7 +2960,7 @@ def edit_item_preset(state: AutoClickerState, preset_name: str) -> None:
                         found_point = get_point_by_id(state, point_id)
                         if found_point:
                             confirm_point = found_point  # Koordinaten speichern
-                            delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                            delay_input = input(f"  Wartezeit vor Bestätigung (Enter = {confirm_delay}s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
@@ -3662,7 +3670,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
                 # Bestätigungs-Klick?
                 confirm_point = None
-                confirm_delay = 0.5
+                confirm_delay = state.config.get("default_confirm_delay", 0.5)
                 confirm_input = input("  Bestätigungs-Punkt ID (Enter=Nein): ").strip()
                 if confirm_input:
                     try:
@@ -4045,7 +4053,7 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
 
                 # Bestätigungs-Punkt abfragen
                 confirm_point = None
-                confirm_delay = 0.5
+                confirm_delay = state.config.get("default_confirm_delay", 0.5)
                 confirm_input = input("  Bestätigung nötig? (Enter = Nein, Punkt-ID = Ja, 'cancel'): ").strip()
                 if confirm_input.lower() in ("cancel", "abbruch"):
                     print("  → Item-Erstellung abgebrochen")
@@ -4056,12 +4064,12 @@ def edit_item_profiles(items: list[ItemProfile], slots: list[ItemSlot] = None) -
                         found_point = get_point_by_id(state, point_id)
                         if found_point:
                             confirm_point = found_point  # Koordinaten speichern
-                            delay_input = input("  Wartezeit vor Bestätigung (Enter = 0.5s): ").strip()
+                            delay_input = input(f"  Wartezeit vor Bestätigung (Enter = {confirm_delay}s): ").strip()
                             if delay_input:
                                 try:
                                     confirm_delay = float(delay_input)
                                 except ValueError:
-                                    confirm_delay = 0.5
+                                    confirm_delay = state.config.get("default_confirm_delay", 0.5)
                         else:
                             print(f"  → Punkt #{point_id} existiert nicht")
                     except ValueError:
@@ -5672,7 +5680,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
     # Maus kurz zum Prüf-Pixel bewegen wenn aktiviert
     if state.config.get("show_pixel_position", False):
         set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
-        time.sleep(0.3)
+        time.sleep(state.config.get("show_pixel_delay", 0.3))
 
     timeout = PIXEL_WAIT_TIMEOUT
     start_time = time.time()
