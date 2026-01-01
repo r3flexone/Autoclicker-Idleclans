@@ -166,10 +166,27 @@ def save_json(filepath: str, data: dict) -> bool:
         return False
 
 
+def flush_input_buffer() -> None:
+    """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke)."""
+    while msvcrt.kbhit():
+        msvcrt.getch()
+
+
+def safe_input(prompt: str = "") -> str:
+    """Sicherer Input der UnicodeDecodeError abfängt."""
+    flush_input_buffer()  # Buffer leeren vor Input
+    try:
+        return input(prompt)
+    except UnicodeDecodeError:
+        # Sonderzeichen im Buffer (z.B. ESC) - ignorieren und leeren String zurückgeben
+        flush_input_buffer()
+        return ""
+
+
 def confirm(message: str, default: bool = False) -> bool:
     """Fragt Benutzer nach Bestätigung (j/n)."""
     suffix = " (J/n): " if default else " (j/N): "
-    response = input(message + suffix).strip().lower()
+    response = safe_input(message + suffix).strip().lower()
     if not response:
         return default
     return response in ("j", "ja", "y", "yes")
@@ -177,7 +194,7 @@ def confirm(message: str, default: bool = False) -> bool:
 
 def get_input(prompt: str = "> ", allow_empty: bool = True) -> str:
     """Liest Benutzereingabe mit Strip."""
-    value = input(prompt).strip()
+    value = safe_input(prompt).strip()
     if not allow_empty and not value:
         return ""
     return value
@@ -5977,7 +5994,7 @@ def sequence_worker(state: AutoClickerState) -> None:
                 print("[DEBUG] Geplanter Start - überspringe Enter-Bestätigung")
             else:
                 print("[DEBUG] Drücke Enter zum Starten...")
-                input()  # Warte auf Bestätigung damit man die Werte sehen kann
+                safe_input()  # Warte auf Bestätigung damit man die Werte sehen kann
 
         # Statistiken zurücksetzen
         state.total_clicks = 0
@@ -6460,7 +6477,7 @@ def handle_schedule(state: AutoClickerState) -> None:
     print("\nZeit eingeben (oder 'cancel'):")
 
     try:
-        time_input = input("> ").strip()
+        time_input = safe_input("> ").strip()
 
         if not time_input or time_input.lower() == "cancel":
             print("[ABBRUCH]")
@@ -6491,13 +6508,14 @@ def handle_schedule(state: AutoClickerState) -> None:
         print("\n          Enter drücken zum Starten, 'cancel' zum Abbrechen")
 
         # Bestätigung abwarten
-        confirm = input("> ").strip().lower()
+        confirm = safe_input("> ").strip().lower()
         if confirm == "cancel":
             print("[ABBRUCH]")
             return
 
         # Jetzt startet der Countdown - ab hier läuft alles automatisch
-        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit ESC oder beliebige Taste)")
+        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit beliebiger Taste)")
+        flush_input_buffer()  # Buffer leeren vor Countdown
 
         # Zeitpunkt neu berechnen (nach Enter-Bestätigung)
         target_time = datetime.now().timestamp() + seconds
