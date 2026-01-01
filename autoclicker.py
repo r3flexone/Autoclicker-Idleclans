@@ -294,9 +294,8 @@ def load_config() -> dict:
                 missing_keys = set(DEFAULT_CONFIG.keys()) - set(loaded.keys())
                 if missing_keys:
                     save_config(config)
-                    if config.get("debug_mode", False):
-                        print(f"[CONFIG] Geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}")
-                elif config.get("debug_mode", False):
+                    print(f"[CONFIG] Geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}")
+                else:
                     print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
                 return config
         except (json.JSONDecodeError, IOError) as e:
