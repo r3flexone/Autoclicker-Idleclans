@@ -6513,48 +6513,41 @@ def handle_schedule(state: AutoClickerState) -> None:
             print("[ABBRUCH]")
             return
 
-        # Jetzt startet der Countdown - ab hier läuft alles automatisch
-        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit beliebiger Taste)")
-        flush_input_buffer()  # Buffer leeren vor Countdown
+        # Countdown in separatem Thread starten, damit Hotkeys weiter funktionieren
+        def countdown_worker():
+            start_time = time.time()
+            while not state.stop_event.is_set() and not state.quit_event.is_set():
+                remaining = seconds - (time.time() - start_time)
 
-        # Zeitpunkt neu berechnen (nach Enter-Bestätigung)
-        target_time = datetime.now().timestamp() + seconds
-        target_dt = datetime.fromtimestamp(target_time)
+                if remaining <= 0:
+                    break
 
-        # Warte bis zur Startzeit
-        start_time = time.time()
-        cancelled = False
-        while not state.stop_event.is_set() and not state.quit_event.is_set():
-            remaining = seconds - (time.time() - start_time)
+                # Zeige Countdown
+                print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}... (CTRL+ALT+S zum Abbrechen)    ", end="", flush=True)
 
-            if remaining <= 0:
-                break
+                # Kurz warten
+                if state.stop_event.wait(0.5):
+                    break  # Stop-Event wurde gesetzt
 
-            # Prüfe ob Taste gedrückt wurde (non-blocking)
-            if msvcrt.kbhit():
-                msvcrt.getch()  # Taste konsumieren
-                cancelled = True
-                break
+            if state.stop_event.is_set():
+                print("\n[ABBRUCH] Zeitplan abgebrochen.")
+                state.stop_event.clear()  # Reset für nächsten Start
+                return
 
-            # Zeige Countdown
-            print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}...    ", end="", flush=True)
+            if state.quit_event.is_set():
+                return
 
-            # Kurz warten (0.1s für responsive Tastaturabfrage)
-            time.sleep(0.1)
+            # Zeit erreicht - starte Sequenz
+            print("\n[START] Zeit erreicht - starte Sequenz!")
+            state.stop_event.clear()  # Reset falls gesetzt
+            state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
+            handle_toggle(state)
 
-        if cancelled or state.stop_event.is_set():
-            print("\n[ABBRUCH] Zeitplan abgebrochen.")
-            state.stop_event.clear()  # Reset für nächsten Start
-            return
-
-        if state.quit_event.is_set():
-            return
-
-        # Zeit erreicht - starte Sequenz
-        print("\n[START] Zeit erreicht - starte Sequenz!")
-        state.stop_event.clear()  # Reset falls gesetzt
-        state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
-        handle_toggle(state)
+        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit CTRL+ALT+S)")
+        countdown_thread = threading.Thread(target=countdown_worker, daemon=True)
+        countdown_thread.start()
+        # Kehre zur Haupt-Event-Loop zurück, damit Hotkeys funktionieren
+        return
 
     except (KeyboardInterrupt, EOFError):
         print("\n[ABBRUCH]")
