@@ -303,6 +303,7 @@ DEFAULT_CONFIG = {
     "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
     "max_total_clicks": None,           # None = unendlich
     "click_move_delay": 0.01,           # Pause zwischen Mausbewegung und Klick (Sekunden)
+    "post_click_delay": 0.05,           # Pause NACH dem Klick bevor Maus weiterbewegt werden darf (Sekunden)
 
     # === SICHERHEIT ===
     "failsafe_enabled": True,           # Fail-Safe: Maus in Ecke stoppt alles
@@ -1506,7 +1507,7 @@ def set_cursor_pos(x: int, y: int) -> bool:
     """Setzt die Mausposition."""
     return bool(user32.SetCursorPos(x, y))
 
-def send_click(x: int, y: int, move_delay: float = 0.01) -> None:
+def send_click(x: int, y: int, move_delay: float = 0.01, post_delay: float = 0.05) -> None:
     """Führt einen Linksklick an der angegebenen Position aus."""
     set_cursor_pos(x, y)
     time.sleep(move_delay)
@@ -1518,6 +1519,10 @@ def send_click(x: int, y: int, move_delay: float = 0.01) -> None:
     inputs[1].union.mi.dwFlags = MOUSEEVENTF_LEFTUP
 
     user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+
+    # Warte nach dem Klick damit das Ziel-Programm den Klick verarbeiten kann
+    if post_delay > 0:
+        time.sleep(post_delay)
 
 def send_key(key_name: str) -> bool:
     """Führt einen Tastendruck aus. Gibt True zurück wenn erfolgreich."""
@@ -5614,7 +5619,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         if state.stop_event.is_set():
             return False
 
-        send_click(step.else_x, step.else_y, state.config.get("click_move_delay", 0.01))
+        send_click(step.else_x, step.else_y, state.config.get("click_move_delay", 0.01), state.config.get("post_click_delay", 0.05))
         with state.lock:
             state.total_clicks += 1
         name = step.else_name or f"({step.else_x},{step.else_y})"
@@ -5668,7 +5673,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                 return False
             if state.config.get("debug_detection", False):
                 print(f"[DEBUG] Klicke Item '{item.name}' (P{priority}) bei ({pos[0]}, {pos[1]})")
-            send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01))
+            send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01), state.config.get("post_click_delay", 0.05))
             with state.lock:
                 state.total_clicks += 1
                 state.items_found += 1
@@ -5684,7 +5689,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                     print(f"[DEBUG] Item hat confirm_point=({confirm_x},{confirm_y}), confirm_delay={item.confirm_delay}")
                 if item.confirm_delay > 0:
                     time.sleep(item.confirm_delay)
-                send_click(confirm_x, confirm_y, state.config.get("click_move_delay", 0.01))
+                send_click(confirm_x, confirm_y, state.config.get("click_move_delay", 0.01), state.config.get("post_click_delay", 0.05))
                 if state.config.get("debug_detection", False):
                     print(f"[DEBUG] Bestätigungs-Klick ausgeführt")
                 with state.lock:
@@ -5841,7 +5846,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
             state.stop_event.set()
             return False
 
-        send_click(step.x, step.y, state.config.get("click_move_delay", 0.01))
+        send_click(step.x, step.y, state.config.get("click_move_delay", 0.01), state.config.get("post_click_delay", 0.05))
 
         with state.lock:
             state.total_clicks += 1
