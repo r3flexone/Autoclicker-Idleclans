@@ -165,6 +165,34 @@ def save_json(filepath: str, data: dict) -> bool:
         return False
 
 
+def confirm(message: str, default: bool = False) -> bool:
+    """Fragt Benutzer nach Bestätigung (j/n)."""
+    suffix = " (J/n): " if default else " (j/N): "
+    response = input(message + suffix).strip().lower()
+    if not response:
+        return default
+    return response in ("j", "ja", "y", "yes")
+
+
+def get_input(prompt: str = "> ", allow_empty: bool = True) -> str:
+    """Liest Benutzereingabe mit Strip."""
+    value = input(prompt).strip()
+    if not allow_empty and not value:
+        return ""
+    return value
+
+
+def load_json_file(filepath: Path, default: any = None) -> any:
+    """Lädt JSON-Datei sicher mit Fallback."""
+    try:
+        if filepath.exists():
+            with open(filepath, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        pass
+    return default
+
+
 def parse_time_input(time_str: str) -> tuple[float, str]:
     """Parst Zeit-Eingaben in verschiedenen Formaten.
 
