@@ -242,6 +242,10 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
                 day_str = "heute"
 
             seconds = (target - now).total_seconds()
+
+            # Debug-Info (wird immer gezeigt bei Uhrzeiten um Bugs zu finden)
+            print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
+
             return (seconds, f"{day_str} um {hour:02d}:{minute:02d}")
         except ValueError:
             return (-1, f"Ungültiges Zeitformat: {time_str}")
@@ -6462,6 +6466,10 @@ def handle_schedule(state: AutoClickerState) -> None:
             return
 
         seconds, desc = parse_time_input(time_input)
+
+        # Debug: Zeige was geparst wurde
+        if state.config.get("debug_mode", False):
+            print(f"[DEBUG] Eingabe: '{time_input}' → seconds={seconds}, desc='{desc}'")
 
         if seconds < 0:
             print(f"[FEHLER] {desc}")
