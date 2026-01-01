@@ -382,6 +382,7 @@ Wird beim ersten Start automatisch erstellt:
   "clicks_per_point": 1,
   "max_total_clicks": null,
   "click_move_delay": 0.01,
+  "post_click_delay": 0.05,
   "failsafe_enabled": true,
   "failsafe_x": 5,
   "failsafe_y": 5,
@@ -417,6 +418,7 @@ Wird beim ersten Start automatisch erstellt:
 | `clicks_per_point` | Anzahl Klicks pro Punkt (Standard: 1) |
 | `max_total_clicks` | Maximale Klicks gesamt (`null` = unendlich) |
 | `click_move_delay` | Pause zwischen Mausbewegung und Klick in Sekunden (Standard: 0.01) |
+| `post_click_delay` | Pause NACH dem Klick bevor Maus weiterbewegt wird (Standard: 0.05) |
 
 ### Sicherheit
 
