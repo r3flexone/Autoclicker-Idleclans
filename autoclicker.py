@@ -55,6 +55,7 @@ import shutil
 import random
 import logging
 import re
+import msvcrt  # Für nicht-blockierende Tastaturabfrage
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 from pathlib import Path
@@ -6496,7 +6497,7 @@ def handle_schedule(state: AutoClickerState) -> None:
             return
 
         # Jetzt startet der Countdown - ab hier läuft alles automatisch
-        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit CTRL+ALT+S)")
+        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit ESC oder beliebige Taste)")
 
         # Zeitpunkt neu berechnen (nach Enter-Bestätigung)
         target_time = datetime.now().timestamp() + seconds
@@ -6504,20 +6505,29 @@ def handle_schedule(state: AutoClickerState) -> None:
 
         # Warte bis zur Startzeit
         start_time = time.time()
+        cancelled = False
         while not state.stop_event.is_set() and not state.quit_event.is_set():
             remaining = seconds - (time.time() - start_time)
 
             if remaining <= 0:
                 break
 
+            # Prüfe ob Taste gedrückt wurde (non-blocking)
+            if msvcrt.kbhit():
+                msvcrt.getch()  # Taste konsumieren
+                cancelled = True
+                break
+
             # Zeige Countdown
             print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}...    ", end="", flush=True)
 
-            # Warte 1 Sekunde (oder bis Stop-Event)
-            if state.stop_event.wait(min(1.0, remaining)):
-                print("\n[ABBRUCH] Zeitplan abgebrochen.")
-                state.stop_event.clear()  # Reset für nächsten Start
-                return
+            # Kurz warten (0.1s für responsive Tastaturabfrage)
+            time.sleep(0.1)
+
+        if cancelled or state.stop_event.is_set():
+            print("\n[ABBRUCH] Zeitplan abgebrochen.")
+            state.stop_event.clear()  # Reset für nächsten Start
+            return
 
         if state.quit_event.is_set():
             return
