@@ -131,6 +131,40 @@ def sanitize_filename(name: str) -> str:
     return name.lower()
 
 
+def compact_json(data: dict, indent: int = 2) -> str:
+    """Formatiert JSON mit kompakten Arrays (Koordinaten/Farben auf einer Zeile).
+
+    Wandelt:
+        [
+            55,
+            15,
+            50
+        ]
+    zu:
+        [55, 15, 50]
+    """
+    json_str = json.dumps(data, indent=indent, ensure_ascii=False)
+    # Regex: Finde Arrays die nur Zahlen enthalten und über mehrere Zeilen gehen
+    # Pattern: [ gefolgt von Whitespace/Newlines, dann Zahlen mit Kommas, dann ]
+    pattern = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
+    json_str = re.sub(pattern, r'[\1, \2, \3]', json_str)
+    # Auch für 2er-Arrays (x, y Koordinaten)
+    pattern2 = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
+    json_str = re.sub(pattern2, r'[\1, \2]', json_str)
+    return json_str
+
+
+def save_json(filepath: str, data: dict) -> bool:
+    """Speichert JSON mit kompakter Formatierung."""
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        return True
+    except IOError as e:
+        print(f"[FEHLER] Konnte nicht speichern: {filepath} - {e}")
+        return False
+
+
 def parse_time_input(time_str: str) -> tuple[float, str]:
     """Parst Zeit-Eingaben in verschiedenen Formaten.
 
@@ -748,7 +782,7 @@ def save_data(state: AutoClickerState) -> None:
     # Punkte speichern (mit stabiler ID)
     points_data = [{"id": p.id, "x": p.x, "y": p.y, "name": p.name} for p in state.points]
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
-        json.dump(points_data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(points_data))
 
     # Sequenzen speichern (mit Start + mehreren Loop-Phasen)
     def step_to_dict(s: SequenceStep) -> dict:
@@ -778,7 +812,7 @@ def save_data(state: AutoClickerState) -> None:
         }
         filename = f"{sanitize_filename(name)}.json"
         with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
-            json.dump(seq_data, f, indent=2, ensure_ascii=False)
+            f.write(compact_json(seq_data))
 
     print(f"[SAVE] Daten gespeichert in '{SEQUENCES_DIR}/'")
 
@@ -1002,7 +1036,7 @@ def save_item_scan(config: ItemScanConfig) -> None:
 
     filename = f"{sanitize_filename(config.name)}.json"
     with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(data))
 
     print(f"[SAVE] Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'")
 
@@ -1099,7 +1133,7 @@ def save_global_slots(state: AutoClickerState) -> None:
         for name, slot in state.global_slots.items()
     }
     with open(SLOTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(data))
     print(f"[SAVE] {len(state.global_slots)} Slot(s) gespeichert")
 
 def load_global_slots(state: AutoClickerState) -> None:
@@ -1138,7 +1172,7 @@ def save_global_items(state: AutoClickerState) -> None:
         for name, item in state.global_items.items()
     }
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(data))
     print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
 
 
@@ -1190,7 +1224,7 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
 
             if modified:
                 with open(scan_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.write(compact_json(data))
                 updated_scans += 1
 
         except (json.JSONDecodeError, IOError, KeyError) as e:
@@ -1276,7 +1310,7 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(data))
     print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
     return True
 
@@ -1362,7 +1396,7 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write(compact_json(data))
     print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
     return True
 
