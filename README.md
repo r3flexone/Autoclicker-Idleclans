@@ -23,6 +23,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
 - **Quick-Switch**: Schnell zwischen Sequenzen wechseln
+- **Zeitplan**: Sequenz zu bestimmter Zeit starten (z.B. 14:30, +30m, 2h)
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
@@ -60,6 +61,7 @@ python autoclicker.py
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
+| `CTRL+ALT+Z` | Zeitplan (Sequenz zu bestimmter Zeit starten) |
 | `CTRL+ALT+Q` | Programm beenden |
 
 ## Item-Scan System (`CTRL+ALT+N`)
@@ -141,6 +143,22 @@ Mit `learn <Nr>` wird ein Item vom entsprechenden Slot gelernt:
 5. Optional: Template-Screenshot erstellen
 6. Optional: Bestätigungs-Klick konfigurieren
 
+### Bulk-Learn (mehrere Items auf einmal)
+
+Mit `learn <Start>-<Ende>` können mehrere Items gleichzeitig gelernt werden:
+
+```
+learn 1-5               # Lernt Items von Slot 1 bis 5
+```
+
+**Ablauf:**
+1. Gemeinsame Einstellungen eingeben (Name-Prefix, Kategorie, Template)
+2. Für jeden Slot wird automatisch:
+   - Screenshot erstellt
+   - Marker-Farben gescannt
+   - Item mit fortlaufender Nummer gespeichert (z.B. "Juwel_1", "Juwel_2", ...)
+   - Template erstellt (falls gewählt)
+
 ### Kategorie-System
 
 Items können einer **Kategorie** zugeordnet werden (z.B. "Hosen", "Jacken", "Juwelen"):
@@ -163,7 +181,7 @@ Rote Jacke     [Kategorie: Jacken]   Priorität 1  ← wird geklickt (andere Kat
     "name": "Pinkes Juwel",
     "priority": 1,
     "template": "pinkes_juwel.png",
-    "min_confidence": 0.9,
+    "min_confidence": 0.8,
     "category": "Juwelen"
   }
 }
@@ -200,8 +218,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `<Nr> pixel` | Warte auf Farbe, dann klicke |
 | `<Nr> gone` | Warte bis Farbe VERSCHWINDET, dann klicke |
 | `<Nr> <Zeit> pixel` | Warte X Sek, dann auf Farbe warten, dann klicke |
-| `wait <Zeit>` | Nur warten, KEIN Klick |
+| `wait <Zeit>` | Nur warten, KEIN Klick (z.B. `wait 30`, `wait 30m`, `wait 2h`) |
 | `wait <Min>-<Max>` | Zufällig warten, KEIN Klick (z.B. `wait 30-45`) |
+| `wait 14:30` | Warte bis 14:30 Uhr (heute oder morgen), KEIN Klick |
 | `wait pixel` | Auf Farbe warten, KEIN Klick |
 | `wait gone` | Warten bis Farbe VERSCHWINDET, KEIN Klick |
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
@@ -269,6 +288,20 @@ STATISTIKEN:
   Items:        56
   Tasten:       12
 ```
+
+### Zeitplan (`CTRL+ALT+Z`)
+
+Startet eine Sequenz zu einem bestimmten Zeitpunkt. Unterstützte Formate:
+
+| Format | Beschreibung |
+|--------|-------------|
+| `14:30` | Startet um 14:30 Uhr (heute, oder morgen wenn Zeit vorbei) |
+| `+30m` | Startet in 30 Minuten (relativ) |
+| `+2h` | Startet in 2 Stunden |
+| `30m` | Wartet 30 Minuten |
+| `2h` | Wartet 2 Stunden |
+
+Der Countdown kann mit `CTRL+ALT+S` abgebrochen werden.
 
 ## Item-Scan System
 
@@ -348,85 +381,201 @@ Wird beim ersten Start automatisch erstellt:
 {
   "clicks_per_point": 1,
   "max_total_clicks": null,
+  "click_move_delay": 0.01,
+  "post_click_delay": 0.05,
   "failsafe_enabled": true,
+  "failsafe_x": 5,
+  "failsafe_y": 5,
   "color_tolerance": 0,
   "pixel_wait_tolerance": 10,
   "pixel_wait_timeout": 300,
   "pixel_check_interval": 1,
+  "scan_pixel_step": 2,
+  "show_pixel_delay": 0.3,
   "scan_reverse": false,
+  "scan_slot_delay": 0.1,
+  "item_click_delay": 1.0,
   "marker_count": 5,
   "require_all_markers": true,
   "min_markers_required": 2,
   "slot_hsv_tolerance": 25,
   "slot_inset": 10,
   "slot_color_distance": 25,
+  "default_min_confidence": 0.8,
+  "default_confirm_delay": 0.5,
+  "pause_check_interval": 0.5,
   "debug_mode": false,
   "debug_detection": false,
-  "show_pixel_position": false
+  "show_pixel_position": false,
+  "debug_save_templates": false
 }
 ```
+
+### Klick-Einstellungen
 
 | Option | Beschreibung |
 |--------|--------------|
 | `clicks_per_point` | Anzahl Klicks pro Punkt (Standard: 1) |
 | `max_total_clicks` | Maximale Klicks gesamt (`null` = unendlich) |
+| `click_move_delay` | Pause zwischen Mausbewegung und Klick in Sekunden (Standard: 0.01) |
+| `post_click_delay` | Pause NACH dem Klick bevor Maus weiterbewegt wird (Standard: 0.05) |
+
+### Sicherheit
+
+| Option | Beschreibung |
+|--------|--------------|
 | `failsafe_enabled` | Fail-Safe: Maus in Ecke stoppt alles |
+| `failsafe_x` | Fail-Safe X-Bereich: Maus x <= Wert löst aus (Standard: 5) |
+| `failsafe_y` | Fail-Safe Y-Bereich: Maus y <= Wert löst aus (Standard: 5) |
+
+### Farb-/Pixel-Erkennung
+
+| Option | Beschreibung |
+|--------|--------------|
 | `color_tolerance` | Toleranz für Item-Scan (0 = exakt, höher = toleranter) |
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
-| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger |
+| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300) |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
+| `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
+| `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
+
+### Item-Scan Einstellungen
+
+| Option | Beschreibung |
+|--------|--------------|
 | `scan_reverse` | Slots von hinten nach vorne scannen |
+| `scan_slot_delay` | Pause zwischen Slot-Scans in Sekunden (Standard: 0.1) |
+| `item_click_delay` | Pause nach Item-Klick in Sekunden (Standard: 1.0) |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
 | `require_all_markers` | Alle Marker müssen gefunden werden (true/false) |
 | `min_markers_required` | Mindestanzahl Marker wenn `require_all_markers: false` |
 | `slot_hsv_tolerance` | HSV-Toleranz für automatische Slot-Erkennung |
 | `slot_inset` | Pixel-Einzug vom Slot-Rand für genauere Klick-Position |
 | `slot_color_distance` | Farbdistanz für Hintergrund-Ausschluss bei Item-Lernen |
+| `default_min_confidence` | Standard-Konfidenz für Template-Matching (Standard: 0.8 = 80%) |
+| `default_confirm_delay` | Standard-Wartezeit vor Bestätigungs-Klick in Sekunden (Standard: 0.5) |
+
+### Timing
+
+| Option | Beschreibung |
+|--------|--------------|
+| `pause_check_interval` | Prüf-Intervall während Pause in Sekunden (Standard: 0.5) |
+
+### Debug-Einstellungen
+
+| Option | Beschreibung |
+|--------|--------------|
 | `debug_mode` | Zeigt Schritte VOR Start und wartet auf Enter |
 | `debug_detection` | Alle Ausgaben persistent (nicht überschrieben) |
 | `show_pixel_position` | Maus kurz zum Prüf-Pixel bewegen beim Start |
+| `debug_save_templates` | Speichert Scan+Template in `items/debug/` für Debugging |
 
 ## Dateistruktur
 
 ```
 Autoclicker-Idleclans/
-├── autoclicker.py          # Hauptprogramm
+├── autoclicker.py          # Hauptprogramm (~6300 Zeilen)
 ├── config.json             # Konfiguration (auto-generiert)
 ├── README.md               # Diese Datei
 ├── sequences/              # Gespeicherte Sequenzen
-│   ├── points.json         # Aufgenommene Punkte
+│   ├── points.json         # Aufgenommene Punkte (mit ID und Name)
 │   └── *.json              # Sequenz-Dateien
 ├── slots/                  # Slot-Konfigurationen
 │   ├── slots.json          # Aktive Slots
+│   ├── Screenshots/        # Screenshots und Vorschau-Bilder
+│   │   ├── screenshot_*.png    # Original-Screenshots
+│   │   └── preview_*.png       # Vorschau mit Slot-Markierungen
 │   └── presets/            # Slot-Presets
 │       └── *.json          # Benannte Slot-Presets
 ├── items/                  # Item-Konfigurationen
 │   ├── items.json          # Aktive Items
 │   ├── templates/          # Template-Bilder für Matching
 │   │   └── *.png           # Item-Screenshots
+│   ├── debug/              # Debug-Bilder (wenn debug_save_templates=true)
 │   └── presets/            # Item-Presets
 │       └── *.json          # Benannte Item-Presets
-├── Screenshots/            # Screenshots und Vorschau-Bilder
-│   ├── screenshot_*.png    # Original-Screenshots
-│   └── preview_*.png       # Vorschau mit Markierungen
 ├── item_scans/             # Item-Scan Konfigurationen
-│   └── *.json              # Scan-Konfigurationen
+│   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
 └── tools/                  # Hilfswerkzeuge
-    ├── sync_json.py        # JSON-Dateien synchronisieren
-    └── slot_tester.py      # Slot-Erkennung testen
+    ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
+    ├── slot_tester.py      # Slot-Erkennung testen
+    └── debug/              # Debug-Ausgaben vom Slot-Tester
 ```
 
 ## Technische Details
 
+### Architektur
+
+Das Programm besteht aus einem Hauptmodul (`autoclicker.py`, ~6300 Zeilen) mit folgender Struktur:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        HAUPTPROGRAMM                            │
+├─────────────────────────────────────────────────────────────────┤
+│  main() → Event-Loop mit Hotkey-Handler                        │
+│    ├── AutoClickerState (Dataclass) - Zentraler Zustand        │
+│    ├── Hotkey-Handler (handle_record, handle_toggle, ...)      │
+│    └── sequence_worker() - Thread für Sequenz-Ausführung       │
+├─────────────────────────────────────────────────────────────────┤
+│                      DATENSTRUKTUREN                            │
+├─────────────────────────────────────────────────────────────────┤
+│  ClickPoint     - Mausposition mit ID und Name                 │
+│  SequenceStep   - Ein Schritt: Warten → Aktion (Klick/Taste)   │
+│  LoopPhase      - Gruppe von Schritten mit Wiederholungen      │
+│  Sequence       - START + LOOPs + END Phasen                   │
+│  ItemProfile    - Item mit Marker-Farben oder Template         │
+│  ItemSlot       - Scan-Region + Klick-Position                 │
+│  ItemScanConfig - Verknüpfung von Slots + Items                │
+├─────────────────────────────────────────────────────────────────┤
+│                      FUNKTIONSGRUPPEN                           │
+├─────────────────────────────────────────────────────────────────┤
+│  Persistenz     - save_data(), load_points(), load_*()         │
+│  Windows API    - get_cursor_pos(), send_click(), send_key()   │
+│  Bilderkennung  - take_screenshot(), find_color_in_image()     │
+│  Template Match - match_template_in_image() via OpenCV         │
+│  Editoren       - edit_sequence(), edit_item_preset(), ...     │
+│  Ausführung     - execute_step(), execute_item_scan()          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Thread-Modell
+
+```
+┌──────────────────┐     ┌──────────────────────────────────┐
+│   Main Thread    │     │       Worker Thread              │
+│                  │     │                                  │
+│  Event-Loop:     │     │  sequence_worker():              │
+│  - Hotkey-Check  │────►│  - START-Phase ausführen         │
+│  - Handler rufen │     │  - LOOP-Phasen wiederholen       │
+│                  │◄────│  - END-Phase ausführen           │
+│  Events:         │     │                                  │
+│  - stop_event    │     │  Prüft Events:                   │
+│  - pause_event   │     │  - stop_event → Abbruch          │
+│  - skip_event    │     │  - pause_event → Warten          │
+│  - quit_event    │     │  - skip_event → Wartezeit skip   │
+└──────────────────┘     └──────────────────────────────────┘
+```
+
+### Abhängigkeiten
+
+| Paket | Funktion | Erforderlich |
+|-------|----------|--------------|
+| ctypes (builtin) | Windows API, Hotkeys, Maus/Tastatur | Ja |
+| Pillow | Screenshots, Farberkennung | Optional |
+| NumPy | Optimierte Farberkennung | Optional |
+| OpenCV | Template Matching, Slot-Erkennung | Optional |
+
+### Technologien
+
 - Windows API via `ctypes` (keine externen Abhängigkeiten für Basis-Funktionen)
 - Pillow für Screenshot und Farberkennung (optional)
-- OpenCV für automatische Slot-Erkennung (optional)
+- OpenCV für automatische Slot-Erkennung und Template Matching (optional)
 - Globale Hotkeys über `RegisterHotKey`
 - Mausklicks und Tastatureingaben über `SendInput`
-- BitBlt für Game-Screenshots (funktioniert mit Hardware-Beschleunigung)
-- Thread-basierte Ausführung
-- JSON-Persistenz
-- Multi-Monitor Unterstützung
+- BitBlt für Game-Screenshots (funktioniert mit Hardware-Beschleunigung/DirectX)
+- Thread-basierte Ausführung mit Events für Synchronisation
+- JSON-Persistenz für alle Daten
+- Multi-Monitor Unterstützung (DPI-aware)
 - Sichere Dateinamen (Path-Traversal-Schutz)
 
 ## Tools
@@ -454,6 +603,15 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
+- **Konfigurierbare Fail-Safe Zone**: `failsafe_x` und `failsafe_y` in config.json
+- **Konfigurierbare Delays**: `scan_slot_delay` und `item_click_delay` für feinere Kontrolle
+- **Screenshot-Optimierung**: BitBlt als primäre Methode (besser für DirectX-Spiele)
+- **Architektur-Dokumentation**: Detaillierte technische Beschreibung im README
+- **Code-Refactoring**: Bessere Modularisierung und Wartbarkeit
+
+### Vorherige Änderungen
 
 - **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
 - **Slot-Tester**: Debug-Tool für Slot-Erkennung
