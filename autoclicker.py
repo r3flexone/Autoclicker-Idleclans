@@ -215,10 +215,11 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
     """Parst Zeit-Eingaben in verschiedenen Formaten.
 
     Unterstützte Formate:
-        30, 30s     → 30 Sekunden
+        14:30       → Sekunden bis 14:30 Uhr (heute oder morgen)
+        1430        → Sekunden bis 14:30 Uhr (4-stellig, 0000-2359)
+        30s         → 30 Sekunden
         30m, 30min  → 30 Minuten
         2h, 2std    → 2 Stunden
-        14:30       → Sekunden bis 14:30 Uhr (heute oder morgen)
         +30m        → In 30 Minuten (relativ)
         +2          → In 2 Minuten (+ ohne Einheit = Minuten)
 
@@ -239,7 +240,7 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
     if has_plus_prefix:
         time_str = time_str[1:]
 
-    # Format: HH:MM (Uhrzeit)
+    # Format: HH:MM (Uhrzeit mit Doppelpunkt)
     if ":" in time_str:
         try:
             parts = time_str.split(":")
@@ -268,11 +269,38 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
         except ValueError:
             return (-1, f"Ungültiges Zeitformat: {time_str}")
 
-    # Format: Zahl mit optionaler Einheit (30, 30s, 30m, 30min, 2h, 2std)
+    # Format: HHMM (4-stellige Uhrzeit ohne Doppelpunkt, 0000-2359)
+    if time_str.isdigit() and len(time_str) == 4:
+        try:
+            hour = int(time_str[:2])
+            minute = int(time_str[2:])
+
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                return (-1, f"Ungültige Uhrzeit: {time_str} (gültig: 0000-2359)")
+
+            now = datetime.now()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # Wenn Zielzeit bereits vorbei ist, nimm morgen
+            if target <= now:
+                target += timedelta(days=1)
+                day_str = "morgen"
+            else:
+                day_str = "heute"
+
+            seconds = (target - now).total_seconds()
+
+            # Debug-Info
+            print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
+
+            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}")
+        except ValueError:
+            return (-1, f"Ungültiges Zeitformat: {time_str}")
+
+    # Format: Zahl mit Einheit (30s, 30m, 30min, 2h, 2std)
+    # Bei + Präfix ohne Einheit: Default = Minuten
     try:
-        # Einheit extrahieren
-        # Bei + Präfix ohne Einheit: Default = Minuten (für Zeitplan sinnvoller)
-        unit = "m" if has_plus_prefix else "s"
+        unit = None
         value_str = time_str
 
         if time_str.endswith("std"):
@@ -290,6 +318,12 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
         elif time_str.endswith("s"):
             unit = "s"
             value_str = time_str[:-1]
+        elif has_plus_prefix:
+            # + Präfix ohne Einheit = Minuten
+            unit = "m"
+        else:
+            # Keine Einheit und kein + Präfix = Fehler
+            return (-1, f"Einheit fehlt! Nutze z.B. '{time_str}s', '{time_str}m' oder '{time_str}h'")
 
         value = float(value_str)
 
@@ -6481,9 +6515,10 @@ def handle_schedule(state: AutoClickerState) -> None:
     print(f"\nAktive Sequenz: {state.active_sequence.name}")
     print("\nZeit-Formate:")
     print("  14:30    → Startet um 14:30 Uhr")
+    print("  1430     → Startet um 14:30 Uhr (4-stellig, 0000-2359)")
     print("  +30m     → Startet in 30 Minuten")
     print("  +2h      → Startet in 2 Stunden")
-    print("  30m      → Wartet 30 Minuten")
+    print("  30s/30m/2h → Wartet 30 Sek/30 Min/2 Std (Einheit erforderlich!)")
     print("\nZeit eingeben (oder 'cancel'):")
 
     try:
