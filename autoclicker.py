@@ -6516,9 +6516,10 @@ def handle_schedule(state: AutoClickerState) -> None:
     print("\nZeit-Formate:")
     print("  14:30    → Startet um 14:30 Uhr")
     print("  1430     → Startet um 14:30 Uhr (4-stellig, 0000-2359)")
-    print("  +30m     → Startet in 30 Minuten")
+    print("  +30s     → Startet in 30 Sekunden")
+    print("  +30m     → Startet in 30 Minuten (+5 = +5m)")
     print("  +2h      → Startet in 2 Stunden")
-    print("  30s/30m/2h → Wartet 30 Sek/30 Min/2 Std (Einheit erforderlich!)")
+    print("  30s/30m/2h → Wartet (Einheit s/m/h erforderlich!)")
     print("\nZeit eingeben (oder 'cancel'):")
 
     try:
