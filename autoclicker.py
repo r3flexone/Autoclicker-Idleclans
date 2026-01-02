@@ -814,6 +814,9 @@ class AutoClickerState:
     # Flag für geplanten Start (überspringt Debug-Enter-Prompt)
     scheduled_start: bool = False
 
+    # Flag für aktiven Countdown (verhindert Sequenz-Start durch CTRL+ALT+S)
+    countdown_active: bool = False
+
     # Konfiguration (thread-safe über lock)
     config: dict = field(default_factory=dict)
 
@@ -6345,6 +6348,13 @@ def handle_show(state: AutoClickerState) -> None:
 
 def handle_toggle(state: AutoClickerState) -> None:
     """Startet oder stoppt die Sequenz."""
+    # Prüfe ob Countdown aktiv → nur abbrechen, nicht starten
+    with state.lock:
+        if state.countdown_active:
+            state.stop_event.set()
+            print("\n[TOGGLE] Countdown abgebrochen.")
+            return
+
     # Prüfe ob bereits läuft → stoppen
     with state.lock:
         if state.is_running:
@@ -6515,32 +6525,41 @@ def handle_schedule(state: AutoClickerState) -> None:
 
         # Countdown in separatem Thread starten, damit Hotkeys weiter funktionieren
         def countdown_worker():
-            start_time = time.time()
-            while not state.stop_event.is_set() and not state.quit_event.is_set():
-                remaining = seconds - (time.time() - start_time)
+            with state.lock:
+                state.countdown_active = True
 
-                if remaining <= 0:
-                    break
+            try:
+                start_time = time.time()
+                while not state.stop_event.is_set() and not state.quit_event.is_set():
+                    remaining = seconds - (time.time() - start_time)
 
-                # Zeige Countdown
-                print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}... (CTRL+ALT+S zum Abbrechen)    ", end="", flush=True)
+                    if remaining <= 0:
+                        break
 
-                # Kurz warten
-                if state.stop_event.wait(0.5):
-                    break  # Stop-Event wurde gesetzt
+                    # Zeige Countdown
+                    print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}... (CTRL+ALT+S zum Abbrechen)    ", end="", flush=True)
 
-            if state.stop_event.is_set():
-                print("\n[ABBRUCH] Zeitplan abgebrochen.")
-                state.stop_event.clear()  # Reset für nächsten Start
-                return
+                    # Kurz warten
+                    if state.stop_event.wait(0.5):
+                        break  # Stop-Event wurde gesetzt
 
-            if state.quit_event.is_set():
-                return
+                if state.stop_event.is_set():
+                    print("\n[ABBRUCH] Zeitplan abgebrochen.")
+                    state.stop_event.clear()  # Reset für nächsten Start
+                    return
 
-            # Zeit erreicht - starte Sequenz
-            print("\n[START] Zeit erreicht - starte Sequenz!")
-            state.stop_event.clear()  # Reset falls gesetzt
-            state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
+                if state.quit_event.is_set():
+                    return
+
+                # Zeit erreicht - starte Sequenz
+                print("\n[START] Zeit erreicht - starte Sequenz!")
+                state.stop_event.clear()  # Reset falls gesetzt
+                state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
+            finally:
+                with state.lock:
+                    state.countdown_active = False
+
+            # Sequenz starten (außerhalb von finally, damit countdown_active schon False ist)
             handle_toggle(state)
 
         print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit CTRL+ALT+S)")
