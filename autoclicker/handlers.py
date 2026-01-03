@@ -404,11 +404,11 @@ def handle_schedule(state: AutoClickerState) -> None:
             print("[ABBRUCH]")
             return
 
-        seconds, desc = parse_time_input(time_input)
+        seconds, desc, target_timestamp = parse_time_input(time_input)
 
         # Debug: Zeige was geparst wurde
         if state.config.get("debug_mode", False):
-            print(f"[DEBUG] Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}'")
+            print(f"[DEBUG] Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}', target_timestamp={target_timestamp}")
 
         if seconds < 0:
             print(f"[FEHLER] {desc}")
@@ -421,7 +421,12 @@ def handle_schedule(state: AutoClickerState) -> None:
             return
 
         # Zeige Countdown-Info und warte auf Bestätigung
-        target_time = datetime.now().timestamp() + seconds
+        # Bei absoluten Zeiten: target_timestamp enthält die Zielzeit
+        # Bei relativen Zeiten: target_timestamp ist None, wird nach Enter berechnet
+        if target_timestamp is not None:
+            target_time = target_timestamp
+        else:
+            target_time = datetime.now().timestamp() + seconds
         target_dt = datetime.fromtimestamp(target_time)
         print(f"\n[GEPLANT] Sequenz '{state.active_sequence.name}' startet {desc}")
         print(f"          Zielzeit: {target_dt.strftime('%H:%M:%S')}")
@@ -434,15 +439,22 @@ def handle_schedule(state: AutoClickerState) -> None:
             print("[ABBRUCH]")
             return
 
+        # Nach Enter: Bei relativen Zeiten jetzt die Zielzeit berechnen
+        # Bei absoluten Zeiten bleibt target_time unverändert (das ist der Fix!)
+        if target_timestamp is None:
+            # Relative Zeit: Jetzt erst die tatsächliche Zielzeit setzen
+            target_time = time.time() + seconds
+
         # Countdown in separatem Thread starten, damit Hotkeys weiter funktionieren
         def countdown_worker():
+            nonlocal target_time  # Zugriff auf target_time aus dem äußeren Scope
             with state.lock:
                 state.countdown_active = True
 
             try:
-                start_time = time.time()
                 while not state.stop_event.is_set() and not state.quit_event.is_set():
-                    remaining = seconds - (time.time() - start_time)
+                    # Verbleibende Zeit dynamisch berechnen (funktioniert für beide Fälle)
+                    remaining = target_time - time.time()
 
                     if remaining <= 0:
                         break

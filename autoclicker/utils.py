@@ -155,7 +155,7 @@ def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:
     return not state.stop_event.is_set()
 
 
-def parse_time_input(time_str: str) -> tuple[float, str]:
+def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
     """Parst Zeit-Eingaben in verschiedenen Formaten.
 
     Unterstützte Formate:
@@ -168,14 +168,15 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
         +2          → In 2 Minuten (+ ohne Einheit = Minuten)
 
     Returns:
-        (sekunden: float, beschreibung: str)
-        Bei Fehler: (-1, fehlermeldung)
+        (sekunden: float, beschreibung: str, zielzeit_timestamp: float | None)
+        - zielzeit_timestamp: Absolute Zielzeit bei Uhrzeiten (HH:MM, HHMM), sonst None
+        Bei Fehler: (-1, fehlermeldung, None)
     """
     time_str = time_str.strip().lower()
 
     # Leere Eingabe
     if not time_str:
-        return (-1, "Keine Zeit angegeben")
+        return (-1, "Keine Zeit angegeben", None)
 
     # Relative Zeit mit + Präfix: +30m, +2h, +2 (ohne Einheit = Minuten)
     has_plus_prefix = time_str.startswith("+")
@@ -190,7 +191,7 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
             minute = int(parts[1]) if len(parts) > 1 else 0
 
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                return (-1, f"Ungültige Uhrzeit: {time_str}")
+                return (-1, f"Ungültige Uhrzeit: {time_str}", None)
 
             now = datetime.now()
             target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -203,13 +204,14 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
                 day_str = "heute"
 
             seconds = (target - now).total_seconds()
+            target_timestamp = target.timestamp()
 
             # Debug-Info (wird immer gezeigt bei Uhrzeiten um Bugs zu finden)
             print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
 
-            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}")
+            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
         except ValueError:
-            return (-1, f"Ungültiges Zeitformat: {time_str}")
+            return (-1, f"Ungültiges Zeitformat: {time_str}", None)
 
     # Format: HHMM (4-stellige Uhrzeit ohne Doppelpunkt, 0000-2359)
     if time_str.isdigit() and len(time_str) == 4:
@@ -218,7 +220,7 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
             minute = int(time_str[2:])
 
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                return (-1, f"Ungültige Uhrzeit: {time_str} (gültig: 0000-2359)")
+                return (-1, f"Ungültige Uhrzeit: {time_str} (gültig: 0000-2359)", None)
 
             now = datetime.now()
             target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -231,13 +233,14 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
                 day_str = "heute"
 
             seconds = (target - now).total_seconds()
+            target_timestamp = target.timestamp()
 
             # Debug-Info
             print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
 
-            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}")
+            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
         except ValueError:
-            return (-1, f"Ungültiges Zeitformat: {time_str}")
+            return (-1, f"Ungültiges Zeitformat: {time_str}", None)
 
     # Format: Zahl mit Einheit (30s, 30m, 30min, 2h, 2std)
     # Bei + Präfix ohne Einheit: Default = Minuten
@@ -265,12 +268,12 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
             unit = "m"
         else:
             # Keine Einheit und kein + Präfix = Fehler
-            return (-1, f"Einheit fehlt! Nutze z.B. '{time_str}s', '{time_str}m' oder '{time_str}h'")
+            return (-1, f"Einheit fehlt! Nutze z.B. '{time_str}s', '{time_str}m' oder '{time_str}h'", None)
 
         value = float(value_str)
 
         if value < 0:
-            return (-1, "Zeit muss positiv sein")
+            return (-1, "Zeit muss positiv sein", None)
 
         if unit == "h":
             seconds = value * 3600
@@ -282,9 +285,10 @@ def parse_time_input(time_str: str) -> tuple[float, str]:
             seconds = value
             desc = f"{value:.0f}s" if value == int(value) else f"{value}s"
 
-        return (seconds, desc)
+        # Relative Zeiten haben keine absolute Zielzeit
+        return (seconds, desc, None)
     except ValueError:
-        return (-1, f"Ungültige Zahl: {time_str}")
+        return (-1, f"Ungültige Zahl: {time_str}", None)
 
 
 def format_duration(seconds: float) -> str:
