@@ -143,12 +143,15 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         if scan_delay > 0 and slots_to_scan.index(slot) > 0:
             time.sleep(scan_delay)
 
+        screenshot_start = time.time()
         img = take_screenshot(slot.scan_region)
+        screenshot_ms = (time.time() - screenshot_start) * 1000
+
         if img is None:
             continue
 
         if debug:
-            print(f"[DEBUG] Scanne {slot.name}...")
+            print(f"[DEBUG] Scanne {slot.name}... (Screenshot: {screenshot_ms:.0f}ms)")
 
         for item in config.items:
             template_ok = True
@@ -247,10 +250,15 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Item-Scan Schritt aus."""
+    debug = state.config.get("debug_mode", False)
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
-    clear_line()
-    print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
+
+    if debug:
+        print(f"[DEBUG] Starte Scan '{step.item_scan}' ({mode_str})...")
+    else:
+        clear_line()
+        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
 
@@ -258,6 +266,9 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         for i, (pos, item, priority) in enumerate(scan_results):
             if state.stop_event.is_set():
                 return False
+
+            if debug:
+                print(f"[DEBUG] Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})")
 
             send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
                        state.config.get("post_click_delay", 0.05))
@@ -270,7 +281,13 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
 
             if item.confirm_point is not None:
                 if item.confirm_delay > 0:
+                    if debug:
+                        print(f"[DEBUG] Warte {item.confirm_delay}s vor Confirm...")
                     time.sleep(item.confirm_delay)
+
+                if debug:
+                    print(f"[DEBUG] Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})")
+
                 send_click(item.confirm_point.x, item.confirm_point.y,
                            state.config.get("click_move_delay", 0.01),
                            state.config.get("post_click_delay", 0.05))
@@ -281,13 +298,19 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
             if click_delay > 0:
                 time.sleep(click_delay)
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!", end="", flush=True)
+        if debug:
+            print(f"[DEBUG] Scan fertig: {len(scan_results)} Item(s) geklickt")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!", end="", flush=True)
     else:
         if step.else_action:
             return execute_else_action(state, step, phase, step_num, total_steps)
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
+        if debug:
+            print(f"[DEBUG] Scan fertig: kein Item gefunden")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
 
     return True
 
@@ -392,6 +415,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 def _execute_click(state: AutoClickerState, step: SequenceStep,
                    step_num: int, total_steps: int, phase: str) -> bool:
     """Führt den eigentlichen Klick aus."""
+    debug = state.config.get("debug_mode", False)
     clicks = state.config.get("clicks_per_point", CLICKS_PER_POINT)
     for _ in range(clicks):
         if state.stop_event.is_set():
@@ -408,8 +432,12 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
         with state.lock:
             state.total_clicks += 1
 
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        if debug:
+            name = step.name if step.name else f"Punkt"
+            print(f"[DEBUG] Klick auf '{name}' ({step.x}, {step.y}) | Gesamt: {state.total_clicks}")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
 
         max_clicks = state.config.get("max_total_clicks", MAX_TOTAL_CLICKS)
         if max_clicks and state.total_clicks >= max_clicks:
@@ -566,6 +594,9 @@ def sequence_worker(state: AutoClickerState) -> None:
                 for repeat_num in range(1, loop_phase.repeat + 1):
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
+
+                    if state.config.get("debug_mode", False):
+                        print(f"[DEBUG] Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'")
 
                     for i, step in enumerate(loop_phase.steps):
                         if state.stop_event.is_set() or state.quit_event.is_set():
