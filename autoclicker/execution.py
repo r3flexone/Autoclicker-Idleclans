@@ -350,15 +350,15 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 color_matches = dist <= pixel_tolerance
                 condition_met = (not color_matches) if step.wait_until_gone else color_matches
 
-                # Debug-Ausgabe: Zeige aktuelle Farbe und Distanz
+                # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
                 elapsed = time.time() - start_time
                 debug = state.config.get("debug_mode", False)
+                current_name = get_color_name(current_color)
 
                 if condition_met:
                     msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
                     if debug:
-                        current_name = get_color_name(current_color)
-                        print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg} | {current_name} RGB{current_color} Dist={dist:.0f}")
+                        print(f"[DEBUG] {msg} | Erwartet: {expected_name} RGB{step.wait_color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
                     else:
                         clear_line()
                         print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
@@ -366,12 +366,11 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
                 if debug:
                     # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
-                    current_name = get_color_name(current_color)
-                    print(f"[DEBUG] Warte auf Farbe... ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
+                    print(f"[DEBUG] Warte auf {expected_name} RGB{step.wait_color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
                 else:
                     # Ohne Debug: Auf gleicher Zeile überschreiben
                     clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Farbe... ({elapsed:.0f}s)", end="", flush=True)
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", end="", flush=True)
 
         elapsed = time.time() - start_time
         if elapsed >= timeout:
