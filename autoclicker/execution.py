@@ -151,43 +151,57 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
             print(f"[DEBUG] Scanne {slot.name}...")
 
         for item in config.items:
+            template_ok = True
+            template_info = ""
+            marker_ok = True
+            marker_info = ""
+
+            # 1. Template-Matching (wenn vorhanden)
             if item.template:
-                # Template Matching
                 match, confidence, pos = match_template_in_image(
                     img, item.template, item.min_confidence
                 )
-                if debug:
-                    if match:
-                        print(f"[DEBUG]   → {item.name} gefunden! (Template, {confidence:.1%})")
-                    else:
-                        print(f"[DEBUG]   → {item.name}: {confidence:.1%} (min: {item.min_confidence:.0%})")
-                if match:
-                    found_items.append((slot, item, item.priority))
-                    break
-            elif item.marker_colors:
-                # Farb-Matching
+                template_ok = match
+                template_info = f"Template {confidence:.1%}" if match else f"Template {confidence:.1%} (min: {item.min_confidence:.0%})"
+
+            # 2. Marker-Farben prüfen (wenn vorhanden)
+            if item.marker_colors:
                 tolerance = config.color_tolerance
                 markers_total = len(item.marker_colors)
-                if debug:
-                    # Im Debug-Modus: alle Marker prüfen und zählen
-                    markers_found = sum(1 for marker in item.marker_colors
-                                       if find_color_in_image(img, marker, tolerance))
-                    all_found = (markers_found == markers_total)
-                    if all_found:
-                        print(f"[DEBUG]   → {item.name} gefunden! (Marker, {markers_found}/{markers_total})")
-                    else:
-                        print(f"[DEBUG]   → {item.name}: Marker {markers_found}/{markers_total}")
+                markers_found = sum(1 for marker in item.marker_colors
+                                   if find_color_in_image(img, marker, tolerance))
+
+                # Config-Einstellungen für Marker-Anforderung
+                require_all = state.config.get("require_all_markers", True)
+                min_required = state.config.get("min_markers_required", 2)
+
+                if require_all:
+                    marker_ok = (markers_found == markers_total)
                 else:
-                    # Ohne Debug: bei erstem fehlenden Marker abbrechen (schneller)
-                    all_found = all(find_color_in_image(img, marker, tolerance)
-                                   for marker in item.marker_colors)
-                if all_found:
-                    found_items.append((slot, item, item.priority))
-                    break
-            else:
-                # Weder Template noch Marker-Farben
-                if debug:
+                    marker_ok = (markers_found >= min_required)
+
+                marker_info = f"Marker {markers_found}/{markers_total}"
+
+            # 3. Debug-Ausgabe
+            if debug:
+                # Kombiniere Info-Strings
+                info_parts = []
+                if item.template:
+                    info_parts.append(template_info)
+                if item.marker_colors:
+                    info_parts.append(marker_info)
+
+                if not info_parts:
                     print(f"[DEBUG]   → {item.name}: kein Template/Marker definiert")
+                elif template_ok and marker_ok:
+                    print(f"[DEBUG]   → {item.name} gefunden! ({', '.join(info_parts)})")
+                else:
+                    print(f"[DEBUG]   → {item.name}: {', '.join(info_parts)}")
+
+            # 4. Item gefunden wenn Template UND Marker OK
+            if template_ok and marker_ok and (item.template or item.marker_colors):
+                found_items.append((slot, item, item.priority))
+                break
 
     if not found_items:
         return []
