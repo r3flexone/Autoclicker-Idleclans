@@ -707,3 +707,18 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
             print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
 
     return updated_scans
+
+
+def print_points(state: AutoClickerState) -> None:
+    """Zeigt alle gespeicherten Punkte an."""
+    with state.lock:
+        if not state.points:
+            print("\n[INFO] Keine Punkte vorhanden.")
+            print("       Punkte mit CTRL+ALT+A aufnehmen.")
+            return
+
+        print(f"\nGespeicherte Punkte ({len(state.points)}):")
+        print("-" * 50)
+        for p in state.points:
+            print(f"  #{p.id:3d} {p.name:20s} ({p.x:4d}, {p.y:4d})")
+        print("-" * 50)
