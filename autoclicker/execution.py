@@ -156,9 +156,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 match, confidence, pos = match_template_in_image(
                     img, item.template, item.min_confidence
                 )
-                if match:
-                    if debug:
+                if debug:
+                    if match:
                         print(f"[DEBUG]   → {item.name} gefunden! (Template, {confidence:.1%})")
+                    else:
+                        print(f"[DEBUG]   → {item.name}: {confidence:.1%} (min: {item.min_confidence:.0%})")
+                if match:
                     found_items.append((slot, item, item.priority))
                     break
             elif item.marker_colors:
@@ -169,9 +172,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                     if not find_color_in_image(img, marker, tolerance):
                         all_found = False
                         break
-                if all_found:
-                    if debug:
+                if debug:
+                    if all_found:
                         print(f"[DEBUG]   → {item.name} gefunden! (Marker)")
+                    else:
+                        print(f"[DEBUG]   → {item.name}: nicht alle Marker gefunden")
+                if all_found:
                     found_items.append((slot, item, item.priority))
                     break
 
@@ -322,6 +328,16 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                     print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
                     break
 
+                # Debug-Ausgabe: Zeige aktuelle Farbe und Distanz
+                elapsed = time.time() - start_time
+                debug = state.config.get("debug_mode", False)
+                clear_line()
+                if debug:
+                    current_name = get_color_name(current_color)
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}", end="", flush=True)
+                else:
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
+
         elapsed = time.time() - start_time
         if elapsed >= timeout:
             if step.else_action:
@@ -331,9 +347,6 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             print(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!")
             state.stop_event.set()
             return False
-
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
         check_interval = state.config.get("pixel_check_interval", 1)
         if state.stop_event.wait(check_interval):
