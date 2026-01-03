@@ -4,7 +4,7 @@ Ermöglicht das Erstellen und Bearbeiten von Slot-Definitionen für Item-Scans.
 """
 
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
@@ -18,8 +18,6 @@ from ..persistence import (
     load_slot_preset, delete_slot_preset, SCREENSHOTS_DIR
 )
 
-if TYPE_CHECKING:
-    pass
 
 
 def run_global_slot_editor(state: AutoClickerState) -> None:
@@ -232,8 +230,6 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
     if bg_input in ("cancel", "abbruch"):
         print("  -> Slot-Erstellung abgebrochen")
         return None
-    elif bg_input != "skip" and bg_input != "":
-        pass  # Benutzer hat etwas anderes eingegeben
     elif bg_input != "skip":
         x, y = get_cursor_pos()
         slot_color = get_pixel_color(x, y)

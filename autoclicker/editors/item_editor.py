@@ -4,7 +4,7 @@ Ermöglicht das Erstellen und Bearbeiten von Item-Definitionen für Item-Scans.
 """
 
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
@@ -20,8 +20,6 @@ from ..persistence import (
     shift_category_priorities, get_point_by_id, TEMPLATES_DIR
 )
 
-if TYPE_CHECKING:
-    pass
 
 
 def run_global_item_editor(state: AutoClickerState) -> None:

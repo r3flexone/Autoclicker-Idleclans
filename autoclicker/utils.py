@@ -183,6 +183,27 @@ def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
     if has_plus_prefix:
         time_str = time_str[1:]
 
+    # Hilfsfunktion für Uhrzeiten (vermeidet Code-Duplizierung)
+    def calculate_time_to_target(hour: int, minute: int) -> tuple[float, str, float]:
+        """Berechnet Sekunden bis zur Zielzeit und gibt (seconds, description, timestamp) zurück."""
+        now = datetime.now()
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        # Wenn Zielzeit bereits vorbei ist, nimm morgen
+        if target <= now:
+            target += timedelta(days=1)
+            day_str = "morgen"
+        else:
+            day_str = "heute"
+
+        seconds = (target - now).total_seconds()
+        target_timestamp = target.timestamp()
+
+        # Debug-Info
+        print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
+
+        return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
+
     # Format: HH:MM (Uhrzeit mit Doppelpunkt)
     if ":" in time_str:
         try:
@@ -193,23 +214,7 @@ def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 return (-1, f"Ungültige Uhrzeit: {time_str}", None)
 
-            now = datetime.now()
-            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-            # Wenn Zielzeit bereits vorbei ist, nimm morgen
-            if target <= now:
-                target += timedelta(days=1)
-                day_str = "morgen"
-            else:
-                day_str = "heute"
-
-            seconds = (target - now).total_seconds()
-            target_timestamp = target.timestamp()
-
-            # Debug-Info (wird immer gezeigt bei Uhrzeiten um Bugs zu finden)
-            print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
-
-            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
+            return calculate_time_to_target(hour, minute)
         except ValueError:
             return (-1, f"Ungültiges Zeitformat: {time_str}", None)
 
@@ -222,23 +227,7 @@ def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 return (-1, f"Ungültige Uhrzeit: {time_str} (gültig: 0000-2359)", None)
 
-            now = datetime.now()
-            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-            # Wenn Zielzeit bereits vorbei ist, nimm morgen
-            if target <= now:
-                target += timedelta(days=1)
-                day_str = "morgen"
-            else:
-                day_str = "heute"
-
-            seconds = (target - now).total_seconds()
-            target_timestamp = target.timestamp()
-
-            # Debug-Info
-            print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
-
-            return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
+            return calculate_time_to_target(hour, minute)
         except ValueError:
             return (-1, f"Ungültiges Zeitformat: {time_str}", None)
 

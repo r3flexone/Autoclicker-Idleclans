@@ -4,7 +4,7 @@ Ermöglicht das Erstellen und Bearbeiten von Klick-Sequenzen.
 """
 
 import time
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
 from ..utils import safe_input
@@ -15,8 +15,6 @@ from ..persistence import (
 )
 from ..imaging import PILLOW_AVAILABLE, take_screenshot, get_pixel_color
 
-if TYPE_CHECKING:
-    pass
 
 
 def run_sequence_editor(state: AutoClickerState) -> None:

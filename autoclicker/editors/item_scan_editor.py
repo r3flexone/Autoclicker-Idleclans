@@ -5,7 +5,7 @@ Ermöglicht das Erstellen und Bearbeiten von Item-Scan-Konfigurationen.
 
 import time
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
@@ -24,8 +24,6 @@ from ..persistence import (
 from .slot_editor import run_global_slot_editor
 from .item_editor import run_global_item_editor, select_category
 
-if TYPE_CHECKING:
-    pass
 
 
 def run_item_scan_menu(state: AutoClickerState) -> None:
