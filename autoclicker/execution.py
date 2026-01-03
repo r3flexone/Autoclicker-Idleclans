@@ -344,20 +344,27 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 color_matches = dist <= pixel_tolerance
                 condition_met = (not color_matches) if step.wait_until_gone else color_matches
 
-                if condition_met:
-                    msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
-                    break
-
                 # Debug-Ausgabe: Zeige aktuelle Farbe und Distanz
                 elapsed = time.time() - start_time
                 debug = state.config.get("debug_mode", False)
-                clear_line()
+
+                if condition_met:
+                    msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
+                    if debug:
+                        current_name = get_color_name(current_color)
+                        print(f"\n[{phase}] Schritt {step_num}/{total_steps} | {msg} | {current_name} RGB{current_color} Dist={dist:.0f}")
+                    else:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                    break
+
                 if debug:
+                    # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
                     current_name = get_color_name(current_color)
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}", end="", flush=True)
+                    print(f"[DEBUG] Warte auf Farbe {wait_mode}... ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
                 else:
+                    # Ohne Debug: Auf gleicher Zeile überschreiben
+                    clear_line()
                     print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte bis Farbe {wait_mode}... ({elapsed:.0f}s)", end="", flush=True)
 
         elapsed = time.time() - start_time
