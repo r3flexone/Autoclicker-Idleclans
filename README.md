@@ -41,7 +41,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 git clone https://github.com/r3flexone/Autoclicker-Idleclans.git
 cd Autoclicker-Idleclans
 pip install pillow opencv-python numpy  # Optional, für erweiterte Features
-python autoclicker.py
+python main.py
 ```
 
 ## Hotkeys
@@ -474,7 +474,23 @@ Wird beim ersten Start automatisch erstellt:
 
 ```
 Autoclicker-Idleclans/
-├── autoclicker.py          # Hauptprogramm (~6300 Zeilen)
+├── main.py                 # Einstiegspunkt
+├── autoclicker/            # Hauptmodul (~5800 Zeilen)
+│   ├── __init__.py
+│   ├── config.py           # Konfiguration (Hotkeys, Defaults)
+│   ├── models.py           # Datenmodelle (ClickPoint, Sequence, etc.)
+│   ├── utils.py            # Hilfsfunktionen (Input, Zeit-Parsing)
+│   ├── winapi.py           # Windows API (Maus/Tastatur)
+│   ├── imaging.py          # Bildverarbeitung (Screenshots, OpenCV)
+│   ├── persistence.py      # Speichern/Laden (JSON)
+│   ├── handlers.py         # Hotkey-Handler
+│   ├── execution.py        # Sequenz-Ausführung
+│   └── editors/            # Interaktive Editoren
+│       ├── __init__.py
+│       ├── sequence_editor.py
+│       ├── item_scan_editor.py
+│       ├── item_editor.py
+│       └── slot_editor.py
 ├── config.json             # Konfiguration (auto-generiert)
 ├── README.md               # Diese Datei
 ├── sequences/              # Gespeicherte Sequenzen
@@ -483,59 +499,49 @@ Autoclicker-Idleclans/
 ├── slots/                  # Slot-Konfigurationen
 │   ├── slots.json          # Aktive Slots
 │   ├── Screenshots/        # Screenshots und Vorschau-Bilder
-│   │   ├── screenshot_*.png    # Original-Screenshots
-│   │   └── preview_*.png       # Vorschau mit Slot-Markierungen
 │   └── presets/            # Slot-Presets
-│       └── *.json          # Benannte Slot-Presets
 ├── items/                  # Item-Konfigurationen
 │   ├── items.json          # Aktive Items
 │   ├── templates/          # Template-Bilder für Matching
-│   │   └── *.png           # Item-Screenshots
 │   ├── debug/              # Debug-Bilder (wenn debug_save_templates=true)
 │   └── presets/            # Item-Presets
-│       └── *.json          # Benannte Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
 └── tools/                  # Hilfswerkzeuge
     ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
-    ├── slot_tester.py      # Slot-Erkennung testen
-    └── debug/              # Debug-Ausgaben vom Slot-Tester
+    └── slot_tester.py      # Slot-Erkennung testen
 ```
 
 ## Technische Details
 
 ### Architektur
 
-Das Programm besteht aus einem Hauptmodul (`autoclicker.py`, ~6300 Zeilen) mit folgender Struktur:
+Das Programm ist modular aufgebaut (~5800 Zeilen in 15 Dateien):
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        HAUPTPROGRAMM                            │
-├─────────────────────────────────────────────────────────────────┤
-│  main() → Event-Loop mit Hotkey-Handler                        │
-│    ├── AutoClickerState (Dataclass) - Zentraler Zustand        │
-│    ├── Hotkey-Handler (handle_record, handle_toggle, ...)      │
-│    └── sequence_worker() - Thread für Sequenz-Ausführung       │
-├─────────────────────────────────────────────────────────────────┤
-│                      DATENSTRUKTUREN                            │
-├─────────────────────────────────────────────────────────────────┤
-│  ClickPoint     - Mausposition mit ID und Name                 │
-│  SequenceStep   - Ein Schritt: Warten → Aktion (Klick/Taste)   │
-│  LoopPhase      - Gruppe von Schritten mit Wiederholungen      │
-│  Sequence       - START + LOOPs + END Phasen                   │
-│  ItemProfile    - Item mit Marker-Farben oder Template         │
-│  ItemSlot       - Scan-Region + Klick-Position                 │
-│  ItemScanConfig - Verknüpfung von Slots + Items                │
-├─────────────────────────────────────────────────────────────────┤
-│                      FUNKTIONSGRUPPEN                           │
-├─────────────────────────────────────────────────────────────────┤
-│  Persistenz     - save_data(), load_points(), load_*()         │
-│  Windows API    - get_cursor_pos(), send_click(), send_key()   │
-│  Bilderkennung  - take_screenshot(), find_color_in_image()     │
-│  Template Match - match_template_in_image() via OpenCV         │
-│  Editoren       - edit_sequence(), edit_item_preset(), ...     │
-│  Ausführung     - execute_step(), execute_item_scan()          │
-└─────────────────────────────────────────────────────────────────┘
+main.py                      Einstiegspunkt, Event-Loop
+    │
+    └── autoclicker/
+        ├── config.py        Konstanten, Hotkey-IDs
+        ├── models.py        Datenklassen (ClickPoint, Sequence, ...)
+        ├── utils.py         Hilfsfunktionen (Input, Zeit-Parsing)
+        ├── winapi.py        Windows API (Maus, Tastatur, Hotkeys)
+        ├── imaging.py       Screenshots, Farberkennung, OpenCV
+        ├── persistence.py   JSON-Persistenz, Presets
+        ├── handlers.py      Hotkey-Callbacks
+        ├── execution.py     Sequenz-Ausführung, Item-Scans
+        └── editors/
+            ├── sequence_editor.py    Sequenz erstellen/bearbeiten
+            ├── item_scan_editor.py   Scans konfigurieren
+            ├── item_editor.py        Items definieren
+            └── slot_editor.py        Slots definieren
+```
+
+**Datenfluss:**
+```
+[Hotkey] → handlers.py → execution.py → winapi.py (Klicks/Tasten)
+                │                   └──→ imaging.py (Screenshots)
+                └──→ editors/*.py → persistence.py (Speichern)
 ```
 
 ### Thread-Modell
@@ -604,15 +610,19 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
+- **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~5800 Zeilen)
+  - `main.py` als Einstiegspunkt
+  - `autoclicker/` Package mit spezialisierten Modulen
+  - `editors/` Subpackage für alle interaktiven Editoren
+- **Bug-Fixes**: Slot-Editor Hintergrundfarbe, Performance-Optimierungen
+- **Code-Qualität**: Duplizierung entfernt, toter Code bereinigt
+
+### Vorherige Änderungen
+
 - **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
 - **Konfigurierbare Fail-Safe Zone**: `failsafe_x` und `failsafe_y` in config.json
 - **Konfigurierbare Delays**: `scan_slot_delay` und `item_click_delay` für feinere Kontrolle
 - **Screenshot-Optimierung**: BitBlt als primäre Methode (besser für DirectX-Spiele)
-- **Architektur-Dokumentation**: Detaillierte technische Beschreibung im README
-- **Code-Refactoring**: Bessere Modularisierung und Wartbarkeit
-
-### Vorherige Änderungen
-
 - **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
 - **Slot-Tester**: Debug-Tool für Slot-Erkennung
 - **confirm_point als Koordinaten**: Robuster bei Punkt-Änderungen
