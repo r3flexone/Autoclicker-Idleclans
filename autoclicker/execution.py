@@ -167,19 +167,27 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
             elif item.marker_colors:
                 # Farb-Matching
                 tolerance = config.color_tolerance
-                all_found = True
-                for marker in item.marker_colors:
-                    if not find_color_in_image(img, marker, tolerance):
-                        all_found = False
-                        break
+                markers_total = len(item.marker_colors)
                 if debug:
+                    # Im Debug-Modus: alle Marker prüfen und zählen
+                    markers_found = sum(1 for marker in item.marker_colors
+                                       if find_color_in_image(img, marker, tolerance))
+                    all_found = (markers_found == markers_total)
                     if all_found:
-                        print(f"[DEBUG]   → {item.name} gefunden! (Marker)")
+                        print(f"[DEBUG]   → {item.name} gefunden! (Marker, {markers_found}/{markers_total})")
                     else:
-                        print(f"[DEBUG]   → {item.name}: nicht alle Marker gefunden")
+                        print(f"[DEBUG]   → {item.name}: Marker {markers_found}/{markers_total}")
+                else:
+                    # Ohne Debug: bei erstem fehlenden Marker abbrechen (schneller)
+                    all_found = all(find_color_in_image(img, marker, tolerance)
+                                   for marker in item.marker_colors)
                 if all_found:
                     found_items.append((slot, item, item.priority))
                     break
+            else:
+                # Weder Template noch Marker-Farben
+                if debug:
+                    print(f"[DEBUG]   → {item.name}: kein Template/Marker definiert")
 
     if not found_items:
         return []
