@@ -208,10 +208,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
     if mode == "every":
         print(f"[SCAN] {len(found_items)} Item(s) gefunden - klicke alle!")
+        # Items werden in Scan-Reihenfolge geklickt (bei scan_reverse: von hinten nach vorne)
         return [(slot.click_pos, item, priority) for slot, item, priority in found_items]
 
-    # Gruppiere nach Kategorie
+    # Gruppiere nach Kategorie, aber behalte die Scan-Reihenfolge
     best_per_category = {}
+    ordered_categories = []  # Reihenfolge merken
     for slot, item, priority in found_items:
         cat = item.category or item.name
 
@@ -223,10 +225,14 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                         print(f"[DEBUG]   → {item.name} übersprungen ('{cat}' bereits geklickt)")
                     continue
 
-        if cat not in best_per_category or priority < best_per_category[cat][2]:
+        if cat not in best_per_category:
+            ordered_categories.append(cat)  # Erste Kategorie-Erscheinung merken
+            best_per_category[cat] = (slot, item, priority)
+        elif priority < best_per_category[cat][2]:
             best_per_category[cat] = (slot, item, priority)
 
-    filtered_items = list(best_per_category.values())
+    # Items in Scan-Reihenfolge zurückgeben (bei scan_reverse: von hinten nach vorne)
+    filtered_items = [best_per_category[cat] for cat in ordered_categories]
 
     if mode == "all":
         print(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!")
