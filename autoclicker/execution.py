@@ -68,9 +68,14 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     if not step.else_action:
         return True
 
+    debug = state.config.get("debug_mode", False)
+
     if step.else_action == "skip":
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", end="", flush=True)
+        if debug:
+            print(f"[DEBUG] ELSE: übersprungen")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", end="", flush=True)
         return True
 
     elif step.else_action == "click":
@@ -82,13 +87,17 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         if state.stop_event.is_set():
             return False
 
+        name = step.else_name or f"({step.else_x},{step.else_y})"
         send_click(step.else_x, step.else_y, state.config.get("click_move_delay", 0.01),
                    state.config.get("post_click_delay", 0.05))
         with state.lock:
             state.total_clicks += 1
-        name = step.else_name or f"({step.else_x},{step.else_y})"
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", end="", flush=True)
+
+        if debug:
+            print(f"[DEBUG] ELSE: Klick auf '{name}' ({step.else_x}, {step.else_y})")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", end="", flush=True)
         return True
 
     elif step.else_action == "key":
@@ -103,13 +112,19 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         if send_key(step.else_key):
             with state.lock:
                 state.key_presses += 1
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
+            if debug:
+                print(f"[DEBUG] ELSE: Taste '{step.else_key}'")
+            else:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
         return True
 
     elif step.else_action == "restart":
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", end="", flush=True)
+        if debug:
+            print(f"[DEBUG] ELSE: Neustart!")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", end="", flush=True)
         state.restart_event.set()
         return False
 
@@ -136,11 +151,11 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     scan_delay = state.config.get("scan_slot_delay", 0.1)
     debug = state.config.get("debug_detection", False)
 
-    for slot in slots_to_scan:
+    for idx, slot in enumerate(slots_to_scan):
         if state.stop_event.is_set():
             break
 
-        if scan_delay > 0 and slots_to_scan.index(slot) > 0:
+        if scan_delay > 0 and idx > 0:
             time.sleep(scan_delay)
 
         screenshot_start = time.time()
@@ -318,6 +333,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
 def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Tastendruck-Schritt aus."""
+    debug = state.config.get("debug_mode", False)
     actual_delay = step.get_actual_delay()
     if actual_delay > 0:
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
@@ -330,8 +346,11 @@ def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
     if send_key(step.key_press):
         with state.lock:
             state.key_presses += 1
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'!", end="", flush=True)
+        if debug:
+            print(f"[DEBUG] Taste '{step.key_press}' | Gesamt: {state.key_presses}")
+        else:
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'!", end="", flush=True)
 
     return True
 
@@ -351,7 +370,6 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
     timeout = state.config.get("pixel_wait_timeout", PIXEL_WAIT_TIMEOUT)
     start_time = time.time()
     expected_name = get_color_name(step.wait_color)
-    wait_mode = "WEG" if step.wait_until_gone else "DA"
 
     while not state.stop_event.is_set():
         if state.skip_event.is_set():
