@@ -430,6 +430,94 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
     return True
 
 
+def _execute_wait_for_number(state: AutoClickerState, step: SequenceStep,
+                              step_num: int, total_steps: int, phase: str) -> bool:
+    """Wartet auf eine Zahlen-Bedingung (z.B. > 100)."""
+    from .number_recognition import recognize_number, check_number_condition
+
+    timeout = state.config.get("number_wait_timeout", 300)  # 5 Minuten Default
+    check_interval = state.config.get("number_check_interval", 2)  # Alle 2 Sekunden prüfen
+    start_time = time.time()
+    debug = state.config.get("debug_mode", False)
+
+    operator = step.wait_number_operator
+    target = step.wait_number_target
+    region = step.wait_number_region
+    text_color = step.wait_number_color
+
+    target_display = f"{target:,.0f}" if target == int(target) else f"{target:,.2f}"
+    condition_str = f"Zahl {operator} {target_display}"
+
+    while not state.stop_event.is_set():
+        if state.skip_event.is_set():
+            state.skip_event.clear()
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Zahlenwarten!", end="", flush=True)
+            break
+
+        if not wait_while_paused(state, f"Warte auf {condition_str}..."):
+            break
+
+        # Screenshot und Zahlenerkennung
+        if PILLOW_AVAILABLE:
+            img = take_screenshot(region)
+            if img:
+                number, char_string, details = recognize_number(
+                    img,
+                    text_color=text_color,
+                    color_tolerance=state.config.get("number_color_tolerance", 50),
+                    min_confidence=state.config.get("number_min_confidence", 0.8)
+                )
+
+                elapsed = time.time() - start_time
+
+                if number is not None:
+                    # Prüfe Bedingung
+                    condition_met = check_number_condition(number, operator, target)
+
+                    number_display = f"{number:,.0f}" if number == int(number) else f"{number:,.2f}"
+
+                    if condition_met:
+                        if debug:
+                            print(f"[DEBUG] Bedingung erfüllt! {number_display} {operator} {target_display}")
+                        else:
+                            clear_line()
+                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Zahl {number_display} {operator} {target_display} ✓", end="", flush=True)
+                        return True  # Bedingung erfüllt!
+
+                    # Bedingung nicht erfüllt - weiter warten
+                    if debug:
+                        print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Aktuell: {number_display} ('{char_string}')")
+                    else:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {number_display} → {operator} {target_display} ({elapsed:.0f}s)", end="", flush=True)
+                else:
+                    # Keine Zahl erkannt
+                    if debug:
+                        if char_string:
+                            print(f"[DEBUG] Zeichen erkannt: '{char_string}' (keine gültige Zahl) ({elapsed:.0f}s)")
+                        else:
+                            print(f"[DEBUG] Keine Zeichen erkannt ({elapsed:.0f}s)")
+                    else:
+                        clear_line()
+                        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Zahl... ({elapsed:.0f}s)", end="", flush=True)
+
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
+            if step.else_action:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT (Zahl)", end="", flush=True)
+                return execute_else_action(state, step, phase, step_num, total_steps)
+            print(f"\n[TIMEOUT] Zahlen-Bedingung nicht erfüllt nach {timeout}s!")
+            state.stop_event.set()
+            return False
+
+        if state.stop_event.wait(check_interval):
+            return False
+
+    return True
+
+
 def _execute_click(state: AutoClickerState, step: SequenceStep,
                    step_num: int, total_steps: int, phase: str) -> bool:
     """Führt den eigentlichen Klick aus."""
@@ -483,7 +571,11 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
     if step.key_press:
         return _execute_key_press_step(state, step, step_num, total_steps, phase)
 
-    if step.wait_pixel and step.wait_color:
+    # Zahlenerkennung (wait number)
+    if step.wait_number_region and step.wait_number_operator and step.wait_number_target is not None:
+        if not _execute_wait_for_number(state, step, step_num, total_steps, phase):
+            return False
+    elif step.wait_pixel and step.wait_color:
         if not _execute_wait_for_color(state, step, step_num, total_steps, phase):
             return False
     elif step.delay_before > 0 or step.delay_max:

@@ -55,6 +55,11 @@ class SequenceStep:
     else_delay: float = 0                # Delay vor Fallback
     else_key: Optional[str] = None       # Taste für Fallback
     else_name: str = ""                  # Name des Fallback-Punkts
+    # Optional: Warten auf Zahl (Zahlenerkennung)
+    wait_number_region: Optional[tuple] = None    # (x1, y1, x2, y2) Bereich
+    wait_number_operator: Optional[str] = None    # ">", "<", "=", ">=", "<=", "!="
+    wait_number_target: Optional[float] = None    # Zielwert
+    wait_number_color: Optional[tuple] = None     # (R, G, B) Textfarbe (optional)
 
     def __str__(self) -> str:
         else_str = self._else_str()
@@ -65,6 +70,12 @@ class SequenceStep:
             mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
             mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
+        if self.wait_number_region and self.wait_number_operator and self.wait_number_target is not None:
+            target_str = f"{self.wait_number_target:,.0f}" if self.wait_number_target == int(self.wait_number_target) else f"{self.wait_number_target:,.2f}"
+            if self.wait_only:
+                return f"WARTE bis Zahl {self.wait_number_operator} {target_str} (kein Klick){else_str}"
+            pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
+            return f"warte bis Zahl {self.wait_number_operator} {target_str} → klicke {pos_str}{else_str}"
         if self.wait_only:
             if self.wait_pixel and self.wait_color:
                 gone_str = "WEG ist" if self.wait_until_gone else "DA ist"

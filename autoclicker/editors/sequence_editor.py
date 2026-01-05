@@ -13,7 +13,7 @@ from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
     get_next_point_id, get_point_by_id
 )
-from ..imaging import PILLOW_AVAILABLE, take_screenshot, get_pixel_color
+from ..imaging import PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color, select_region
 
 
 
@@ -460,6 +460,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  wait <Min>-<Max>  - Zufällig warten (z.B. 'wait 30-45')")
     print("  wait pixel        - Auf Farbe warten, KEIN Klick")
     print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
+    print("  wait number >|<|= <Zahl> - Auf Zahl warten (z.B. 'wait number > 100')")
+    print("  <Nr> number >|<|= <Zahl> - Warte auf Zahl, dann klicke")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
     print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
@@ -758,6 +760,80 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     else:
                         print("  -> Pillow nicht installiert!")
                         continue
+                elif arg == "number":
+                    # wait number > 100 - Auf Zahl warten
+                    if not OPENCV_AVAILABLE or not PILLOW_AVAILABLE:
+                        print("  -> OpenCV und Pillow erforderlich!")
+                        continue
+
+                    # Prüfe ob Ziffern gelernt
+                    from ..number_recognition import get_learned_digits, DIGIT_CHARS, load_digit_config
+                    learned = get_learned_digits()
+                    digits_learned = [d for d in DIGIT_CHARS if d in learned]
+                    if len(digits_learned) < 5:
+                        print(f"  -> Nur {len(digits_learned)}/10 Ziffern gelernt!")
+                        print("     Lerne Ziffern mit CTRL+ALT+N -> Option 4")
+                        continue
+
+                    # Operator und Zielwert parsen
+                    if len(main_parts) < 3:
+                        print("  -> Format: wait number > 100 oder wait number < 50")
+                        continue
+
+                    operator = main_parts[1]
+                    if operator not in (">", "<", "=", ">=", "<=", "!=", "=="):
+                        print(f"  -> Ungültiger Operator: '{operator}'")
+                        print("     Erlaubt: >, <, =, >=, <=, !=")
+                        continue
+
+                    try:
+                        # Zielwert parsen (unterstützt k, M, B Suffixe)
+                        target_str = main_parts[2].lower().replace(",", "")
+                        multiplier = 1
+                        if target_str.endswith("k"):
+                            multiplier = 1_000
+                            target_str = target_str[:-1]
+                        elif target_str.endswith("m"):
+                            multiplier = 1_000_000
+                            target_str = target_str[:-1]
+                        elif target_str.endswith("b"):
+                            multiplier = 1_000_000_000
+                            target_str = target_str[:-1]
+                        target_value = float(target_str) * multiplier
+                    except ValueError:
+                        print(f"  -> Ungültige Zahl: '{main_parts[2]}'")
+                        continue
+
+                    # Region auswählen
+                    print(f"\n  Wähle den Bereich wo die Zahl angezeigt wird:")
+                    print("  (Der Bereich kann größer sein als die Zahl)")
+                    region = select_region()
+                    if not region:
+                        print("  -> Abgebrochen")
+                        continue
+
+                    # Optional: Textfarbe
+                    config = load_digit_config()
+                    text_color = None
+                    if config.get("text_color"):
+                        text_color = tuple(config["text_color"])
+                        print(f"  Verwende gelernte Textfarbe: RGB{text_color}")
+                    else:
+                        print("  Textfarbe definieren? (j/n, Enter=n)")
+                        if safe_input("  > ").strip().lower() == "j":
+                            print("  Bewege Maus auf eine Ziffer, Enter...")
+                            safe_input()
+                            px, py = get_cursor_pos()
+                            text_color = get_pixel_color(px, py)
+                            if text_color:
+                                print(f"  -> Textfarbe: RGB{text_color}")
+
+                    step.wait_number_region = region
+                    step.wait_number_operator = operator
+                    step.wait_number_target = target_value
+                    step.wait_number_color = text_color
+                    target_display = f"{target_value:,.0f}" if target_value == int(target_value) else f"{target_value:,.2f}"
+                    step.name = f"Wait:Number{operator}{target_display}"
                 else:
                     # wait <Zeit> oder wait <Min>-<Max>
                     if "-" in arg:
@@ -854,6 +930,86 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                                 wait_pixel = (px, py)
                                 wait_color = color
                                 wait_until_gone = True
+                    elif arg == "number":
+                        # <Nr> number > 100 - Warte auf Zahl, dann klicke
+                        if not OPENCV_AVAILABLE or not PILLOW_AVAILABLE:
+                            print("  -> OpenCV und Pillow erforderlich!")
+                            continue
+
+                        from ..number_recognition import get_learned_digits, DIGIT_CHARS, load_digit_config
+                        learned = get_learned_digits()
+                        digits_learned = [d for d in DIGIT_CHARS if d in learned]
+                        if len(digits_learned) < 5:
+                            print(f"  -> Nur {len(digits_learned)}/10 Ziffern gelernt!")
+                            print("     Lerne Ziffern mit CTRL+ALT+N -> Option 4")
+                            continue
+
+                        if len(main_parts) < 4:
+                            print("  -> Format: <Nr> number > 100")
+                            continue
+
+                        operator = main_parts[2]
+                        if operator not in (">", "<", "=", ">=", "<=", "!=", "=="):
+                            print(f"  -> Ungültiger Operator: '{operator}'")
+                            continue
+
+                        try:
+                            target_str = main_parts[3].lower().replace(",", "")
+                            multiplier = 1
+                            if target_str.endswith("k"):
+                                multiplier = 1_000
+                                target_str = target_str[:-1]
+                            elif target_str.endswith("m"):
+                                multiplier = 1_000_000
+                                target_str = target_str[:-1]
+                            elif target_str.endswith("b"):
+                                multiplier = 1_000_000_000
+                                target_str = target_str[:-1]
+                            target_value = float(target_str) * multiplier
+                        except ValueError:
+                            print(f"  -> Ungültige Zahl: '{main_parts[3]}'")
+                            continue
+
+                        print(f"\n  Wähle den Bereich wo die Zahl angezeigt wird:")
+                        region = select_region()
+                        if not region:
+                            print("  -> Abgebrochen")
+                            continue
+
+                        config = load_digit_config()
+                        text_color = None
+                        if config.get("text_color"):
+                            text_color = tuple(config["text_color"])
+                            print(f"  Verwende gelernte Textfarbe: RGB{text_color}")
+                        else:
+                            print("  Textfarbe definieren? (j/n, Enter=n)")
+                            if safe_input("  > ").strip().lower() == "j":
+                                print("  Bewege Maus auf eine Ziffer, Enter...")
+                                safe_input()
+                                px, py = get_cursor_pos()
+                                text_color = get_pixel_color(px, py)
+
+                        target_display = f"{target_value:,.0f}" if target_value == int(target_value) else f"{target_value:,.2f}"
+                        step = SequenceStep(
+                            x=point.x, y=point.y, delay_before=0,
+                            name=point.name or f"#{point_id}",
+                            wait_number_region=region,
+                            wait_number_operator=operator,
+                            wait_number_target=target_value,
+                            wait_number_color=text_color
+                        )
+
+                        if else_parts:
+                            else_result = parse_else_condition(else_parts, state)
+                            step.else_action = else_result.get("else_action")
+                            step.else_x = else_result.get("else_x", 0)
+                            step.else_y = else_result.get("else_y", 0)
+                            step.else_delay = else_result.get("else_delay", 0)
+                            step.else_key = else_result.get("else_key")
+                            step.else_name = else_result.get("else_name", "")
+
+                        add_step(step)
+                        continue
                     elif "-" in arg:
                         # <Nr> <Min>-<Max>
                         try:

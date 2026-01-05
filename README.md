@@ -19,6 +19,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Template-Matching**: Items per Screenshot erkennen (OpenCV)
 - **Preset-System**: Slots und Items als benannte Presets speichern
 - **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
+- **Zahlenerkennung**: Warte auf Zahlen-Bedingungen (z.B. > 100, < 50)
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
@@ -70,6 +71,7 @@ Das Item-Scan System bietet ein Menü mit folgenden Optionen:
 - **[1] Slots bearbeiten** - Bereiche wo Items erscheinen können
 - **[2] Items bearbeiten** - Item-Profile für die Erkennung
 - **[3] Scans bearbeiten** - Slots und Items verknüpfen
+- **[4] Ziffern lernen** - Ziffern für Zahlenerkennung trainieren
 
 ### Slot-Editor (Menü → 1)
 
@@ -198,6 +200,43 @@ Items können per **Template-Matching** (Screenshot-Vergleich) erkannt werden:
 
 Template-Matching ist genauer als Marker-Farben, besonders bei ähnlichen Items.
 
+### Ziffern-Editor (Menü → 4)
+
+Lernt Ziffern für die Zahlenerkennung. Die gelernten Ziffern werden dann im Sequenz-Editor für `wait number`-Befehle verwendet.
+
+**Befehle im Editor:**
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `learn` | Eine einzelne Ziffer/Zeichen lernen |
+| `learn all` | Alle Ziffern 0-9 nacheinander lernen |
+| `show <Z>` | Info zu gelerntem Zeichen anzeigen (z.B. `show 5`) |
+| `del <Z>` | Zeichen löschen (z.B. `del 5`) |
+| `del all` | ALLE Zeichen löschen |
+| `color` | Textfarbe für bessere Erkennung setzen |
+| `color clear` | Textfarbe entfernen |
+| `conf <0-100>` | Mindest-Konfidenz setzen (z.B. `conf 80`) |
+| `test` | Zahlenerkennung an einem Bereich testen |
+| `done` / `cancel` | Editor beenden |
+
+**Lernbare Zeichen:**
+- Ziffern: `0 1 2 3 4 5 6 7 8 9`
+- Trennzeichen: `. ,`
+- Suffixe: `K M B k m b` (für Tausend, Million, Milliarde)
+
+**Ablauf:**
+1. Ziffern lernen: Bei `learn` einen kleinen Bereich um EINE Ziffer markieren
+2. Optional: Textfarbe setzen für bessere Erkennung bei farbigem Hintergrund
+3. Im Sequenz-Editor `wait number > 100` verwenden
+4. Bei Verwendung großen Bereich markieren - Ziffern werden automatisch gefunden
+
+**Beispiel "25.9K":**
+```
+Gelernte Zeichen: 2, 5, 9, ., K
+Erkannte Zeichen: "2" "5" "." "9" "K"
+Berechnete Zahl: 25.9 × 1000 = 25900
+```
+
 ## Sequenz-Editor (`CTRL+ALT+E`)
 
 ### Phasen
@@ -223,6 +262,8 @@ Eine Sequenz besteht aus drei Phasen:
 | `wait 14:30` | Warte bis 14:30 Uhr (heute oder morgen), KEIN Klick |
 | `wait pixel` | Auf Farbe warten, KEIN Klick |
 | `wait gone` | Warten bis Farbe VERSCHWINDET, KEIN Klick |
+| `wait number > 100` | Warte bis Zahl > 100 (Zahlenerkennung) |
+| `<Nr> number > 100` | Warte auf Zahl, dann klicke |
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
 | `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
@@ -455,6 +496,15 @@ Wird beim ersten Start automatisch erstellt:
 | `default_min_confidence` | Standard-Konfidenz für Template-Matching (Standard: 0.8 = 80%) |
 | `default_confirm_delay` | Standard-Wartezeit vor Bestätigungs-Klick in Sekunden (Standard: 0.5) |
 
+### Zahlenerkennung
+
+| Option | Beschreibung |
+|--------|--------------|
+| `number_wait_timeout` | Timeout für Zahlenerkennung in Sekunden (Standard: 300) |
+| `number_check_interval` | Wie oft auf Zahl prüfen in Sekunden (Standard: 2) |
+| `number_color_tolerance` | Farbtoleranz für Textfarbe (Standard: 50) |
+| `number_min_confidence` | Konfidenz für Ziffern-Matching (Standard: 0.8 = 80%) |
+
 ### Timing
 
 | Option | Beschreibung |
@@ -490,7 +540,8 @@ Autoclicker-Idleclans/
 │       ├── sequence_editor.py
 │       ├── item_scan_editor.py
 │       ├── item_editor.py
-│       └── slot_editor.py
+│       ├── slot_editor.py
+│       └── digit_editor.py
 ├── config.json             # Konfiguration (auto-generiert)
 ├── README.md               # Diese Datei
 ├── sequences/              # Gespeicherte Sequenzen
@@ -503,6 +554,7 @@ Autoclicker-Idleclans/
 ├── items/                  # Item-Konfigurationen
 │   ├── items.json          # Aktive Items
 │   ├── templates/          # Template-Bilder für Matching
+│   ├── digits/             # Gelernte Ziffern für Zahlenerkennung
 │   ├── debug/              # Debug-Bilder (wenn debug_save_templates=true)
 │   └── presets/            # Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
@@ -609,6 +661,14 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Zahlenerkennung**: Warte auf Zahlen-Bedingungen in Sequenzen
+  - Neuer Ziffern-Editor zum Lernen der Schriftart (`CTRL+ALT+N` → Option 4)
+  - Neue Befehle: `wait number > 100`, `wait number < 50`, `1 number > 100`
+  - Unterstützt Suffixe wie K, M, B (z.B. "25.9K" = 25900)
+  - Per Template-Matching der gelernten Ziffern (OpenCV)
+
+### Vorherige Änderungen
 
 - **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~5800 Zeilen)
   - `main.py` als Einstiegspunkt

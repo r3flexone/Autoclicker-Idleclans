@@ -69,7 +69,11 @@ def save_data(state: AutoClickerState) -> None:
                 "wait_only": s.wait_only, "delay_max": s.delay_max,
                 "key_press": s.key_press, "else_action": s.else_action,
                 "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
-                "else_key": s.else_key, "else_name": s.else_name}
+                "else_key": s.else_key, "else_name": s.else_name,
+                "wait_number_region": s.wait_number_region,
+                "wait_number_operator": s.wait_number_operator,
+                "wait_number_target": s.wait_number_target,
+                "wait_number_color": s.wait_number_color}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -151,6 +155,14 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     if delay_raw is None:
                         delay_raw = 0
                     delay_max_raw = s.get("delay_max")
+                    # Zahlenerkennung-Felder
+                    wait_number_region = s.get("wait_number_region")
+                    if wait_number_region:
+                        wait_number_region = tuple(int(v) for v in wait_number_region)
+                    wait_number_color = s.get("wait_number_color")
+                    if wait_number_color:
+                        wait_number_color = tuple(int(v) for v in wait_number_color)
+
                     step = SequenceStep(
                         x=s.get("x", 0),
                         y=s.get("y", 0),
@@ -169,7 +181,11 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         else_y=s.get("else_y", 0),
                         else_delay=s.get("else_delay", 0),
                         else_key=s.get("else_key"),
-                        else_name=s.get("else_name", "")
+                        else_name=s.get("else_name", ""),
+                        wait_number_region=wait_number_region,
+                        wait_number_operator=s.get("wait_number_operator"),
+                        wait_number_target=s.get("wait_number_target"),
+                        wait_number_color=wait_number_color
                     )
                     steps.append(step)
                 return steps

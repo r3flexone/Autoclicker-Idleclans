@@ -23,11 +23,12 @@ from ..persistence import (
 )
 from .slot_editor import run_global_slot_editor
 from .item_editor import run_global_item_editor, select_category
+from .digit_editor import run_digit_editor
 
 
 
 def run_item_scan_menu(state: AutoClickerState) -> None:
-    """Hauptmenü für Item-Scan Konfiguration (Slots, Items, Scans)."""
+    """Hauptmenü für Item-Scan Konfiguration (Slots, Items, Scans, Ziffern)."""
     print("\n" + "=" * 60)
     print("  ITEM-SCAN MENÜ")
     print("=" * 60)
@@ -37,9 +38,15 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
         item_count = len(state.global_items)
         scan_count = len(state.item_scans)
 
+    # Ziffern-Status ermitteln
+    from ..number_recognition import get_learned_digits, DIGIT_CHARS
+    learned_digits = get_learned_digits()
+    digit_count = len([d for d in DIGIT_CHARS if d in learned_digits])
+
     print(f"\n  [1] Slots bearbeiten     ({slot_count} vorhanden)")
     print(f"  [2] Items bearbeiten     ({item_count} vorhanden)")
     print(f"  [3] Scans bearbeiten     ({scan_count} vorhanden)")
+    print(f"  [4] Ziffern lernen       ({digit_count}/10 Ziffern)")
     print("\n  [0] Abbrechen")
 
     try:
@@ -50,6 +57,8 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
             run_global_item_editor(state)
         elif choice == "3":
             run_item_scan_editor(state)
+        elif choice == "4":
+            run_digit_editor(state)
         elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
             return
         else:
