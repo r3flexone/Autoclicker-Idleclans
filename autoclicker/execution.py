@@ -518,6 +518,150 @@ def _execute_wait_for_number(state: AutoClickerState, step: SequenceStep,
     return True
 
 
+def _execute_wait_for_scan(state: AutoClickerState, step: SequenceStep,
+                           step_num: int, total_steps: int, phase: str) -> bool:
+    """Wartet auf Item-Scan (bis Item da/weg ist), OHNE zu klicken."""
+    scan_name = step.wait_scan
+    item_filter = step.wait_scan_item
+    wait_gone = step.wait_scan_gone
+
+    if scan_name not in state.item_scans:
+        print(f"[FEHLER] Item-Scan '{scan_name}' nicht gefunden!")
+        return False
+
+    timeout = state.config.get("scan_wait_timeout", 300)  # 5 Minuten Default
+    check_interval = state.config.get("scan_wait_interval", 2)  # Alle 2 Sekunden prüfen
+    start_time = time.time()
+    debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+
+    config = state.item_scans[scan_name]
+    if not config.slots or not config.items:
+        print(f"[FEHLER] Item-Scan '{scan_name}' hat keine Slots oder Items!")
+        return False
+
+    # Beschreibung für Ausgabe
+    if wait_gone:
+        if item_filter:
+            condition_str = f"'{item_filter}' weg"
+        else:
+            condition_str = "kein Item"
+    else:
+        if item_filter:
+            condition_str = f"'{item_filter}'"
+        else:
+            condition_str = "Item"
+
+    while not state.stop_event.is_set():
+        if state.skip_event.is_set():
+            state.skip_event.clear()
+            clear_line()
+            print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Scanwarten!", end="", flush=True)
+            return True
+
+        if not wait_while_paused(state, f"Warte auf {condition_str}..."):
+            break
+
+        # Scan durchführen (ohne Klick)
+        found_items = []
+        for slot in config.slots:
+            if state.stop_event.is_set():
+                break
+
+            img = take_screenshot(slot.scan_region)
+            if img is None:
+                continue
+
+            for item in config.items:
+                # Item-Filter prüfen
+                if item_filter and item.name.lower() != item_filter.lower():
+                    continue
+
+                template_ok = True
+                marker_ok = True
+
+                # Template-Matching
+                if item.template:
+                    match, confidence, pos = match_template_in_image(
+                        img, item.template, item.min_confidence
+                    )
+                    template_ok = match
+
+                # Marker-Farben prüfen
+                if item.marker_colors:
+                    from .imaging import find_color_in_image
+                    tolerance = config.color_tolerance
+                    markers_total = len(item.marker_colors)
+                    markers_found = sum(1 for marker in item.marker_colors
+                                       if find_color_in_image(img, marker, tolerance))
+
+                    require_all = state.config.get("require_all_markers", True)
+                    min_required = state.config.get("min_markers_required", 2)
+
+                    if require_all:
+                        marker_ok = (markers_found == markers_total)
+                    else:
+                        marker_ok = (markers_found >= min_required)
+
+                # Item gefunden wenn beides OK
+                if template_ok and marker_ok and (item.template or item.marker_colors):
+                    found_items.append((slot, item))
+                    if not item_filter:  # Wenn kein Filter, reicht ein Item
+                        break
+
+            if found_items and not item_filter:
+                break
+
+        elapsed = time.time() - start_time
+
+        if wait_gone:
+            # Warte bis KEIN Item mehr da ist
+            if not found_items:
+                if debug:
+                    print(f"[DEBUG] Scan '{scan_name}': kein Item mehr - Bedingung erfüllt!")
+                else:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | {condition_str} ✓", end="", flush=True)
+                return True
+            else:
+                item_names = ", ".join(set(item.name for _, item in found_items))
+                if debug:
+                    print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Gefunden: {item_names}")
+                else:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)", end="", flush=True)
+        else:
+            # Warte bis Item DA ist
+            if found_items:
+                item_names = ", ".join(set(item.name for _, item in found_items))
+                if debug:
+                    print(f"[DEBUG] Scan '{scan_name}': Item gefunden! ({item_names})")
+                else:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | {item_names} ✓", end="", flush=True)
+                return True
+            else:
+                if debug:
+                    print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Noch nicht gefunden")
+                else:
+                    clear_line()
+                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)", end="", flush=True)
+
+        # Timeout prüfen
+        if elapsed >= timeout:
+            if step.else_action:
+                clear_line()
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT (Scan)", end="", flush=True)
+                return execute_else_action(state, step, phase, step_num, total_steps)
+            print(f"\n[TIMEOUT] Scan-Bedingung nicht erfüllt nach {timeout}s!")
+            state.stop_event.set()
+            return False
+
+        if state.stop_event.wait(check_interval):
+            return False
+
+    return True
+
+
 def _execute_click(state: AutoClickerState, step: SequenceStep,
                    step_num: int, total_steps: int, phase: str) -> bool:
     """Führt den eigentlichen Klick aus."""
@@ -567,6 +711,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 
     if step.item_scan:
         return _execute_item_scan_step(state, step, step_num, total_steps, phase)
+
+    if step.wait_scan:
+        return _execute_wait_for_scan(state, step, step_num, total_steps, phase)
 
     if step.key_press:
         return _execute_key_press_step(state, step, step_num, total_steps, phase)

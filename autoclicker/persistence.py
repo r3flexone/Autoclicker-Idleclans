@@ -73,7 +73,10 @@ def save_data(state: AutoClickerState) -> None:
                 "wait_number_region": s.wait_number_region,
                 "wait_number_operator": s.wait_number_operator,
                 "wait_number_target": s.wait_number_target,
-                "wait_number_color": s.wait_number_color}
+                "wait_number_color": s.wait_number_color,
+                "wait_scan": s.wait_scan,
+                "wait_scan_item": s.wait_scan_item,
+                "wait_scan_gone": s.wait_scan_gone}
 
     for name, seq in state.sequences.items():
         seq_data = {
@@ -185,7 +188,10 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         wait_number_region=wait_number_region,
                         wait_number_operator=s.get("wait_number_operator"),
                         wait_number_target=s.get("wait_number_target"),
-                        wait_number_color=wait_number_color
+                        wait_number_color=wait_number_color,
+                        wait_scan=s.get("wait_scan"),
+                        wait_scan_item=s.get("wait_scan_item"),
+                        wait_scan_gone=s.get("wait_scan_gone", False)
                     )
                     steps.append(step)
                 return steps

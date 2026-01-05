@@ -60,6 +60,10 @@ class SequenceStep:
     wait_number_operator: Optional[str] = None    # ">", "<", "=", ">=", "<=", "!="
     wait_number_target: Optional[float] = None    # Zielwert
     wait_number_color: Optional[tuple] = None     # (R, G, B) Textfarbe (optional)
+    # Optional: Warten auf Item-Scan (ohne Klick)
+    wait_scan: Optional[str] = None               # Name des Item-Scans
+    wait_scan_item: Optional[str] = None          # Optionaler Item-Name Filter
+    wait_scan_gone: bool = False                  # True = warten bis weg, False = warten bis da
 
     def __str__(self) -> str:
         else_str = self._else_str()
@@ -70,6 +74,11 @@ class SequenceStep:
             mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
             mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
+        if self.wait_scan:
+            item_str = f" '{self.wait_scan_item}'" if self.wait_scan_item else ""
+            if self.wait_scan_gone:
+                return f"WARTE SCAN '{self.wait_scan}'{item_str} bis WEG (kein Klick){else_str}"
+            return f"WARTE SCAN '{self.wait_scan}'{item_str} bis DA (kein Klick){else_str}"
         if self.wait_number_region and self.wait_number_operator and self.wait_number_target is not None:
             target_str = f"{self.wait_number_target:,.0f}" if self.wait_number_target == int(self.wait_number_target) else f"{self.wait_number_target:,.2f}"
             if self.wait_only:

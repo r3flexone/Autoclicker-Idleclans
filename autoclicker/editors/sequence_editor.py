@@ -462,6 +462,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
     print("  wait number >|<|= <Zahl> - Auf Zahl warten (z.B. 'wait number > 100')")
     print("  <Nr> number >|<|= <Zahl> - Warte auf Zahl, dann klicke")
+    print("  wait scan <Name>  - Warte bis Item gefunden (kein Klick)")
+    print("  wait scan <Name> \"Item\" - Warte auf bestimmtes Item")
+    print("  wait scan gone <Name> - Warte bis KEIN Item mehr da")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
     print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
@@ -834,6 +837,49 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     step.wait_number_color = text_color
                     target_display = f"{target_value:,.0f}" if target_value == int(target_value) else f"{target_value:,.2f}"
                     step.name = f"Wait:Number{operator}{target_display}"
+                elif arg == "scan":
+                    # wait scan <Name> oder wait scan gone <Name> oder wait scan <Name> "Item"
+                    if len(main_parts) < 2:
+                        print("  -> Format: wait scan <Name> oder wait scan gone <Name>")
+                        continue
+
+                    # Prüfe ob "gone" als zweites Argument
+                    gone_mode = False
+                    scan_name = None
+                    item_filter = None
+
+                    if main_parts[1].lower() == "gone":
+                        gone_mode = True
+                        if len(main_parts) < 3:
+                            print("  -> Format: wait scan gone <Name>")
+                            continue
+                        scan_name = main_parts[2]
+                        # Optional: Item-Filter nach scan_name
+                        if len(main_parts) > 3:
+                            item_filter = " ".join(main_parts[3:]).strip('"\'')
+                    else:
+                        scan_name = main_parts[1]
+                        # Optional: Item-Filter nach scan_name
+                        if len(main_parts) > 2:
+                            item_filter = " ".join(main_parts[2:]).strip('"\'')
+
+                    # Prüfe ob Scan existiert
+                    with state.lock:
+                        if scan_name not in state.item_scans:
+                            print(f"  -> Item-Scan '{scan_name}' nicht gefunden!")
+                            if state.item_scans:
+                                print(f"     Verfügbar: {', '.join(state.item_scans.keys())}")
+                            continue
+
+                    step.wait_scan = scan_name
+                    step.wait_scan_item = item_filter
+                    step.wait_scan_gone = gone_mode
+                    if gone_mode:
+                        item_str = f" '{item_filter}'" if item_filter else ""
+                        step.name = f"Wait:ScanGone:{scan_name}{item_str}"
+                    else:
+                        item_str = f" '{item_filter}'" if item_filter else ""
+                        step.name = f"Wait:Scan:{scan_name}{item_str}"
                 else:
                     # wait <Zeit> oder wait <Min>-<Max>
                     if "-" in arg:

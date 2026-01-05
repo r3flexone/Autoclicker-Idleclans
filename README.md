@@ -20,6 +20,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Preset-System**: Slots und Items als benannte Presets speichern
 - **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
 - **Zahlenerkennung**: Warte auf Zahlen-Bedingungen (z.B. > 100, < 50)
+- **Wait Scan**: Warte bis Item erscheint/verschwindet (ohne Klick)
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
@@ -264,6 +265,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `wait gone` | Warten bis Farbe VERSCHWINDET, KEIN Klick |
 | `wait number > 100` | Warte bis Zahl > 100 (Zahlenerkennung) |
 | `<Nr> number > 100` | Warte auf Zahl, dann klicke |
+| `wait scan <Name>` | Warte bis Item gefunden (kein Klick) |
+| `wait scan <Name> "Item"` | Warte auf bestimmtes Item (kein Klick) |
+| `wait scan gone <Name>` | Warte bis KEIN Item mehr da (kein Klick) |
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
 | `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
@@ -505,6 +509,13 @@ Wird beim ersten Start automatisch erstellt:
 | `number_color_tolerance` | Farbtoleranz für Textfarbe (Standard: 50) |
 | `number_min_confidence` | Konfidenz für Ziffern-Matching (Standard: 0.8 = 80%) |
 
+### Wait Scan
+
+| Option | Beschreibung |
+|--------|--------------|
+| `scan_wait_timeout` | Timeout für Wait-Scan in Sekunden (Standard: 300) |
+| `scan_wait_interval` | Wie oft auf Item prüfen in Sekunden (Standard: 2) |
+
 ### Timing
 
 | Option | Beschreibung |
@@ -661,6 +672,12 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Wait Scan**: Warte auf Item-Erscheinen/Verschwinden (ohne Klick)
+  - Neue Befehle: `wait scan <Name>`, `wait scan gone <Name>`
+  - Optional: Filter auf bestimmtes Item mit `wait scan <Name> "ItemName"`
+  - Nutzt bestehende Item-Scans - kein neuer Scan nötig
+  - Konfigurierbar: `scan_wait_timeout`, `scan_wait_interval`
 
 - **Zahlenerkennung**: Warte auf Zahlen-Bedingungen in Sequenzen
   - Neuer Ziffern-Editor zum Lernen der Schriftart (`CTRL+ALT+N` → Option 4)
