@@ -447,6 +447,106 @@ def _apply_else_to_step(step: SequenceStep, else_parts: list[str], state: AutoCl
         step.else_name = else_result.get("else_name", "")
 
 
+def _select_pixel_for_wait() -> Optional[tuple]:
+    """Wählt einen Pixel für wait pixel/gone aus.
+
+    Returns:
+        Tuple (x, y, color) oder None bei Fehler.
+    """
+    if not PILLOW_AVAILABLE:
+        print("  -> Pillow nicht installiert!")
+        return None
+    print("  Bewege Maus zum Pixel, dann Enter...")
+    safe_input()
+    x, y = get_cursor_pos()
+    color = get_pixel_color(x, y)
+    if not color:
+        print("  -> Farbe konnte nicht gelesen werden!")
+        return None
+    return (x, y, color)
+
+
+def _parse_number_wait(parts: list[str], op_idx: int, target_idx: int, format_hint: str) -> Optional[dict]:
+    """Parst Number-Wait-Parameter und wählt Region aus.
+
+    Args:
+        parts: Liste der zu parsenden Teile
+        op_idx: Index des Operators in parts
+        target_idx: Index des Zielwerts in parts
+        format_hint: Formathinweis für Fehlermeldung
+
+    Returns:
+        Dict mit region, operator, target, text_color oder None bei Fehler.
+    """
+    if not OPENCV_AVAILABLE or not PILLOW_AVAILABLE:
+        print("  -> OpenCV und Pillow erforderlich!")
+        return None
+
+    from ..number_recognition import get_learned_digits, DIGIT_CHARS, load_digit_config
+    learned = get_learned_digits()
+    digits_learned = [d for d in DIGIT_CHARS if d in learned]
+    if len(digits_learned) < 5:
+        print(f"  -> Nur {len(digits_learned)}/10 Ziffern gelernt!")
+        print("     Lerne Ziffern mit CTRL+ALT+N -> Option 4")
+        return None
+
+    if len(parts) <= target_idx:
+        print(f"  -> Format: {format_hint}")
+        return None
+
+    operator = parts[op_idx]
+    if operator not in (">", "<", "=", ">=", "<=", "!=", "=="):
+        print(f"  -> Ungültiger Operator: '{operator}'")
+        print("     Erlaubt: >, <, =, >=, <=, !=")
+        return None
+
+    try:
+        target_str = parts[target_idx].lower().replace(",", "")
+        multiplier = 1
+        if target_str.endswith("k"):
+            multiplier = 1_000
+            target_str = target_str[:-1]
+        elif target_str.endswith("m"):
+            multiplier = 1_000_000
+            target_str = target_str[:-1]
+        elif target_str.endswith("b"):
+            multiplier = 1_000_000_000
+            target_str = target_str[:-1]
+        target_value = float(target_str) * multiplier
+    except ValueError:
+        print(f"  -> Ungültige Zahl: '{parts[target_idx]}'")
+        return None
+
+    print(f"\n  Wähle den Bereich wo die Zahl angezeigt wird:")
+    print("  (Der Bereich kann größer sein als die Zahl)")
+    region = select_region()
+    if not region:
+        print("  -> Abgebrochen")
+        return None
+
+    config = load_digit_config()
+    text_color = None
+    if config.get("text_color"):
+        text_color = tuple(config["text_color"])
+        print(f"  Verwende gelernte Textfarbe: RGB{text_color}")
+    else:
+        print("  Textfarbe definieren? (j/n, Enter=n)")
+        if safe_input("  > ").strip().lower() == "j":
+            print("  Bewege Maus auf eine Ziffer, Enter...")
+            safe_input()
+            px, py = get_cursor_pos()
+            text_color = get_pixel_color(px, py)
+            if text_color:
+                print(f"  -> Textfarbe: RGB{text_color}")
+
+    return {
+        "region": region,
+        "operator": operator,
+        "target": target_value,
+        "text_color": text_color
+    }
+
+
 def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
     """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
 
@@ -734,113 +834,33 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
                 if arg == "pixel":
                     # wait pixel - Farbe abfragen
-                    if PILLOW_AVAILABLE:
-                        print("  Bewege Maus zum Pixel, dann Enter...")
-                        safe_input()
-                        x, y = get_cursor_pos()
-                        color = get_pixel_color(x, y)
-                        if color:
-                            step.wait_pixel = (x, y)
-                            step.wait_color = color
-                            step.name = f"Wait:Pixel"
-                        else:
-                            print("  -> Farbe konnte nicht gelesen werden!")
-                            continue
-                    else:
-                        print("  -> Pillow nicht installiert!")
+                    pixel_result = _select_pixel_for_wait()
+                    if not pixel_result:
                         continue
+                    step.wait_pixel = (pixel_result[0], pixel_result[1])
+                    step.wait_color = pixel_result[2]
+                    step.name = "Wait:Pixel"
                 elif arg == "gone":
                     # wait gone - Farbe weg
-                    if PILLOW_AVAILABLE:
-                        print("  Bewege Maus zum Pixel, dann Enter...")
-                        safe_input()
-                        x, y = get_cursor_pos()
-                        color = get_pixel_color(x, y)
-                        if color:
-                            step.wait_pixel = (x, y)
-                            step.wait_color = color
-                            step.wait_until_gone = True
-                            step.name = f"Wait:Gone"
-                        else:
-                            print("  -> Farbe konnte nicht gelesen werden!")
-                            continue
-                    else:
-                        print("  -> Pillow nicht installiert!")
+                    pixel_result = _select_pixel_for_wait()
+                    if not pixel_result:
                         continue
+                    step.wait_pixel = (pixel_result[0], pixel_result[1])
+                    step.wait_color = pixel_result[2]
+                    step.wait_until_gone = True
+                    step.name = "Wait:Gone"
                 elif arg == "number":
                     # wait number > 100 - Auf Zahl warten
-                    if not OPENCV_AVAILABLE or not PILLOW_AVAILABLE:
-                        print("  -> OpenCV und Pillow erforderlich!")
+                    num_result = _parse_number_wait(main_parts, 1, 2, "wait number > 100 oder wait number < 50")
+                    if not num_result:
                         continue
-
-                    # Prüfe ob Ziffern gelernt
-                    from ..number_recognition import get_learned_digits, DIGIT_CHARS, load_digit_config
-                    learned = get_learned_digits()
-                    digits_learned = [d for d in DIGIT_CHARS if d in learned]
-                    if len(digits_learned) < 5:
-                        print(f"  -> Nur {len(digits_learned)}/10 Ziffern gelernt!")
-                        print("     Lerne Ziffern mit CTRL+ALT+N -> Option 4")
-                        continue
-
-                    # Operator und Zielwert parsen
-                    if len(main_parts) < 3:
-                        print("  -> Format: wait number > 100 oder wait number < 50")
-                        continue
-
-                    operator = main_parts[1]
-                    if operator not in (">", "<", "=", ">=", "<=", "!=", "=="):
-                        print(f"  -> Ungültiger Operator: '{operator}'")
-                        print("     Erlaubt: >, <, =, >=, <=, !=")
-                        continue
-
-                    try:
-                        # Zielwert parsen (unterstützt k, M, B Suffixe)
-                        target_str = main_parts[2].lower().replace(",", "")
-                        multiplier = 1
-                        if target_str.endswith("k"):
-                            multiplier = 1_000
-                            target_str = target_str[:-1]
-                        elif target_str.endswith("m"):
-                            multiplier = 1_000_000
-                            target_str = target_str[:-1]
-                        elif target_str.endswith("b"):
-                            multiplier = 1_000_000_000
-                            target_str = target_str[:-1]
-                        target_value = float(target_str) * multiplier
-                    except ValueError:
-                        print(f"  -> Ungültige Zahl: '{main_parts[2]}'")
-                        continue
-
-                    # Region auswählen
-                    print(f"\n  Wähle den Bereich wo die Zahl angezeigt wird:")
-                    print("  (Der Bereich kann größer sein als die Zahl)")
-                    region = select_region()
-                    if not region:
-                        print("  -> Abgebrochen")
-                        continue
-
-                    # Optional: Textfarbe
-                    config = load_digit_config()
-                    text_color = None
-                    if config.get("text_color"):
-                        text_color = tuple(config["text_color"])
-                        print(f"  Verwende gelernte Textfarbe: RGB{text_color}")
-                    else:
-                        print("  Textfarbe definieren? (j/n, Enter=n)")
-                        if safe_input("  > ").strip().lower() == "j":
-                            print("  Bewege Maus auf eine Ziffer, Enter...")
-                            safe_input()
-                            px, py = get_cursor_pos()
-                            text_color = get_pixel_color(px, py)
-                            if text_color:
-                                print(f"  -> Textfarbe: RGB{text_color}")
-
-                    step.wait_number_region = region
-                    step.wait_number_operator = operator
-                    step.wait_number_target = target_value
-                    step.wait_number_color = text_color
-                    target_display = f"{target_value:,.0f}" if target_value == int(target_value) else f"{target_value:,.2f}"
-                    step.name = f"Wait:Number{operator}{target_display}"
+                    step.wait_number_region = num_result["region"]
+                    step.wait_number_operator = num_result["operator"]
+                    step.wait_number_target = num_result["target"]
+                    step.wait_number_color = num_result["text_color"]
+                    target_val = num_result["target"]
+                    target_display = f"{target_val:,.0f}" if target_val == int(target_val) else f"{target_val:,.2f}"
+                    step.name = f"Wait:Number{num_result['operator']}{target_display}"
                 elif arg == "scan":
                     # wait scan <Name> oder wait scan gone <Name> oder wait scan <Name> "Item"
                     if len(main_parts) < 2:
@@ -953,92 +973,32 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
                     if arg == "pixel":
                         # <Nr> pixel
-                        if PILLOW_AVAILABLE:
-                            print("  Bewege Maus zum Pixel, dann Enter...")
-                            safe_input()
-                            px, py = get_cursor_pos()
-                            color = get_pixel_color(px, py)
-                            if color:
-                                wait_pixel = (px, py)
-                                wait_color = color
+                        pixel_result = _select_pixel_for_wait()
+                        if pixel_result:
+                            wait_pixel = (pixel_result[0], pixel_result[1])
+                            wait_color = pixel_result[2]
                     elif arg == "gone":
                         # <Nr> gone
-                        if PILLOW_AVAILABLE:
-                            print("  Bewege Maus zum Pixel, dann Enter...")
-                            safe_input()
-                            px, py = get_cursor_pos()
-                            color = get_pixel_color(px, py)
-                            if color:
-                                wait_pixel = (px, py)
-                                wait_color = color
-                                wait_until_gone = True
+                        pixel_result = _select_pixel_for_wait()
+                        if pixel_result:
+                            wait_pixel = (pixel_result[0], pixel_result[1])
+                            wait_color = pixel_result[2]
+                            wait_until_gone = True
                     elif arg == "number":
                         # <Nr> number > 100 - Warte auf Zahl, dann klicke
-                        if not OPENCV_AVAILABLE or not PILLOW_AVAILABLE:
-                            print("  -> OpenCV und Pillow erforderlich!")
+                        num_result = _parse_number_wait(main_parts, 2, 3, "<Nr> number > 100")
+                        if not num_result:
                             continue
 
-                        from ..number_recognition import get_learned_digits, DIGIT_CHARS, load_digit_config
-                        learned = get_learned_digits()
-                        digits_learned = [d for d in DIGIT_CHARS if d in learned]
-                        if len(digits_learned) < 5:
-                            print(f"  -> Nur {len(digits_learned)}/10 Ziffern gelernt!")
-                            print("     Lerne Ziffern mit CTRL+ALT+N -> Option 4")
-                            continue
-
-                        if len(main_parts) < 4:
-                            print("  -> Format: <Nr> number > 100")
-                            continue
-
-                        operator = main_parts[2]
-                        if operator not in (">", "<", "=", ">=", "<=", "!=", "=="):
-                            print(f"  -> Ungültiger Operator: '{operator}'")
-                            continue
-
-                        try:
-                            target_str = main_parts[3].lower().replace(",", "")
-                            multiplier = 1
-                            if target_str.endswith("k"):
-                                multiplier = 1_000
-                                target_str = target_str[:-1]
-                            elif target_str.endswith("m"):
-                                multiplier = 1_000_000
-                                target_str = target_str[:-1]
-                            elif target_str.endswith("b"):
-                                multiplier = 1_000_000_000
-                                target_str = target_str[:-1]
-                            target_value = float(target_str) * multiplier
-                        except ValueError:
-                            print(f"  -> Ungültige Zahl: '{main_parts[3]}'")
-                            continue
-
-                        print(f"\n  Wähle den Bereich wo die Zahl angezeigt wird:")
-                        region = select_region()
-                        if not region:
-                            print("  -> Abgebrochen")
-                            continue
-
-                        config = load_digit_config()
-                        text_color = None
-                        if config.get("text_color"):
-                            text_color = tuple(config["text_color"])
-                            print(f"  Verwende gelernte Textfarbe: RGB{text_color}")
-                        else:
-                            print("  Textfarbe definieren? (j/n, Enter=n)")
-                            if safe_input("  > ").strip().lower() == "j":
-                                print("  Bewege Maus auf eine Ziffer, Enter...")
-                                safe_input()
-                                px, py = get_cursor_pos()
-                                text_color = get_pixel_color(px, py)
-
-                        target_display = f"{target_value:,.0f}" if target_value == int(target_value) else f"{target_value:,.2f}"
+                        target_val = num_result["target"]
+                        target_display = f"{target_val:,.0f}" if target_val == int(target_val) else f"{target_val:,.2f}"
                         step = SequenceStep(
                             x=point.x, y=point.y, delay_before=0,
                             name=point.name or f"#{point_id}",
-                            wait_number_region=region,
-                            wait_number_operator=operator,
-                            wait_number_target=target_value,
-                            wait_number_color=text_color
+                            wait_number_region=num_result["region"],
+                            wait_number_operator=num_result["operator"],
+                            wait_number_target=target_val,
+                            wait_number_color=num_result["text_color"]
                         )
 
                         _apply_else_to_step(step, else_parts, state)
@@ -1063,23 +1023,12 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         # Optional: <Nr> <Zeit> pixel/gone
                         if len(main_parts) > 2:
                             opt = main_parts[2].lower()
-                            if opt == "pixel" and PILLOW_AVAILABLE:
-                                print("  Bewege Maus zum Pixel, dann Enter...")
-                                safe_input()
-                                px, py = get_cursor_pos()
-                                color = get_pixel_color(px, py)
-                                if color:
-                                    wait_pixel = (px, py)
-                                    wait_color = color
-                            elif opt == "gone" and PILLOW_AVAILABLE:
-                                print("  Bewege Maus zum Pixel, dann Enter...")
-                                safe_input()
-                                px, py = get_cursor_pos()
-                                color = get_pixel_color(px, py)
-                                if color:
-                                    wait_pixel = (px, py)
-                                    wait_color = color
-                                    wait_until_gone = True
+                            if opt in ("pixel", "gone"):
+                                pixel_result = _select_pixel_for_wait()
+                                if pixel_result:
+                                    wait_pixel = (pixel_result[0], pixel_result[1])
+                                    wait_color = pixel_result[2]
+                                    wait_until_gone = (opt == "gone")
 
                 step = SequenceStep(
                     x=point.x, y=point.y, delay_before=delay,
