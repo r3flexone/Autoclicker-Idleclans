@@ -53,26 +53,60 @@ POINTS = []
 # STANDARDWERTE
 # ==============================================================================
 CONFIG_DEFAULTS = {
+    # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,
     "max_total_clicks": None,
+    "click_move_delay": 0.01,
+    "post_click_delay": 0.05,
+
+    # === SICHERHEIT ===
     "failsafe_enabled": True,
+    "failsafe_x": 5,
+    "failsafe_y": 5,
+
+    # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,
     "pixel_wait_tolerance": 10,
     "pixel_wait_timeout": 300,
     "pixel_check_interval": 1,
+    "scan_pixel_step": 2,
+    "show_pixel_delay": 0.3,
+
+    # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": False,
+    "scan_slot_delay": 0.1,
+    "item_click_delay": 1.0,
     "marker_count": 5,
     "require_all_markers": True,
     "min_markers_required": 2,
     "slot_hsv_tolerance": 25,
     "slot_inset": 10,
     "slot_color_distance": 25,
+    "default_min_confidence": 0.8,
+    "default_confirm_delay": 0.5,
+
+    # === ZAHLENERKENNUNG ===
+    "number_wait_timeout": 300,
+    "number_check_interval": 2,
+    "number_color_tolerance": 50,
+    "number_min_confidence": 0.8,
+
+    # === SCAN-WARTEN ===
+    "scan_wait_timeout": 300,
+    "scan_wait_interval": 2,
+
+    # === TIMING ===
+    "pause_check_interval": 0.5,
+
+    # === DEBUG-EINSTELLUNGEN ===
     "debug_mode": False,
     "debug_detection": False,
     "show_pixel_position": False,
+    "debug_save_templates": False,
 }
 
 POINT_DEFAULTS = {
+    "id": 0,
     "x": 0,
     "y": 0,
     "name": ""
@@ -91,12 +125,22 @@ SEQUENCE_STEP_DEFAULTS = {
     "wait_only": False,
     "delay_max": None,
     "key_press": None,
+    # Else-Aktion
     "else_action": None,
-    "else_x": None,
-    "else_y": None,
-    "else_delay": None,
+    "else_x": 0,
+    "else_y": 0,
+    "else_delay": 0,
     "else_key": None,
-    "else_name": None
+    "else_name": "",
+    # Zahlenerkennung
+    "wait_number_region": None,
+    "wait_number_operator": None,
+    "wait_number_target": None,
+    "wait_number_color": None,
+    # Scan-Warten
+    "wait_scan": None,
+    "wait_scan_item": None,
+    "wait_scan_gone": False,
 }
 
 SLOT_DEFAULTS = {
@@ -172,16 +216,31 @@ def normalize_pos(pos):
 
 
 def convert_confirm_point(cp, item_name=""):
-    """Konvertiert confirm_point: int -> Koordinaten aus POINTS."""
+    """Konvertiert confirm_point zu neuem Format: {"x": x, "y": y}.
+
+    Unterstuetzte alte Formate:
+    - int: Punkt-ID aus POINTS
+    - [x, y]: Liste
+    - {"x": x, "y": y}: Bereits neues Format
+    """
+    # Bereits neues Format
+    if isinstance(cp, dict) and "x" in cp and "y" in cp:
+        return {"x": int(cp["x"]), "y": int(cp["y"])}
+
+    # Altes Listen-Format [x, y]
     if isinstance(cp, list) and len(cp) == 2:
-        return cp
+        print(f"      {item_name}: [x,y] -> {{x,y}} konvertiert")
+        return {"x": int(cp[0]), "y": int(cp[1])}
+
+    # Altes int-Format (Punkt-ID)
     if isinstance(cp, int) and cp >= 1:
         if cp <= len(POINTS):
             coords = POINTS[cp - 1]
-            print(f"      {item_name}: Punkt {cp} -> ({coords[0]}, {coords[1]})")
-            return coords
+            print(f"      {item_name}: Punkt {cp} -> {{x:{coords[0]}, y:{coords[1]}}}")
+            return {"x": coords[0], "y": coords[1]}
         else:
             print(f"      {item_name}: Punkt {cp} nicht vorhanden -> None")
+
     return None
 
 
@@ -243,6 +302,12 @@ def sync_points() -> tuple[int, int]:
     fixes = 0
     updated = []
 
+    # Finde hoechste ID fuer neue Punkte ohne ID
+    max_id = 0
+    for point in data:
+        if isinstance(point, dict) and "id" in point:
+            max_id = max(max_id, int(point.get("id", 0)))
+
     for i, point in enumerate(data):
         if not isinstance(point, dict):
             continue
@@ -250,6 +315,10 @@ def sync_points() -> tuple[int, int]:
         point_fixes = 0
 
         # Fehlende Felder pruefen
+        if "id" not in point:
+            max_id += 1
+            point["id"] = max_id
+            point_fixes += 1
         if "x" not in point:
             point_fixes += 1
         if "y" not in point:
@@ -257,15 +326,16 @@ def sync_points() -> tuple[int, int]:
         if "name" not in point:
             point_fixes += 1
 
-        # Normalisieren
+        # Normalisieren (id zuerst fuer bessere Lesbarkeit)
         fixed = {
+            "id": int(point.get("id", i + 1)),
             "x": int(point.get("x", 0)),
             "y": int(point.get("y", 0)),
             "name": str(point.get("name", ""))
         }
 
         if point_fixes > 0:
-            print(f"      Punkt {i+1}: {point_fixes} Feld(er) ergaenzt")
+            print(f"      Punkt #{fixed['id']}: {point_fixes} Feld(er) ergaenzt")
             fixes += point_fixes
 
         updated.append(fixed)
