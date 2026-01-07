@@ -472,15 +472,19 @@ def sync_slot(name: str, slot: dict) -> tuple[dict, int]:
     }, fixes
 
 
-def sync_global_slots() -> tuple[int, int]:
-    """Synchronisiert slots/slots.json."""
+def sync_global_slots() -> tuple[dict, int, int]:
+    """Synchronisiert slots/slots.json.
+
+    Returns:
+        tuple: (synced_data, count, fixes)
+    """
     data = load_json_safe(SLOTS_FILE)
     if not data:
-        return 0, 0
+        return {}, 0, 0
 
     if not isinstance(data, dict):
         print("    [FEHLER] slots.json ist kein Dictionary!")
-        return 0, 0
+        return {}, 0, 0
 
     updated = {}
     total_fixes = 0
@@ -494,7 +498,7 @@ def sync_global_slots() -> tuple[int, int]:
                 total_fixes += fixes
 
     save_json(SLOTS_FILE, updated)
-    return len(updated), total_fixes
+    return updated, len(updated), total_fixes
 
 
 def sync_slot_presets(global_slots: dict) -> tuple[int, int]:
@@ -600,15 +604,19 @@ def sync_item(name: str, item: dict) -> tuple[dict, int]:
     }, fixes
 
 
-def sync_global_items() -> tuple[int, int]:
-    """Synchronisiert items/items.json."""
+def sync_global_items() -> tuple[dict, int, int]:
+    """Synchronisiert items/items.json.
+
+    Returns:
+        tuple: (synced_data, count, fixes)
+    """
     data = load_json_safe(ITEMS_FILE)
     if not data:
-        return 0, 0
+        return {}, 0, 0
 
     if not isinstance(data, dict):
         print("    [FEHLER] items.json ist kein Dictionary!")
-        return 0, 0
+        return {}, 0, 0
 
     updated = {}
     total_fixes = 0
@@ -622,7 +630,7 @@ def sync_global_items() -> tuple[int, int]:
                 total_fixes += fixes
 
     save_json(ITEMS_FILE, updated)
-    return len(updated), total_fixes
+    return updated, len(updated), total_fixes
 
 
 def sync_item_presets(global_items: dict) -> tuple[int, int]:
@@ -814,17 +822,15 @@ def main():
     count, fixes = sync_sequences()
     print(f"        {count} Sequenzen, {fixes} Fixes")
 
-    # 4. Slots (global)
+    # 4. Slots (global) - gibt synced data direkt zurueck
     print(f"\n  [4/8] Slots global...")
-    count, fixes = sync_global_slots()
+    global_slots, count, fixes = sync_global_slots()
     print(f"        {count} Slots, {fixes} Fixes")
-    global_slots = load_json_safe(SLOTS_FILE) or {}
 
-    # 5. Items (global)
+    # 5. Items (global) - gibt synced data direkt zurueck
     print(f"\n  [5/8] Items global...")
-    count, fixes = sync_global_items()
+    global_items, count, fixes = sync_global_items()
     print(f"        {count} Items, {fixes} Fixes")
-    global_items = load_json_safe(ITEMS_FILE) or {}
 
     # 6. Scans (global)
     print(f"\n  [6/8] Scans global...")
