@@ -265,9 +265,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `wait gone` | Warten bis Farbe VERSCHWINDET, KEIN Klick |
 | `wait number > 100` | Warte bis Zahl > 100 (Zahlenerkennung) |
 | `<Nr> number > 100` | Warte auf Zahl, dann klicke |
-| `wait scan <Name>` | Warte bis Item gefunden (kein Klick) |
-| `wait scan <Name> "Item"` | Warte auf bestimmtes Item (kein Klick) |
-| `wait scan gone <Name>` | Warte bis KEIN Item mehr da (kein Klick) |
+| `wait scan <ScanName>` | Warte bis Item im Scan-Bereich gefunden (kein Klick) |
+| `wait scan <ScanName> "ItemName"` | Warte auf bestimmtes Item im Scan (kein Klick) |
+| `wait scan gone <ScanName>` | Warte bis KEIN Item mehr im Scan-Bereich (kein Klick) |
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
 | `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
@@ -678,8 +678,9 @@ python tools/slot_tester.py
 ### Neueste Änderungen
 
 - **Wait Scan**: Warte auf Item-Erscheinen/Verschwinden (ohne Klick)
-  - Neue Befehle: `wait scan <Name>`, `wait scan gone <Name>`
-  - Optional: Filter auf bestimmtes Item mit `wait scan <Name> "ItemName"`
+  - Neue Befehle: `wait scan <ScanName>`, `wait scan gone <ScanName>`
+  - Optional: Filter auf bestimmtes Item mit `wait scan <ScanName> "ItemName"`
+  - `<ScanName>` = Name eines Item-Scans (aus Item-Scan-Editor)
   - Nutzt bestehende Item-Scans - kein neuer Scan nötig
   - Konfigurierbar: `scan_wait_timeout`, `scan_wait_interval`
 
