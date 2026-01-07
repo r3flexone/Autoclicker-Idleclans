@@ -435,6 +435,18 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     return {}
 
 
+def _apply_else_to_step(step: SequenceStep, else_parts: list[str], state: AutoClickerState) -> None:
+    """Wendet geparste Else-Bedingung auf einen Step an."""
+    if else_parts:
+        else_result = parse_else_condition(else_parts, state)
+        step.else_action = else_result.get("else_action")
+        step.else_x = else_result.get("else_x", 0)
+        step.else_y = else_result.get("else_y", 0)
+        step.else_delay = else_result.get("else_delay", 0)
+        step.else_key = else_result.get("else_key")
+        step.else_name = else_result.get("else_name", "")
+
+
 def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
     """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
 
@@ -657,15 +669,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     item_scan_mode=mode
                 )
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
+                _apply_else_to_step(step, else_parts, state)
 
                 add_step(step)
                 continue
@@ -899,15 +903,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print("  -> Format: wait <Zeit>")
                             continue
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
+                _apply_else_to_step(step, else_parts, state)
 
                 add_step(step)
                 continue
@@ -1045,14 +1041,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             wait_number_color=text_color
                         )
 
-                        if else_parts:
-                            else_result = parse_else_condition(else_parts, state)
-                            step.else_action = else_result.get("else_action")
-                            step.else_x = else_result.get("else_x", 0)
-                            step.else_y = else_result.get("else_y", 0)
-                            step.else_delay = else_result.get("else_delay", 0)
-                            step.else_key = else_result.get("else_key")
-                            step.else_name = else_result.get("else_name", "")
+                        _apply_else_to_step(step, else_parts, state)
 
                         add_step(step)
                         continue
@@ -1100,15 +1089,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     delay_max=delay_max
                 )
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
+                _apply_else_to_step(step, else_parts, state)
 
                 add_step(step)
                 continue
