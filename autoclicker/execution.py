@@ -22,6 +22,15 @@ if TYPE_CHECKING:
     pass
 
 
+def _status_print(debug: bool, message: str) -> None:
+    """Gibt Status-Nachricht aus (Debug mit Newline, Normal inline)."""
+    if debug:
+        print(message)
+    else:
+        clear_line()
+        print(message, end="", flush=True)
+
+
 def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, step_num: int,
                          total_steps: int, message: str) -> bool:
     """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
@@ -35,11 +44,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
 
         if state.skip_event.is_set():
             state.skip_event.clear()
-            if debug_active:
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!")
-            else:
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!", end="", flush=True)
+            _status_print(debug_active, f"[{phase}] Schritt {step_num}/{total_steps} | SKIP!")
             return True
 
         if not wait_while_paused(state, message):
@@ -47,11 +52,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
 
         current_remaining = int(remaining)
         if current_remaining != last_remaining:
-            if debug_active:
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...")
-            else:
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+            _status_print(debug_active, f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...")
             last_remaining = current_remaining
 
         wait_time = min(1.0, remaining)
@@ -71,11 +72,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     debug = state.config.get("debug_mode", False)
 
     if step.else_action == "skip":
-        if debug:
-            print(f"[DEBUG] ELSE: übersprungen")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen")
         return True
 
     elif step.else_action == "click":
@@ -93,11 +90,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         with state.lock:
             state.total_clicks += 1
 
-        if debug:
-            print(f"[DEBUG] ELSE: Klick auf '{name}' ({step.else_x}, {step.else_y})")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!")
         return True
 
     elif step.else_action == "key":
@@ -112,19 +105,11 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         if send_key(step.else_key):
             with state.lock:
                 state.key_presses += 1
-            if debug:
-                print(f"[DEBUG] ELSE: Taste '{step.else_key}'")
-            else:
-                clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", end="", flush=True)
+            _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!")
         return True
 
     elif step.else_action == "restart":
-        if debug:
-            print(f"[DEBUG] ELSE: Neustart!")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!")
         state.restart_event.set()
         return False
 
@@ -269,11 +254,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
 
-    if debug:
-        print(f"[DEBUG] Starte Scan '{step.item_scan}' ({mode_str})...")
-    else:
-        clear_line()
-        print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", end="", flush=True)
+    _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...")
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
 
@@ -313,19 +294,11 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
             if click_delay > 0:
                 time.sleep(click_delay)
 
-        if debug:
-            print(f"[DEBUG] Scan fertig: {len(scan_results)} Item(s) geklickt")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!")
     else:
         if step.else_action:
             return execute_else_action(state, step, phase, step_num, total_steps)
-        if debug:
-            print(f"[DEBUG] Scan fertig: kein Item gefunden")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden")
 
     return True
 
@@ -346,11 +319,7 @@ def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
     if send_key(step.key_press):
         with state.lock:
             state.key_presses += 1
-        if debug:
-            print(f"[DEBUG] Taste '{step.key_press}' | Gesamt: {state.key_presses}")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'!", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'!")
 
     return True
 
@@ -398,20 +367,10 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
                 if condition_met:
                     msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
-                    if debug:
-                        print(f"[DEBUG] {msg} | Erwartet: {expected_name} RGB{step.wait_color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
-                    else:
-                        clear_line()
-                        print(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", end="", flush=True)
+                    _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | {msg}")
                     break
 
-                if debug:
-                    # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
-                    print(f"[DEBUG] Warte auf {expected_name} RGB{step.wait_color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
-                else:
-                    # Ohne Debug: Auf gleicher Zeile überschreiben
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", end="", flush=True)
+                _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)")
 
         elapsed = time.time() - start_time
         if elapsed >= timeout:
@@ -478,29 +437,14 @@ def _execute_wait_for_number(state: AutoClickerState, step: SequenceStep,
                     number_display = f"{number:,.0f}" if number == int(number) else f"{number:,.2f}"
 
                     if condition_met:
-                        if debug:
-                            print(f"[DEBUG] Bedingung erfüllt! {number_display} {operator} {target_display}")
-                        else:
-                            clear_line()
-                            print(f"[{phase}] Schritt {step_num}/{total_steps} | Zahl {number_display} {operator} {target_display} ✓", end="", flush=True)
+                        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Zahl {number_display} {operator} {target_display} ✓")
                         return True  # Bedingung erfüllt!
 
                     # Bedingung nicht erfüllt - weiter warten
-                    if debug:
-                        print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Aktuell: {number_display} ('{char_string}')")
-                    else:
-                        clear_line()
-                        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {number_display} → {operator} {target_display} ({elapsed:.0f}s)", end="", flush=True)
+                    _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {number_display} → {operator} {target_display} ({elapsed:.0f}s)")
                 else:
                     # Keine Zahl erkannt
-                    if debug:
-                        if char_string:
-                            print(f"[DEBUG] Zeichen erkannt: '{char_string}' (keine gültige Zahl) ({elapsed:.0f}s)")
-                        else:
-                            print(f"[DEBUG] Keine Zeichen erkannt ({elapsed:.0f}s)")
-                    else:
-                        clear_line()
-                        print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Zahl... ({elapsed:.0f}s)", end="", flush=True)
+                    _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf Zahl... ({elapsed:.0f}s)")
 
         elapsed = time.time() - start_time
         if elapsed >= timeout:
@@ -616,35 +560,18 @@ def _execute_wait_for_scan(state: AutoClickerState, step: SequenceStep,
         if wait_gone:
             # Warte bis KEIN Item mehr da ist
             if not found_items:
-                if debug:
-                    print(f"[DEBUG] Scan '{scan_name}': kein Item mehr - Bedingung erfüllt!")
-                else:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | {condition_str} ✓", end="", flush=True)
+                _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | {condition_str} ✓")
                 return True
             else:
-                item_names = ", ".join(set(item.name for _, item in found_items))
-                if debug:
-                    print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Gefunden: {item_names}")
-                else:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)", end="", flush=True)
+                _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)")
         else:
             # Warte bis Item DA ist
             if found_items:
                 item_names = ", ".join(set(item.name for _, item in found_items))
-                if debug:
-                    print(f"[DEBUG] Scan '{scan_name}': Item gefunden! ({item_names})")
-                else:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | {item_names} ✓", end="", flush=True)
+                _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | {item_names} ✓")
                 return True
             else:
-                if debug:
-                    print(f"[DEBUG] Warte auf {condition_str} ({elapsed:.0f}s) | Noch nicht gefunden")
-                else:
-                    clear_line()
-                    print(f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)", end="", flush=True)
+                _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Warte: {condition_str} ({elapsed:.0f}s)")
 
         # Timeout prüfen
         if elapsed >= timeout:
@@ -682,12 +609,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
         with state.lock:
             state.total_clicks += 1
 
-        if debug:
-            name = step.name if step.name else f"Punkt"
-            print(f"[DEBUG] Klick auf '{name}' ({step.x}, {step.y}) | Gesamt: {state.total_clicks}")
-        else:
-            clear_line()
-            print(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", end="", flush=True)
+        _status_print(debug, f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})")
 
         max_clicks = state.config.get("max_total_clicks", MAX_TOTAL_CLICKS)
         if max_clicks and state.total_clicks >= max_clicks:

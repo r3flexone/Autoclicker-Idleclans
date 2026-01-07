@@ -435,6 +435,31 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     return {}
 
 
+def _split_else_parts(parts: list[str], skip_first: bool = True) -> tuple[list[str], list[str]]:
+    """Teilt Kommando-Teile und ELSE-Bedingung auf.
+
+    Args:
+        parts: Liste der zu parsenden Teile
+        skip_first: True um erstes Element zu überspringen (z.B. "scan", "wait")
+
+    Returns:
+        Tuple (main_parts, else_parts)
+    """
+    main_parts = []
+    else_parts = []
+    in_else = False
+    start_idx = 1 if skip_first else 0
+
+    for p in parts[start_idx:]:
+        if p.lower() == "else":
+            in_else = True
+        elif in_else:
+            else_parts.append(p)
+        else:
+            main_parts.append(p)
+    return main_parts, else_parts
+
+
 def _apply_else_to_step(step: SequenceStep, else_parts: list[str], state: AutoClickerState) -> None:
     """Wendet geparste Else-Bedingung auf einen Step an."""
     if else_parts:
@@ -738,18 +763,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             # === SCAN-BEFEHL ===
             elif user_input.lower().startswith("scan "):
                 parts_raw = user_input.split()
-                # Parse else-Bedingung
-                else_parts = []
-                main_parts = []
-                in_else = False
-                for p in parts_raw[1:]:  # Skip "scan"
-                    if p.lower() == "else":
-                        in_else = True
-                        continue
-                    if in_else:
-                        else_parts.append(p)
-                    else:
-                        main_parts.append(p)
+                main_parts, else_parts = _split_else_parts(parts_raw)
 
                 if not main_parts:
                     print("  -> Format: scan <Name> [best|every] [else ...]")
@@ -812,18 +826,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             # === WAIT-BEFEHL ===
             elif user_input.lower().startswith("wait "):
                 parts_raw = user_input.split()
-                # Parse else-Bedingung
-                else_parts = []
-                main_parts = []
-                in_else = False
-                for p in parts_raw[1:]:  # Skip "wait"
-                    if p.lower() == "else":
-                        in_else = True
-                        continue
-                    if in_else:
-                        else_parts.append(p)
-                    else:
-                        main_parts.append(p)
+                main_parts, else_parts = _split_else_parts(parts_raw)
 
                 if not main_parts:
                     print("  -> Format: wait <Zeit> oder wait pixel oder wait gone")
@@ -931,18 +934,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             # === PUNKT-BEFEHL (Standard) ===
             else:
                 parts_raw = user_input.split()
-                # Parse else-Bedingung
-                else_parts = []
-                main_parts = []
-                in_else = False
-                for p in parts_raw:
-                    if p.lower() == "else":
-                        in_else = True
-                        continue
-                    if in_else:
-                        else_parts.append(p)
-                    else:
-                        main_parts.append(p)
+                main_parts, else_parts = _split_else_parts(parts_raw, skip_first=False)
 
                 if not main_parts:
                     print("  -> Unbekannter Befehl")
