@@ -408,6 +408,8 @@ scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
 1 pixel else restart           # Wenn Timeout: von vorne beginnen
 1 pixel else key enter         # Wenn Timeout: Enter drücken
 wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
+wait scan items else skip      # Wenn kein Item nach Timeout: überspringen
+wait scan gone items else 2    # Wenn Item nicht verschwindet: Punkt 2 klicken
 ```
 
 ### Wann wird ELSE ausgelöst?
@@ -415,6 +417,8 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 - **Item-Scan**: Wenn kein Item gefunden wird
 - **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 60s)
 - **Wait Gone**: Wenn Farbe nicht verschwindet
+- **Wait Scan**: Wenn Timeout erreicht wird (Standard: 300s)
+- **Wait Number**: Wenn Timeout erreicht wird (Standard: 300s)
 
 Ohne `else` stoppt die Sequenz bei Fehlschlag.
 
