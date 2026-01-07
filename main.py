@@ -23,6 +23,7 @@ from autoclicker.winapi import (
 )
 from autoclicker.persistence import (
     ensure_sequences_dir, ensure_item_scans_dir, init_directories,
+    migrate_old_global_files,
     load_points, load_global_slots, load_global_items, load_all_item_scans
 )
 from autoclicker.execution import print_status
@@ -88,6 +89,9 @@ def main() -> int:
     ensure_sequences_dir()
     ensure_item_scans_dir()
     init_directories()
+
+    # Alte slots.json/items.json zu Presets migrieren (falls vorhanden)
+    migrate_old_global_files()
 
     # Gespeicherte Daten laden
     load_points(state)

@@ -48,8 +48,9 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     presets = list_item_presets()
     if presets:
         print(f"\nVerfügbare Presets ({len(presets)}):")
-        for name, path, count in presets:
-            print(f"  - {name} ({count} Items)")
+        for name, path, count, is_active in presets:
+            marker = " [AKTIV]" if is_active else ""
+            print(f"  - {name} ({count} Items){marker}")
 
     print("\n" + "-" * 60)
     print("Befehle:")

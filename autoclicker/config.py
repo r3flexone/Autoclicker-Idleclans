@@ -21,6 +21,10 @@ CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 # Standard-Konfiguration (wird von config.json überschrieben)
 # Die Reihenfolge hier bestimmt die Reihenfolge in der gespeicherten config.json
 DEFAULT_CONFIG = {
+    # === AKTIVE PRESETS ===
+    "active_slot_preset": "default",    # Aktuell geladenes Slot-Preset
+    "active_item_preset": "default",    # Aktuell geladenes Item-Preset
+
     # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,              # Anzahl Klicks pro Punkt
     "max_total_clicks": None,           # None = unendlich

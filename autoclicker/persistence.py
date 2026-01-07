@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE
+from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE, CONFIG, save_config
 from .models import (
     ClickPoint, SequenceStep, LoopPhase, Sequence,
     ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
@@ -28,10 +28,20 @@ SLOTS_DIR: str = "slots"
 ITEMS_DIR: str = "items"
 SCREENSHOTS_DIR: str = os.path.join(SLOTS_DIR, "Screenshots")
 TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")
-SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
-ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
 SLOT_PRESETS_DIR: str = os.path.join(SLOTS_DIR, "presets")
 ITEM_PRESETS_DIR: str = os.path.join(ITEMS_DIR, "presets")
+
+
+def _get_active_slot_preset_path() -> Path:
+    """Gibt den Pfad zum aktiven Slot-Preset zurück."""
+    preset_name = CONFIG.get("active_slot_preset", "default")
+    return Path(SLOT_PRESETS_DIR) / f"{sanitize_filename(preset_name)}.json"
+
+
+def _get_active_item_preset_path() -> Path:
+    """Gibt den Pfad zum aktiven Item-Preset zurück."""
+    preset_name = CONFIG.get("active_item_preset", "default")
+    return Path(ITEM_PRESETS_DIR) / f"{sanitize_filename(preset_name)}.json"
 
 
 def init_directories() -> None:
@@ -39,6 +49,47 @@ def init_directories() -> None:
     for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR,
                    TEMPLATES_DIR, SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
         os.makedirs(folder, exist_ok=True)
+
+
+def migrate_old_global_files() -> None:
+    """Migriert alte slots.json/items.json zu default Presets.
+
+    Wird beim Start aufgerufen um alte Dateien zu migrieren:
+    - slots/slots.json → slots/presets/default.json
+    - items/items.json → items/presets/default.json
+    """
+    # Alte Pfade
+    old_slots_file = Path(SLOTS_DIR) / "slots.json"
+    old_items_file = Path(ITEMS_DIR) / "items.json"
+
+    # Neue Pfade (default Presets)
+    new_slots_file = Path(SLOT_PRESETS_DIR) / "default.json"
+    new_items_file = Path(ITEM_PRESETS_DIR) / "default.json"
+
+    migrated = []
+
+    # Slots migrieren
+    if old_slots_file.exists() and not new_slots_file.exists():
+        try:
+            new_slots_file.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.move(str(old_slots_file), str(new_slots_file))
+            migrated.append(f"slots.json → presets/default.json")
+        except (IOError, OSError) as e:
+            logger.error(f"Slot-Migration fehlgeschlagen: {e}")
+
+    # Items migrieren
+    if old_items_file.exists() and not new_items_file.exists():
+        try:
+            new_items_file.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.move(str(old_items_file), str(new_items_file))
+            migrated.append(f"items.json → presets/default.json")
+        except (IOError, OSError) as e:
+            logger.error(f"Item-Migration fehlgeschlagen: {e}")
+
+    if migrated:
+        print(f"[MIGRATION] Alte Dateien migriert: {', '.join(migrated)}")
 
 
 # =============================================================================
@@ -331,50 +382,80 @@ def load_all_item_scans(state: AutoClickerState) -> None:
 
 
 # =============================================================================
-# GLOBALE SLOTS UND ITEMS PERSISTENZ
+# SLOTS UND ITEMS PERSISTENZ (direkt aus aktiven Presets)
 # =============================================================================
 def save_global_slots(state: AutoClickerState) -> None:
-    """Speichert alle globalen Slots."""
+    """Speichert Slots in das aktive Preset."""
+    preset_path = _get_active_slot_preset_path()
+    preset_path.parent.mkdir(parents=True, exist_ok=True)
+
     data = {name: _serialize_slot(slot) for name, slot in state.global_slots.items()}
-    with open(SLOTS_FILE, "w", encoding="utf-8") as f:
+    with open(preset_path, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_slots)} Slot(s) gespeichert")
+
+    preset_name = CONFIG.get("active_slot_preset", "default")
+    print(f"[SAVE] {len(state.global_slots)} Slot(s) → '{preset_name}'")
 
 
 def load_global_slots(state: AutoClickerState) -> None:
-    """Lädt alle globalen Slots."""
-    if not Path(SLOTS_FILE).exists():
+    """Lädt Slots aus dem aktiven Preset."""
+    preset_path = _get_active_slot_preset_path()
+    preset_name = CONFIG.get("active_slot_preset", "default")
+
+    if not preset_path.exists():
+        # Erstelle leeres default Preset falls nicht vorhanden
+        if preset_name == "default":
+            preset_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(preset_path, "w", encoding="utf-8") as f:
+                f.write("{}")
         return
+
     try:
-        with open(SLOTS_FILE, "r", encoding="utf-8") as f:
+        with open(preset_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        state.global_slots.clear()
         for name, s in data.items():
             state.global_slots[name] = _deserialize_slot(s)
         if state.global_slots:
-            print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
+            print(f"[LOAD] {len(state.global_slots)} Slot(s) ← '{preset_name}'")
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 
 def save_global_items(state: AutoClickerState) -> None:
-    """Speichert alle globalen Items."""
+    """Speichert Items in das aktive Preset."""
+    preset_path = _get_active_item_preset_path()
+    preset_path.parent.mkdir(parents=True, exist_ok=True)
+
     data = {name: _serialize_item(item) for name, item in state.global_items.items()}
-    with open(ITEMS_FILE, "w", encoding="utf-8") as f:
+    with open(preset_path, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
+
+    preset_name = CONFIG.get("active_item_preset", "default")
+    print(f"[SAVE] {len(state.global_items)} Item(s) → '{preset_name}'")
 
 
 def load_global_items(state: AutoClickerState) -> None:
-    """Lädt alle globalen Items."""
-    if not Path(ITEMS_FILE).exists():
+    """Lädt Items aus dem aktiven Preset."""
+    preset_path = _get_active_item_preset_path()
+    preset_name = CONFIG.get("active_item_preset", "default")
+
+    if not preset_path.exists():
+        # Erstelle leeres default Preset falls nicht vorhanden
+        if preset_name == "default":
+            preset_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(preset_path, "w", encoding="utf-8") as f:
+                f.write("{}")
         return
+
     try:
-        with open(ITEMS_FILE, "r", encoding="utf-8") as f:
+        with open(preset_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        state.global_items.clear()
         for name, i in data.items():
             state.global_items[name] = _deserialize_item(i)
         if state.global_items:
-            print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
+            print(f"[LOAD] {len(state.global_items)} Item(s) ← '{preset_name}'")
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Items laden fehlgeschlagen: {e}")
 
@@ -382,11 +463,17 @@ def load_global_items(state: AutoClickerState) -> None:
 # =============================================================================
 # SLOT UND ITEM PRESETS
 # =============================================================================
-def list_slot_presets() -> list[tuple[str, Path, int]]:
-    """Listet alle verfügbaren Slot-Presets auf."""
+def list_slot_presets() -> list[tuple[str, Path, int, bool]]:
+    """Listet alle verfügbaren Slot-Presets auf.
+
+    Returns:
+        Liste von (name, path, count, is_active) Tupeln
+    """
     preset_dir = Path(SLOT_PRESETS_DIR)
     if not preset_dir.exists():
         return []
+
+    active_preset = CONFIG.get("active_slot_preset", "default")
     presets = []
     for f in preset_dir.glob("*.json"):
         try:
@@ -394,70 +481,78 @@ def list_slot_presets() -> list[tuple[str, Path, int]]:
                 data = json.load(file)
                 name = f.stem
                 count = len(data)
-                presets.append((name, f, count))
+                is_active = (name == active_preset)
+                presets.append((name, f, count, is_active))
         except (json.JSONDecodeError, IOError, KeyError, TypeError):
             pass
     return presets
 
 
 def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
-    """Speichert aktuelle Slots als Preset."""
+    """Speichert aktuelle Slots als neues Preset und wechselt dorthin."""
     if not state.global_slots:
         print("[FEHLER] Keine Slots vorhanden zum Speichern!")
         return False
 
-    data = {name: _serialize_slot(slot) for name, slot in state.global_slots.items()}
     safe_name = sanitize_filename(preset_name)
-    filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
+
+    # Wechsle zum neuen Preset
+    CONFIG["active_slot_preset"] = safe_name
+    save_config(CONFIG)
+
+    # Speichere in das neue Preset
+    save_global_slots(state)
     return True
 
 
 def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
-    """Lädt ein Slot-Preset."""
+    """Wechselt zum angegebenen Slot-Preset."""
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
+
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
 
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    # Wechsle zum Preset
+    CONFIG["active_slot_preset"] = safe_name
+    save_config(CONFIG)
 
-        with state.lock:
-            state.global_slots.clear()
-            for name, s in data.items():
-                state.global_slots[name] = _deserialize_slot(s)
-
-        # Auch in aktive Datei speichern
-        save_global_slots(state)
-        print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
-        return True
-    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
-        return False
+    # Lade Slots aus dem neuen Preset
+    load_global_slots(state)
+    return True
 
 
 def delete_slot_preset(preset_name: str) -> bool:
-    """Löscht ein Slot-Preset."""
+    """Löscht ein Slot-Preset (nicht das aktive!)."""
     safe_name = sanitize_filename(preset_name)
+    active_preset = CONFIG.get("active_slot_preset", "default")
+
+    if safe_name == active_preset:
+        print(f"[FEHLER] Kann aktives Preset '{preset_name}' nicht löschen!")
+        return False
+
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
+
     filepath.unlink()
     print(f"[DELETE] Slot-Preset '{preset_name}' gelöscht")
     return True
 
 
-def list_item_presets() -> list[tuple[str, Path, int]]:
-    """Listet alle verfügbaren Item-Presets auf."""
+def list_item_presets() -> list[tuple[str, Path, int, bool]]:
+    """Listet alle verfügbaren Item-Presets auf.
+
+    Returns:
+        Liste von (name, path, count, is_active) Tupeln
+    """
     preset_dir = Path(ITEM_PRESETS_DIR)
     if not preset_dir.exists():
         return []
+
+    active_preset = CONFIG.get("active_item_preset", "default")
     presets = []
     for f in preset_dir.glob("*.json"):
         try:
@@ -465,60 +560,62 @@ def list_item_presets() -> list[tuple[str, Path, int]]:
                 data = json.load(file)
                 name = f.stem
                 count = len(data)
-                presets.append((name, f, count))
+                is_active = (name == active_preset)
+                presets.append((name, f, count, is_active))
         except (json.JSONDecodeError, IOError, KeyError, TypeError):
             pass
     return presets
 
 
 def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
-    """Speichert aktuelle Items als Preset."""
+    """Speichert aktuelle Items als neues Preset und wechselt dorthin."""
     if not state.global_items:
         print("[FEHLER] Keine Items vorhanden zum Speichern!")
         return False
 
-    data = {name: _serialize_item(item) for name, item in state.global_items.items()}
     safe_name = sanitize_filename(preset_name)
-    filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
+
+    # Wechsle zum neuen Preset
+    CONFIG["active_item_preset"] = safe_name
+    save_config(CONFIG)
+
+    # Speichere in das neue Preset
+    save_global_items(state)
     return True
 
 
 def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
-    """Lädt ein Item-Preset."""
+    """Wechselt zum angegebenen Item-Preset."""
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
+
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
 
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    # Wechsle zum Preset
+    CONFIG["active_item_preset"] = safe_name
+    save_config(CONFIG)
 
-        with state.lock:
-            state.global_items.clear()
-            for name, i in data.items():
-                state.global_items[name] = _deserialize_item(i)
-
-        # Auch in aktive Datei speichern
-        save_global_items(state)
-        print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
-        return True
-    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
-        return False
+    # Lade Items aus dem neuen Preset
+    load_global_items(state)
+    return True
 
 
 def delete_item_preset(preset_name: str) -> bool:
-    """Löscht ein Item-Preset."""
+    """Löscht ein Item-Preset (nicht das aktive!)."""
     safe_name = sanitize_filename(preset_name)
+    active_preset = CONFIG.get("active_item_preset", "default")
+
+    if safe_name == active_preset:
+        print(f"[FEHLER] Kann aktives Preset '{preset_name}' nicht löschen!")
+        return False
+
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
+
     filepath.unlink()
     print(f"[DELETE] Item-Preset '{preset_name}' gelöscht")
     return True

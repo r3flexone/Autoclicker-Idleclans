@@ -8,19 +8,17 @@ Bringt alle JSON-Dateien auf den aktuellen Code-Stand:
 - Feldordnung korrigieren
 
 WICHTIG: Jede Datei ist EIGENSTAENDIG!
-- Presets sind unabhaengige Snapshots, NICHT abhaengig von Global
-- Scans haben eigene Item-Definitionen, NICHT Referenzen zu Global
-- Es wird NUR normalisiert, NICHT von Global kopiert!
+- Alle Presets sind unabhaengige Dateien
+- Scans haben eigene Item-Definitionen
+- Es wird NUR normalisiert, nicht zwischen Dateien kopiert!
 
 Reihenfolge:
 1. Config          (config.json)
 2. Points          (sequences/points.json) - laedt POINTS fuer confirm_point
 3. Sequences       (sequences/*.json)
-4. Slots global    (slots/slots.json)
-5. Items global    (items/items.json)
-6. Scans           (item_scans/*.json) - eigenstaendig
-7. Slot presets    (slots/presets/*.json) - eigenstaendig
-8. Item presets    (items/presets/*.json) - eigenstaendig
+4. Slot presets    (slots/presets/*.json)
+5. Item presets    (items/presets/*.json)
+6. Scans           (item_scans/*.json)
 """
 
 import json
@@ -40,12 +38,10 @@ POINTS_FILE = SEQUENCES_DIR / "points.json"
 
 # Slots
 SLOTS_DIR = SCRIPT_DIR / "slots"
-SLOTS_FILE = SLOTS_DIR / "slots.json"
 SLOT_PRESETS_DIR = SLOTS_DIR / "presets"
 
 # Items
 ITEMS_DIR = SCRIPT_DIR / "items"
-ITEMS_FILE = ITEMS_DIR / "items.json"
 ITEM_PRESETS_DIR = ITEMS_DIR / "presets"
 
 # Scans
@@ -58,6 +54,10 @@ POINTS = []
 # STANDARDWERTE
 # ==============================================================================
 CONFIG_DEFAULTS = {
+    # === AKTIVE PRESETS ===
+    "active_slot_preset": "default",
+    "active_item_preset": "default",
+
     # === KLICK-EINSTELLUNGEN ===
     "clicks_per_point": 1,
     "max_total_clicks": None,
@@ -477,35 +477,6 @@ def sync_slot(name: str, slot: dict) -> tuple[dict, int]:
     }, fixes
 
 
-def sync_global_slots() -> tuple[dict, int, int]:
-    """Synchronisiert slots/slots.json.
-
-    Returns:
-        tuple: (synced_data, count, fixes)
-    """
-    data = load_json_safe(SLOTS_FILE)
-    if not data:
-        return {}, 0, 0
-
-    if not isinstance(data, dict):
-        print("    [FEHLER] slots.json ist kein Dictionary!")
-        return {}, 0, 0
-
-    updated = {}
-    total_fixes = 0
-
-    for name, slot in data.items():
-        if isinstance(slot, dict):
-            fixed, fixes = sync_slot(name, slot)
-            updated[name] = fixed
-            if fixes:
-                print(f"    {name}: {fixes} Korrekturen")
-                total_fixes += fixes
-
-    save_json(SLOTS_FILE, updated)
-    return updated, len(updated), total_fixes
-
-
 def sync_slot_presets() -> tuple[int, int]:
     """Synchronisiert slots/presets/*.json (unabhaengig von global).
 
@@ -594,35 +565,6 @@ def sync_item(name: str, item: dict) -> tuple[dict, int]:
         "template": item.get("template"),
         "min_confidence": conf
     }, fixes
-
-
-def sync_global_items() -> tuple[dict, int, int]:
-    """Synchronisiert items/items.json.
-
-    Returns:
-        tuple: (synced_data, count, fixes)
-    """
-    data = load_json_safe(ITEMS_FILE)
-    if not data:
-        return {}, 0, 0
-
-    if not isinstance(data, dict):
-        print("    [FEHLER] items.json ist kein Dictionary!")
-        return {}, 0, 0
-
-    updated = {}
-    total_fixes = 0
-
-    for name, item in data.items():
-        if isinstance(item, dict):
-            fixed, fixes = sync_item(name, item)
-            updated[name] = fixed
-            if fixes:
-                print(f"    {name}: {fixes} Korrekturen")
-                total_fixes += fixes
-
-    save_json(ITEMS_FILE, updated)
-    return updated, len(updated), total_fixes
 
 
 def sync_item_presets() -> tuple[int, int]:
@@ -752,49 +694,36 @@ def main():
     print("  SYNC-TOOL: Alle JSON-Dateien aktualisieren")
     print("=" * 60)
     print(f"\n  Verzeichnis: {SCRIPT_DIR}")
-    print("\n  === GLOBALE DATEIEN ===")
 
-    # 1. Config (global)
-    print(f"\n  [1/8] Config...")
+    # 1. Config
+    print(f"\n  [1/6] Config...")
     count, fixes = sync_config()
     print(f"        {len(CONFIG_DEFAULTS)} Optionen, {fixes} Fixes")
 
-    # 2. Points (laedt auch POINTS fuer spaeter)
-    print(f"\n  [2/8] Points...")
+    # 2. Points (laedt POINTS fuer confirm_point Konvertierung)
+    print(f"\n  [2/6] Points...")
     count, fixes = sync_points()
     print(f"        {count} Punkte, {fixes} Fixes")
 
     # 3. Sequences
-    print(f"\n  [3/8] Sequences...")
+    print(f"\n  [3/6] Sequences...")
     count, fixes = sync_sequences()
     print(f"        {count} Sequenzen, {fixes} Fixes")
 
-    # 4. Slots (global)
-    print(f"\n  [4/8] Slots global...")
-    _, count, fixes = sync_global_slots()
-    print(f"        {count} Slots, {fixes} Fixes")
-
-    # 5. Items (global)
-    print(f"\n  [5/8] Items global...")
-    _, count, fixes = sync_global_items()
-    print(f"        {count} Items, {fixes} Fixes")
-
-    # 6. Scans (eigenstaendig, NICHT von global!)
-    print(f"\n  [6/8] Scans...")
-    count, fixes = sync_scan_configs()
-    print(f"        {count} Scans, {fixes} Fixes")
-
-    print("\n  === UNTERORDNER (PRESETS) ===")
-
-    # 7. Slot presets (eigenstaendig, NICHT von global!)
-    print(f"\n  [7/8] Slot presets...")
+    # 4. Slot Presets
+    print(f"\n  [4/6] Slot Presets...")
     count, fixes = sync_slot_presets()
     print(f"        {count} Presets, {fixes} Fixes")
 
-    # 8. Item presets (eigenstaendig, NICHT von global!)
-    print(f"\n  [8/8] Item presets...")
+    # 5. Item Presets
+    print(f"\n  [5/6] Item Presets...")
     count, fixes = sync_item_presets()
     print(f"        {count} Presets, {fixes} Fixes")
+
+    # 6. Scans
+    print(f"\n  [6/6] Scans...")
+    count, fixes = sync_scan_configs()
+    print(f"        {count} Scans, {fixes} Fixes")
 
     print("\n" + "=" * 60)
     print("  SYNC abgeschlossen!")

@@ -157,8 +157,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     slot_presets = list_slot_presets()
     print("\nSlot-Presets:")
     if slot_presets:
-        for i, (name, path, count) in enumerate(slot_presets):
-            print(f"  [{i+1}] {name} ({count} Slots)")
+        for i, (name, path, count, is_active) in enumerate(slot_presets):
+            marker = " [AKTIV]" if is_active else ""
+            print(f"  [{i+1}] {name} ({count} Slots){marker}")
     print("  [0] Aktuelle Slots verwenden")
 
     # Slot-Preset auswählen
@@ -172,7 +173,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 break
             slot_num = int(slot_choice)
             if 1 <= slot_num <= len(slot_presets):
-                preset_name, _, _ = slot_presets[slot_num - 1]
+                preset_name, _, _, _ = slot_presets[slot_num - 1]
                 load_slot_preset(state, preset_name)
                 break
             else:
@@ -186,8 +187,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     item_presets = list_item_presets()
     print("\nItem-Presets:")
     if item_presets:
-        for i, (name, path, count) in enumerate(item_presets):
-            print(f"  [{i+1}] {name} ({count} Items)")
+        for i, (name, path, count, is_active) in enumerate(item_presets):
+            marker = " [AKTIV]" if is_active else ""
+            print(f"  [{i+1}] {name} ({count} Items){marker}")
     print("  [0] Aktuelle Items verwenden / Keine (neu erstellen)")
 
     # Item-Preset auswählen
@@ -201,7 +203,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 break
             item_num = int(item_choice)
             if 1 <= item_num <= len(item_presets):
-                preset_name, _, _ = item_presets[item_num - 1]
+                preset_name, _, _, _ = item_presets[item_num - 1]
                 load_item_preset(state, preset_name)
                 break
             else:
