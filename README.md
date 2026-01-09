@@ -280,6 +280,7 @@ Eine Sequenz besteht aus drei Phasen:
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
 | `learn <Name>` | Neuen Punkt erstellen (direkt im Editor) |
 | `points` | Alle verfügbaren Punkte anzeigen |
+| `scans` | Alle verfügbaren Item-Scans anzeigen |
 | `del <Nr>` | Schritt löschen |
 | `clear` | Alle Schritte löschen |
 | `show` | Aktuelle Schritte anzeigen |
