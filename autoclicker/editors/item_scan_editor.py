@@ -236,9 +236,15 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         tolerance = existing.color_tolerance
     else:
         print("\n--- Neuen Scan erstellen ---")
-        scan_name = safe_input("Name des Scans: ").strip()
-        if not scan_name:
-            scan_name = f"Scan_{int(time.time())}"
+        while True:
+            scan_name = safe_input("Name des Scans (keine Leerzeichen): ").strip()
+            if not scan_name:
+                scan_name = f"Scan_{int(time.time())}"
+                break
+            if " " in scan_name:
+                print("  -> Name darf keine Leerzeichen enthalten!")
+                continue
+            break
         selected_slot_names = []
         selected_item_names = []
         tolerance = 40
