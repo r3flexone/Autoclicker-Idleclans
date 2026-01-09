@@ -604,9 +604,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  wait scan gone <ScanName> - Warte bis KEIN Item mehr im Scan")
     print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
     print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
-    print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
-    print("  scan <Name> best  - Item-Scan: nur 1 Item total")
-    print("  scan <Name> every - Item-Scan: alle Treffer (für Duplikate)")
+    print("  scan <ScanName>   - Item-Scan: bestes pro Kategorie (Standard)")
+    print("  scan <ScanName> best - Item-Scan: nur 1 Item total")
+    print("  scan <ScanName> every - Item-Scan: alle Treffer (für Duplikate)")
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
     print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
     print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
@@ -766,7 +766,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 main_parts, else_parts = _split_else_parts(parts_raw)
 
                 if not main_parts:
-                    print("  -> Format: scan <Name> [best|every] [else ...]")
+                    print("  -> Format: scan <ScanName> [best|every] [else ...]")
                     continue
 
                 scan_name = main_parts[0]
@@ -865,9 +865,9 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     target_display = f"{target_val:,.0f}" if target_val == int(target_val) else f"{target_val:,.2f}"
                     step.name = f"Wait:Number{num_result['operator']}{target_display}"
                 elif arg == "scan":
-                    # wait scan <Name> oder wait scan gone <Name> oder wait scan <Name> "Item"
+                    # wait scan <ScanName> oder wait scan gone <ScanName> oder wait scan <ScanName> "ItemName"
                     if len(main_parts) < 2:
-                        print("  -> Format: wait scan <Name> oder wait scan gone <Name>")
+                        print("  -> Format: wait scan <ScanName> oder wait scan gone <ScanName>")
                         continue
 
                     # Prüfe ob "gone" als zweites Argument
@@ -878,7 +878,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     if main_parts[1].lower() == "gone":
                         gone_mode = True
                         if len(main_parts) < 3:
-                            print("  -> Format: wait scan gone <Name>")
+                            print("  -> Format: wait scan gone <ScanName>")
                             continue
                         scan_name = main_parts[2]
                         # Optional: Item-Filter nach scan_name

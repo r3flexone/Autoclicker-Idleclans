@@ -271,9 +271,9 @@ Eine Sequenz besteht aus drei Phasen:
 | `key <Taste>` | Taste sofort drücken (z.B. `key enter`) |
 | `key <Zeit> <Taste>` | Warten, dann Taste drücken (z.B. `key 5 space`) |
 | `key <Min>-<Max> <Taste>` | Zufällig warten, dann Taste (z.B. `key 30-45 enter`) |
-| `scan <Name>` | Item-Scan ausführen (bestes pro Kategorie) |
-| `scan <Name> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
-| `scan <Name> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
+| `scan <ScanName>` | Item-Scan ausführen (bestes pro Kategorie) |
+| `scan <ScanName> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
+| `scan <ScanName> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
 | `... else skip` | Bei Fehlschlag überspringen |
 | `... else restart` | Bei Fehlschlag Sequenz neu starten |
 | `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
@@ -356,7 +356,7 @@ Das Item-Scan System erkennt Items anhand ihrer Marker-Farben oder Templates:
 2. **Items lernen** (`CTRL+ALT+N` → Menü 2): Mit `learn <Nr>` Marker-Farben + Template scannen
 3. **Kategorien zuweisen**: Items gruppieren (z.B. "Hosen", "Jacken")
 4. **Scan konfigurieren** (`CTRL+ALT+N` → Menü 3): Slots und Items verknüpfen
-5. **In Sequenz nutzen**: `scan <Name>`, `scan <Name> best` oder `scan <Name> every`
+5. **In Sequenz nutzen**: `scan <ScanName>`, `scan <ScanName> best` oder `scan <ScanName> every`
 
 ### Scan-Modi
 
