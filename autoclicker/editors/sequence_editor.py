@@ -612,9 +612,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
     print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
     print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
-    print("Punkte verwalten:")
-    print("  learn <Name>      - Neuen Punkt erstellen")
+    print("Punkte/Scans anzeigen:")
     print("  points            - Alle Punkte anzeigen")
+    print("  scans             - Alle Item-Scans anzeigen")
+    print("  learn <Name>      - Neuen Punkt erstellen")
     print("  del <Nr>          - Schritt löschen")
     print("  del <Nr>-<Nr>     - Bereich löschen (z.B. del 1-5)")
     print("  del all           - ALLE Schritte löschen")
@@ -732,6 +733,18 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print(f"    {p}")
                     else:
                         print("  (Keine Punkte vorhanden)")
+                continue
+
+            elif user_input.lower() == "scans":
+                # Alle Item-Scans anzeigen
+                with state.lock:
+                    if state.item_scans:
+                        print("\n  Verfügbare Item-Scans:")
+                        for i, name in enumerate(sorted(state.item_scans.keys()), 1):
+                            scan = state.item_scans[name]
+                            print(f"    {i}. {name} ({len(scan.slots)} Slots, {len(scan.items)} Items)")
+                    else:
+                        print("  (Keine Item-Scans vorhanden)")
                 continue
 
             elif user_input.lower().startswith("learn"):
