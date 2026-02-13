@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -295,40 +295,34 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
     if slot.slot_color:
         print(f"    Hintergrund: RGB{slot.slot_color}")
 
-    print("\n  Was ändern?")
-    print("    1. Name")
-    print("    2. Scan-Region")
-    print("    3. Klickposition")
-    print("    4. Hintergrundfarbe")
-    print("    0. Fertig (nichts ändern)")
-
     new_name = slot.name
     new_region = slot.scan_region
     new_click = slot.click_pos
     new_color = slot.slot_color
 
     while True:
-        choice = safe_input("  Option: ").strip()
+        edit_options = ["Name", "Scan-Region", "Klickposition", "Hintergrundfarbe", "Fertig"]
+        choice = interactive_select(edit_options, title="\n  Was ändern?", allow_cancel=False)
 
-        if choice == "0" or choice.lower() == "done":
+        if choice == 4:  # Fertig
             break
-        elif choice == "1":
+        elif choice == 0:  # Name
             name_input = safe_input(f"  Neuer Name (Enter = '{new_name}'): ").strip()
             if name_input:
                 new_name = name_input
                 print(f"  -> Name geändert zu '{new_name}'")
-        elif choice == "2":
+        elif choice == 1:  # Scan-Region
             print("\n  Neue Scan-Region definieren...")
             region = select_region()
             if region:
                 new_region = region
                 print(f"  -> Region geändert zu {new_region}")
-        elif choice == "3":
+        elif choice == 2:  # Klickposition
             print("  Bewege Maus zur neuen Klickposition, Enter...")
             safe_input()
             new_click = get_cursor_pos()
             print(f"  -> Klickposition geändert zu {new_click}")
-        elif choice == "4":
+        elif choice == 3:  # Hintergrundfarbe
             print("  Bewege Maus zum Slot-Hintergrund, Enter...")
             safe_input()
             x, y = get_cursor_pos()
@@ -336,9 +330,6 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
             if color:
                 new_color = color
                 print(f"  -> Hintergrundfarbe geändert zu RGB{new_color}")
-        else:
-            print("  -> Ungültige Option")
-            continue
 
     return ItemSlot(
         name=new_name,

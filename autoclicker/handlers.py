@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
-from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm
+from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select
 from .winapi import get_cursor_pos, set_cursor_pos, user32
 from .persistence import (
     save_data, ensure_sequences_dir, list_available_sequences,
@@ -330,42 +330,26 @@ def handle_switch(state: AutoClickerState) -> None:
         print("\n[INFO] Keine Sequenzen vorhanden! Erstelle eine mit CTRL+ALT+E")
         return
 
-    print("\n" + "-" * 40)
-    print("QUICK-SWITCH: Sequenz wählen")
-    print("-" * 40)
-
-    for i, (name, path) in enumerate(sequences):
+    # Optionen aufbauen
+    menu_options = []
+    for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
-            # Markiere aktive Sequenz
-            active_marker = " <" if state.active_sequence and state.active_sequence.name == seq.name else ""
-            print(f"  {i+1}. {seq.name}{active_marker}")
+            active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
+            menu_options.append(f"{seq.name}{active_marker}")
 
-    print("\nNummer eingeben (Enter = abbrechen):")
+    choice = interactive_select(menu_options, title="\nQUICK-SWITCH: Sequenz wählen")
 
-    try:
-        choice = safe_input("> ").strip()
-        if not choice:
-            return
+    if choice == -1:
+        return
 
-        idx = int(choice) - 1
-        if idx < 0 or idx >= len(sequences):
-            print("[FEHLER] Ungültige Nummer!")
-            return
-
-        name, path = sequences[idx]
-        seq = load_sequence_file(path)
-
-        if seq:
-            with state.lock:
-                state.active_sequence = seq
-            print(f"\n[OK] Gewechselt zu: {seq.name}")
-            print("     Starten mit CTRL+ALT+S")
-
-    except ValueError:
-        print("[FEHLER] Ungültige Eingabe!")
-    except (KeyboardInterrupt, EOFError):
-        pass
+    name, path = sequences[choice]
+    seq = load_sequence_file(path)
+    if seq:
+        with state.lock:
+            state.active_sequence = seq
+        print(f"\n[OK] Gewechselt zu: {seq.name}")
+        print("     Starten mit CTRL+ALT+S")
 
 
 def handle_schedule(state: AutoClickerState) -> None:

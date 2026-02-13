@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -37,25 +37,20 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
         item_count = len(state.global_items)
         scan_count = len(state.item_scans)
 
-    print(f"\n  [1] Slots bearbeiten     ({slot_count} vorhanden)")
-    print(f"  [2] Items bearbeiten     ({item_count} vorhanden)")
-    print(f"  [3] Scans bearbeiten     ({scan_count} vorhanden)")
-    print("\n  [0] Abbrechen")
+    menu_options = [
+        f"Slots bearbeiten     ({slot_count} vorhanden)",
+        f"Items bearbeiten     ({item_count} vorhanden)",
+        f"Scans bearbeiten     ({scan_count} vorhanden)",
+    ]
 
-    try:
-        choice = safe_input("\n> ").strip()
-        if choice == "1":
-            run_global_slot_editor(state)
-        elif choice == "2":
-            run_global_item_editor(state)
-        elif choice == "3":
-            run_item_scan_editor(state)
-        elif choice == "0" or is_cancel(choice):
-            return
-        else:
-            print("[FEHLER] Ungültige Auswahl")
-    except (KeyboardInterrupt, EOFError):
-        return
+    choice = interactive_select(menu_options)
+
+    if choice == 0:
+        run_global_slot_editor(state)
+    elif choice == 1:
+        run_global_item_editor(state)
+    elif choice == 2:
+        run_item_scan_editor(state)
 
 
 def run_item_scan_editor(state: AutoClickerState) -> None:
@@ -72,67 +67,28 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
     # Bestehende Item-Scans anzeigen
     available_scans = list_available_item_scans()
 
-    print("\nWas möchtest du tun?")
-    print("  [0] Neuen Item-Scan erstellen")
+    # Optionen aufbauen
+    menu_options = ["Neuen Item-Scan erstellen"]
+    for name, path in available_scans:
+        config = load_item_scan_file(path)
+        if config:
+            menu_options.append(str(config))
 
     if available_scans:
-        print("\nBestehende Item-Scans bearbeiten:")
-        for i, (name, path) in enumerate(available_scans):
-            config = load_item_scan_file(path)
-            if config:
-                print(f"  [{i+1}] {config}")
-        print("\n  del <Nr> - Item-Scan löschen")
+        print("  (Tipp: 'del <Nr>' im Textmodus zum Löschen)")
 
-    print("\nAuswahl (oder 'cancel'):")
+    choice = interactive_select(menu_options, title="\nWas möchtest du tun?")
 
-    while True:
-        try:
-            choice = safe_input("> ").strip().lower()
-
-            if is_cancel(choice):
-                print("[CANCEL] Editor beendet.")
-                return
-
-            # Löschen-Befehl
-            if choice.startswith("del "):
-                try:
-                    del_num = int(choice[4:])
-                    if 1 <= del_num <= len(available_scans):
-                        name, path = available_scans[del_num - 1]
-                        if confirm(f"Item-Scan '{name}' wirklich löschen?"):
-                            Path(path).unlink()
-                            with state.lock:
-                                if name in state.item_scans:
-                                    del state.item_scans[name]
-                            print(f"[OK] Item-Scan '{name}' gelöscht!")
-                            return
-                        else:
-                            print("[ABBRUCH] Nicht gelöscht.")
-                    else:
-                        print(f"[FEHLER] Ungültiger Scan! Verfügbar: 1-{len(available_scans)}")
-                except ValueError:
-                    print("[FEHLER] Format: del <Nr>")
-                continue
-
-            choice_num = int(choice)
-
-            if choice_num == 0:
-                edit_item_scan(state, None)
-                return
-            elif 1 <= choice_num <= len(available_scans):
-                name, path = available_scans[choice_num - 1]
-                existing = load_item_scan_file(path)
-                if existing:
-                    edit_item_scan(state, existing)
-                return
-            else:
-                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
-
-        except ValueError:
-            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
-        except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH] Editor beendet.")
-            return
+    if choice == -1:
+        print("[CANCEL] Editor beendet.")
+        return
+    elif choice == 0:
+        edit_item_scan(state, None)
+    elif 1 <= choice < len(menu_options):
+        name, path = available_scans[choice - 1]
+        existing = load_item_scan_file(path)
+        if existing:
+            edit_item_scan(state, existing)
 
 
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:

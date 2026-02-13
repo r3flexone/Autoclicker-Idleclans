@@ -3,9 +3,11 @@ Hilfsfunktionen für den Autoclicker.
 JSON-Handling, Input-Funktionen, Zeit-Parser, etc.
 """
 
+import ctypes
 import json
 import logging
 import msvcrt
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -142,6 +144,185 @@ def get_input(prompt: str = "> ", allow_empty: bool = True) -> str:
 def clear_line() -> None:
     """Löscht die aktuelle Konsolenzeile."""
     print("\r" + " " * 80 + "\r", end="", flush=True)
+
+
+# =============================================================================
+# ANSI-SUPPORT UND PFEILTASTEN-NAVIGATION
+# =============================================================================
+
+def _enable_ansi() -> bool:
+    """Aktiviert ANSI-Escape-Codes in der Windows-Konsole.
+
+    Nötig für Cursor-Bewegung (hoch/runter) beim Menü-Neuzeichnen.
+    """
+    try:
+        kernel32 = ctypes.windll.kernel32
+        STD_OUTPUT_HANDLE = -11
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        mode = ctypes.c_ulong()
+        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+        kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+        return True
+    except (AttributeError, OSError):
+        return False
+
+# Beim Import einmalig aktivieren
+_ANSI_ENABLED = _enable_ansi()
+
+
+def read_key() -> str:
+    """Liest einen einzelnen Tastendruck (blockierend).
+
+    Behandelt Pfeiltasten (2-Byte-Sequenz auf Windows) korrekt.
+
+    Returns:
+        'up', 'down', 'left', 'right', 'enter', 'escape',
+        'backspace', oder das gedrückte Zeichen als String.
+    """
+    byte = msvcrt.getch()
+
+    # Pfeiltasten und andere erweiterte Tasten (0xE0 oder 0x00 Prefix)
+    if byte in (b'\xe0', b'\x00'):
+        next_byte = msvcrt.getch()
+        if next_byte == b'H':
+            return 'up'
+        elif next_byte == b'P':
+            return 'down'
+        elif next_byte == b'K':
+            return 'left'
+        elif next_byte == b'M':
+            return 'right'
+        return 'unknown'
+
+    if byte == b'\r':
+        return 'enter'
+    if byte == b'\x1b':
+        return 'escape'
+    if byte == b'\x08':
+        return 'backspace'
+
+    # Normales Zeichen
+    try:
+        return byte.decode('utf-8')
+    except UnicodeDecodeError:
+        return 'unknown'
+
+
+def interactive_select(options: list[str], title: str = "",
+                       allow_cancel: bool = True) -> int:
+    """Interaktive Menü-Auswahl mit Pfeiltasten.
+
+    Navigation:
+        Hoch/Runter  - Auswahl bewegen
+        Enter/Rechts - Bestätigen
+        Escape/Links - Abbrechen (gibt -1 zurück)
+        0-9          - Direkte Nummern-Eingabe
+
+    Args:
+        options: Liste der Optionen (werden als Text angezeigt)
+        title: Optionaler Titel über dem Menü
+        allow_cancel: Ob Escape/Links erlaubt ist
+
+    Returns:
+        Index der gewählten Option (0-basiert), oder -1 bei Abbruch.
+    """
+    if not options:
+        return -1
+
+    if not _ANSI_ENABLED:
+        # Fallback: Klassische Nummern-Eingabe
+        return _fallback_select(options, title, allow_cancel)
+
+    selected = 0
+    num_options = len(options)
+
+    flush_input_buffer()
+
+    # Titel anzeigen
+    if title:
+        print(title)
+
+    # Hilfe-Zeile
+    cancel_hint = ", Esc=Abbruch" if allow_cancel else ""
+    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_hint})")
+
+    # Menü initial zeichnen
+    _draw_menu(options, selected)
+
+    while True:
+        key = read_key()
+
+        if key == 'up':
+            selected = (selected - 1) % num_options
+        elif key == 'down':
+            selected = (selected + 1) % num_options
+        elif key in ('enter', 'right'):
+            _clear_menu_lines(num_options)
+            print(f"  > {options[selected]}")
+            return selected
+        elif key in ('escape', 'left') and allow_cancel:
+            _clear_menu_lines(num_options)
+            print("  (Abgebrochen)")
+            return -1
+        elif key.isdigit():
+            # Direkte Nummern-Eingabe (1-basiert)
+            num = int(key)
+            if 1 <= num <= num_options:
+                _clear_menu_lines(num_options)
+                print(f"  > {options[num - 1]}")
+                return num - 1
+            elif num == 0 and allow_cancel:
+                _clear_menu_lines(num_options)
+                print("  (Abgebrochen)")
+                return -1
+            continue
+        else:
+            continue
+
+        # Menü neu zeichnen
+        _clear_menu_lines(num_options)
+        _draw_menu(options, selected)
+
+
+def _draw_menu(options: list[str], selected: int) -> None:
+    """Zeichnet das Menü mit Auswahl-Markierung."""
+    for i, opt in enumerate(options):
+        if i == selected:
+            print(f"  \033[7m {i+1}. {opt} \033[0m")  # Invertiert (highlighted)
+        else:
+            print(f"   {i+1}. {opt}")
+
+
+def _clear_menu_lines(num_lines: int) -> None:
+    """Bewegt den Cursor num_lines nach oben und löscht jede Zeile."""
+    for _ in range(num_lines):
+        print(f"\033[A\033[2K", end="", flush=True)
+
+
+def _fallback_select(options: list[str], title: str,
+                     allow_cancel: bool) -> int:
+    """Fallback-Auswahl ohne ANSI (klassische Nummern-Eingabe)."""
+    if title:
+        print(title)
+    for i, opt in enumerate(options):
+        print(f"  [{i+1}] {opt}")
+    if allow_cancel:
+        print("  [0] Abbrechen")
+
+    while True:
+        try:
+            choice = safe_input("> ").strip()
+            if is_cancel(choice):
+                return -1
+            num = int(choice)
+            if 1 <= num <= len(options):
+                return num - 1
+            if num == 0 and allow_cancel:
+                return -1
+            print(f"  -> Ungültig! (1-{len(options)})")
+        except ValueError:
+            print("  -> Bitte eine Nummer eingeben")
 
 
 def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:

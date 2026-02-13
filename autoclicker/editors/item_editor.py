@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -366,14 +366,6 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
     if item.confirm_point:
         print(f"    Bestätigung: ({item.confirm_point.x}, {item.confirm_point.y}) nach {item.confirm_delay}s")
 
-    print("\n  Was ändern?")
-    print("    1. Name")
-    print("    2. Kategorie")
-    print("    3. Priorität")
-    print("    4. Template")
-    print("    5. Bestätigungs-Punkt")
-    print("    0. Fertig")
-
     new_name = item.name
     new_category = item.category
     new_priority = item.priority
@@ -383,19 +375,20 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
     new_confirm_delay = item.confirm_delay
 
     while True:
-        choice = safe_input("  Option: ").strip()
+        edit_options = ["Name", "Kategorie", "Priorität", "Template", "Bestätigungs-Punkt", "Fertig"]
+        choice = interactive_select(edit_options, title="\n  Was ändern?", allow_cancel=False)
 
-        if choice == "0" or choice.lower() == "done":
+        if choice == 5:  # Fertig
             break
-        elif choice == "1":
+        elif choice == 0:  # Name
             name_input = safe_input(f"  Neuer Name (Enter = '{new_name}'): ").strip()
             if name_input:
                 new_name = name_input
                 print(f"  -> Name geändert zu '{new_name}'")
-        elif choice == "2":
+        elif choice == 1:  # Kategorie
             new_category = select_category(state)
             print(f"  -> Kategorie geändert zu '{new_category or '(keine)'}'")
-        elif choice == "3":
+        elif choice == 2:  # Priorität
             try:
                 prio_input = safe_input(f"  Neue Priorität (Enter = {new_priority}): ").strip()
                 if prio_input:
@@ -403,7 +396,7 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
                     print(f"  -> Priorität geändert zu {new_priority}")
             except ValueError:
                 print("  -> Ungültige Eingabe")
-        elif choice == "4":
+        elif choice == 3:  # Template
             if OPENCV_AVAILABLE:
                 print("\n  Neues Template erstellen...")
                 region = select_region()
@@ -425,7 +418,7 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
                             pass
             else:
                 print("  -> OpenCV nicht installiert!")
-        elif choice == "5":
+        elif choice == 4:  # Bestätigungs-Punkt
             print("  Neuer Bestätigungs-Punkt?")
             confirm_input = safe_input("  Punkt-ID (Enter=entfernen): ").strip()
             if confirm_input:
@@ -449,9 +442,6 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
             else:
                 new_confirm = None
                 print("  -> Bestätigung entfernt")
-        else:
-            print("  -> Ungültige Option")
-            continue
 
     return ItemProfile(
         name=new_name,

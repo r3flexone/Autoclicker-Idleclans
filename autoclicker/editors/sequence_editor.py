@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
-from ..utils import safe_input, is_cancel, confirm
+from ..utils import safe_input, is_cancel, confirm, interactive_select
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
@@ -68,47 +68,25 @@ def run_sequence_editor(state: AutoClickerState) -> None:
     # Bestehende Sequenzen laden
     available_sequences = list_available_sequences()
 
-    print("\nWas möchtest du tun?")
-    print("  [0] Neue Sequenz erstellen")
+    # Optionen aufbauen
+    menu_options = ["Neue Sequenz erstellen"]
+    for name, path in available_sequences:
+        seq = load_sequence_file(path)
+        if seq:
+            menu_options.append(str(seq))
 
-    if available_sequences:
-        print("\nBestehende Sequenzen bearbeiten:")
-        for i, (name, path) in enumerate(available_sequences):
-            seq = load_sequence_file(path)
-            if seq:
-                print(f"  [{i+1}] {seq}")
+    choice = interactive_select(menu_options, title="\nWas möchtest du tun?")
 
-    print("\nAuswahl (oder 'cancel'):")
-
-    while True:
-        try:
-            choice = safe_input("> ").strip().lower()
-
-            if is_cancel(choice):
-                print("[CANCEL] Editor beendet.")
-                return
-
-            choice_num = int(choice)
-
-            if choice_num == 0:
-                # Neue Sequenz erstellen
-                edit_sequence(state, None)
-                return
-            elif 1 <= choice_num <= len(available_sequences):
-                # Bestehende Sequenz bearbeiten
-                name, path = available_sequences[choice_num - 1]
-                existing_seq = load_sequence_file(path)
-                if existing_seq:
-                    edit_sequence(state, existing_seq)
-                return
-            else:
-                print("[FEHLER] Ungültige Auswahl! Nochmal versuchen...")
-
-        except ValueError:
-            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
-        except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH] Editor beendet.")
-            return
+    if choice == -1:
+        print("[CANCEL] Editor beendet.")
+        return
+    elif choice == 0:
+        edit_sequence(state, None)
+    elif 1 <= choice < len(menu_options):
+        name, path = available_sequences[choice - 1]
+        existing_seq = load_sequence_file(path)
+        if existing_seq:
+            edit_sequence(state, existing_seq)
 
 
 def run_sequence_loader(state: AutoClickerState) -> None:
@@ -120,41 +98,26 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         print("       Erstelle eine mit CTRL+ALT+E (Sequenz-Editor)")
         return
 
-    print("\n" + "-" * 40)
-    print("SEQUENZ LADEN")
-    print("-" * 40)
-
-    for i, (name, path) in enumerate(sequences):
+    # Optionen aufbauen
+    menu_options = []
+    for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
-            active_marker = " <" if state.active_sequence and state.active_sequence.name == seq.name else ""
-            print(f"  {i+1}. {seq}{active_marker}")
+            active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
+            menu_options.append(f"{seq}{active_marker}")
 
-    print("\nNummer eingeben (Enter = abbrechen):")
+    choice = interactive_select(menu_options, title="\nSEQUENZ LADEN:")
 
-    while True:
-        try:
-            choice = safe_input("> ").strip()
-            if not choice:
-                return
+    if choice == -1:
+        return
 
-            idx = int(choice) - 1
-            if 0 <= idx < len(sequences):
-                name, path = sequences[idx]
-                seq = load_sequence_file(path)
-
-                if seq:
-                    with state.lock:
-                        state.active_sequence = seq
-                    print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
-                    print("         Drücke CTRL+ALT+S zum Starten.\n")
-                return
-
-        except ValueError:
-            print("[FEHLER] Bitte eine Nummer eingeben! Nochmal versuchen...")
-        except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH]")
-            return
+    name, path = sequences[choice]
+    seq = load_sequence_file(path)
+    if seq:
+        with state.lock:
+            state.active_sequence = seq
+        print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
+        print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
