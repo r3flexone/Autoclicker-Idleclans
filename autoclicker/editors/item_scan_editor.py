@@ -64,14 +64,14 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
         print("         Installieren mit: pip install pillow")
         return
 
-    # Bestehende Item-Scans anzeigen
+    # Bestehende Item-Scans einmal laden und cachen
     available_scans = list_available_item_scans()
-
-    # Optionen aufbauen
+    loaded_scans = []
     menu_options = ["Neuen Item-Scan erstellen"]
     for name, path in available_scans:
         config = load_item_scan_file(path)
         if config:
+            loaded_scans.append(config)
             menu_options.append(str(config))
 
     if available_scans:
@@ -85,10 +85,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
     elif choice == 0:
         edit_item_scan(state, None)
     elif 1 <= choice < len(menu_options):
-        name, path = available_scans[choice - 1]
-        existing = load_item_scan_file(path)
-        if existing:
-            edit_item_scan(state, existing)
+        edit_item_scan(state, loaded_scans[choice - 1])
 
 
 def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) -> None:

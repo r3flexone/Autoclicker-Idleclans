@@ -65,14 +65,14 @@ def run_sequence_editor(state: AutoClickerState) -> None:
             print("\n[FEHLER] Erst Punkte aufnehmen (CTRL+ALT+A)!")
             return
 
-    # Bestehende Sequenzen laden
+    # Bestehende Sequenzen einmal laden und cachen
     available_sequences = list_available_sequences()
-
-    # Optionen aufbauen
+    loaded_sequences = []
     menu_options = ["Neue Sequenz erstellen"]
     for name, path in available_sequences:
         seq = load_sequence_file(path)
         if seq:
+            loaded_sequences.append(seq)
             menu_options.append(str(seq))
 
     choice = interactive_select(menu_options, title="\nWas möchtest du tun?")
@@ -83,10 +83,7 @@ def run_sequence_editor(state: AutoClickerState) -> None:
     elif choice == 0:
         edit_sequence(state, None)
     elif 1 <= choice < len(menu_options):
-        name, path = available_sequences[choice - 1]
-        existing_seq = load_sequence_file(path)
-        if existing_seq:
-            edit_sequence(state, existing_seq)
+        edit_sequence(state, loaded_sequences[choice - 1])
 
 
 def run_sequence_loader(state: AutoClickerState) -> None:
@@ -98,26 +95,26 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         print("       Erstelle eine mit CTRL+ALT+E (Sequenz-Editor)")
         return
 
-    # Optionen aufbauen
+    # Sequenzen einmal laden und cachen
+    loaded_sequences = []
     menu_options = []
     for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
+            loaded_sequences.append(seq)
             active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
             menu_options.append(f"{seq}{active_marker}")
 
     choice = interactive_select(menu_options, title="\nSEQUENZ LADEN:")
 
-    if choice == -1:
+    if choice == -1 or choice >= len(loaded_sequences):
         return
 
-    name, path = sequences[choice]
-    seq = load_sequence_file(path)
-    if seq:
-        with state.lock:
-            state.active_sequence = seq
-        print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
-        print("         Drücke CTRL+ALT+S zum Starten.\n")
+    seq = loaded_sequences[choice]
+    with state.lock:
+        state.active_sequence = seq
+    print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
+    print("         Drücke CTRL+ALT+S zum Starten.\n")
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:

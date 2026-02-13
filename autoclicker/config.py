@@ -16,7 +16,6 @@ logger = logging.getLogger("autoclicker")
 # =============================================================================
 CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
-CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 
 # Standard-Konfiguration (wird von config.json überschrieben)
 # Die Reihenfolge hier bestimmt die Reihenfolge in der gespeicherten config.json

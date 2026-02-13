@@ -455,7 +455,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
 
     slot_color = (r, g, b)
 
-    # Slots hinzufuegen
+    # Slots hinzufügen
     inset = state.config.get("slot_inset", CONFIG.get("slot_inset", 10))
     added = 0
     start_num = len(state.global_slots) + 1
@@ -483,7 +483,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
         added += 1
         print(f"    + {slot_name}: {scan_region}")
 
-    print(f"\n  [OK] {added} Slots hinzugefuegt!")
+    print(f"\n  [OK] {added} Slots hinzugefügt!")
 
     # Screenshots speichern
     try:

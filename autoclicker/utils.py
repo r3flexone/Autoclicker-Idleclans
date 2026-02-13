@@ -7,7 +7,6 @@ import ctypes
 import json
 import logging
 import msvcrt
-import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -19,20 +18,6 @@ if TYPE_CHECKING:
 
 # Logger
 logger = logging.getLogger("autoclicker")
-
-
-def set_log_level(level: str) -> None:
-    """Setzt das Log-Level. Optionen: DEBUG, INFO, WARNING, ERROR"""
-    levels = {
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "WARNING": logging.WARNING,
-        "ERROR": logging.ERROR
-    }
-    if level.upper() in levels:
-        for handler in logger.handlers:
-            handler.setLevel(levels[level.upper()])
-        logger.debug(f"Log-Level auf {level.upper()} gesetzt")
 
 
 def sanitize_filename(name: str) -> str:
@@ -88,17 +73,6 @@ def save_json(filepath: str, data: dict) -> bool:
         return False
 
 
-def load_json_file(filepath: Path, default=None):
-    """Lädt JSON-Datei sicher mit Fallback."""
-    try:
-        if filepath.exists():
-            with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        pass
-    return default
-
-
 def is_cancel(value: str) -> bool:
     """Prüft ob die Eingabe ein Abbruch-Befehl ist.
 
@@ -131,14 +105,6 @@ def confirm(message: str, default: bool = False) -> bool:
     if not response:
         return default
     return response in ("j", "ja", "y", "yes")
-
-
-def get_input(prompt: str = "> ", allow_empty: bool = True) -> str:
-    """Liest Benutzereingabe mit Strip."""
-    value = safe_input(prompt).strip()
-    if not allow_empty and not value:
-        return ""
-    return value
 
 
 def clear_line() -> None:

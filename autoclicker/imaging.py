@@ -9,6 +9,7 @@ import os
 from typing import Optional, TYPE_CHECKING
 
 from .config import CONFIG, DEFAULT_MIN_CONFIDENCE
+from .utils import safe_input, interactive_select
 from .winapi import get_cursor_pos
 
 if TYPE_CHECKING:
@@ -50,15 +51,6 @@ COLOR_TOLERANCE = CONFIG["color_tolerance"]
 PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
 PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
 PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
-
-
-def require_pillow(func_name: str) -> bool:
-    """Prüft ob Pillow verfügbar ist und gibt Fehlermeldung aus."""
-    if not PILLOW_AVAILABLE:
-        print(f"[FEHLER] {func_name}: Pillow nicht installiert!")
-        print("         Installieren mit: pip install pillow")
-        return False
-    return True
 
 
 def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
@@ -379,13 +371,13 @@ def select_region() -> Optional[tuple]:
     print("\n  Bewege die Maus zur OBEREN LINKEN Ecke des Bereichs")
     print("  und drücke Enter...")
     try:
-        input()
+        safe_input()
         x1, y1 = get_cursor_pos()
         print(f"  → Obere linke Ecke: ({x1}, {y1})")
 
         print("\n  Bewege die Maus zur UNTEREN RECHTEN Ecke des Bereichs")
         print("  und drücke Enter...")
-        input()
+        safe_input()
         x2, y2 = get_cursor_pos()
         print(f"  → Untere rechte Ecke: ({x2}, {y2})")
 
@@ -418,45 +410,36 @@ def run_color_analyzer() -> None:
         print("         Installieren mit: pip install pillow")
         return
 
-    print("\nWas möchtest du analysieren?")
-    print("  [1] Farbe unter Mauszeiger")
-    print("  [2] Region (Bereich auswählen)")
-    print("  [3] Vollbild")
-    print("\nAuswahl (oder 'cancel'):")
+    menu_options = ["Farbe unter Mauszeiger", "Region (Bereich auswählen)", "Vollbild"]
+    choice = interactive_select(menu_options, title="\nWas möchtest du analysieren?")
 
-    try:
-        choice = input("> ").strip()
+    if choice == -1:
+        return
 
-        if choice.lower() in ("cancel", "abbruch"):
-            return
+    if choice == 0:
+        # Farbe unter Mauszeiger
+        print("\nBewege die Maus zur gewünschten Position und drücke Enter...")
+        safe_input()
+        x, y = get_cursor_pos()
 
-        if choice == "1":
-            # Farbe unter Mauszeiger
-            print("\nBewege die Maus zur gewünschten Position und drücke Enter...")
-            input()
-            x, y = get_cursor_pos()
+        img = take_screenshot((x, y, x+1, y+1))
+        if img:
+            pixel = img.getpixel((0, 0))[:3]
+            color_name = get_color_name(pixel)
+            print(f"\n[FARBE] Position ({x}, {y})")
+            print(f"        RGB: {pixel}")
+            print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
+            print(f"        Name: {color_name}")
 
-            img = take_screenshot((x, y, x+1, y+1))
-            if img:
-                pixel = img.getpixel((0, 0))[:3]
-                color_name = get_color_name(pixel)
-                print(f"\n[FARBE] Position ({x}, {y})")
-                print(f"        RGB: {pixel}")
-                print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
-                print(f"        Name: {color_name}")
+    elif choice == 1:
+        # Region analysieren
+        region = select_region()
+        if region:
+            analyze_and_print_colors(region)
 
-        elif choice == "2":
-            # Region analysieren
-            region = select_region()
-            if region:
-                analyze_and_print_colors(region)
-
-        elif choice == "3":
-            # Vollbild analysieren
-            analyze_and_print_colors(None)
-
-    except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH]")
+    elif choice == 2:
+        # Vollbild analysieren
+        analyze_and_print_colors(None)
 
 
 def analyze_and_print_colors(region: tuple = None) -> None:

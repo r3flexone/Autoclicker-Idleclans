@@ -96,8 +96,8 @@ def handle_reset(state: AutoClickerState) -> None:
     print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
 
     try:
-        confirm = safe_input("> ").strip().upper()
-        if confirm != "JA":
+        confirm_text = safe_input("> ").strip().upper()
+        if confirm_text != "JA":
             print("[ABBRUCH] Nichts wurde gelöscht.")
             return
 
@@ -330,26 +330,26 @@ def handle_switch(state: AutoClickerState) -> None:
         print("\n[INFO] Keine Sequenzen vorhanden! Erstelle eine mit CTRL+ALT+E")
         return
 
-    # Optionen aufbauen
+    # Sequenzen einmal laden und cachen
+    loaded_sequences = []
     menu_options = []
     for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
+            loaded_sequences.append(seq)
             active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
             menu_options.append(f"{seq.name}{active_marker}")
 
     choice = interactive_select(menu_options, title="\nQUICK-SWITCH: Sequenz wählen")
 
-    if choice == -1:
+    if choice == -1 or choice >= len(loaded_sequences):
         return
 
-    name, path = sequences[choice]
-    seq = load_sequence_file(path)
-    if seq:
-        with state.lock:
-            state.active_sequence = seq
-        print(f"\n[OK] Gewechselt zu: {seq.name}")
-        print("     Starten mit CTRL+ALT+S")
+    seq = loaded_sequences[choice]
+    with state.lock:
+        state.active_sequence = seq
+    print(f"\n[OK] Gewechselt zu: {seq.name}")
+    print("     Starten mit CTRL+ALT+S")
 
 
 def handle_schedule(state: AutoClickerState) -> None:

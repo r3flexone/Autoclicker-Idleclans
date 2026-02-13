@@ -64,19 +64,19 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         print("\n" + "-" * 60)
         print("Befehle:")
         print("  learn <Nr>       - Item aus Slot lernen (automatisch!)")
-        print("  learn <Nr>-<Nr>  - Bulk: Items fuer Slot-Bereich (mit Template)")
+        print("  learn <Nr>-<Nr>  - Bulk: Items für Slot-Bereich (mit Template)")
         print("  learn <Nr>-<Nr> simple - Bulk: ohne Template")
-        print("  add              - Neues Item manuell hinzufuegen")
+        print("  add              - Neues Item manuell hinzufügen")
         print("  edit <Nr>        - Item bearbeiten")
         print("  rename <Nr>      - Item umbenennen (inkl. Template)")
-        print("  del <Nr>         - Item loeschen")
-        print("  del all          - Alle Items loeschen")
+        print("  del <Nr>         - Item löschen")
+        print("  del all          - Alle Items löschen")
         print("  show             - Alle Items anzeigen")
-        print("  template <Nr>    - Template fuer Item setzen/entfernen")
-        print("  templates        - Verfuegbare Templates anzeigen")
+        print("  template <Nr>    - Template für Item setzen/entfernen")
+        print("  templates        - Verfügbare Templates anzeigen")
         print("  save <Name>      - Als Preset speichern")
         print("  load <Name>      - Preset laden")
-        print("  preset del <N>   - Preset loeschen")
+        print("  preset del <N>   - Preset löschen")
         print("  help | done | cancel")
         print("-" * 60)
 
@@ -233,7 +233,7 @@ def select_category(state: AutoClickerState, show_explanation: bool = True) -> O
         print("  Vorhandene Kategorien:")
         for i, cat in enumerate(existing):
             print(f"    {i+1}. {cat}")
-        print("  (Nummer waehlen oder neuen Namen eingeben)")
+        print("  (Nummer wählen oder neuen Namen eingeben)")
 
     user_input = safe_input("  Kategorie (Enter = keine): ").strip()
 
@@ -460,12 +460,12 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
 # =============================================================================
 
 def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> list[tuple]:
-    """Sammelt Marker-Farben fuer ein Item-Profil durch Region-Scan."""
+    """Sammelt Marker-Farben für ein Item-Profil durch Region-Scan."""
 
-    # Wenn keine Region uebergeben, manuell auswaehlen
+    # Wenn keine Region übergeben, manuell auswählen
     if not region:
-        print("\n  Waehle einen Bereich auf dem Item aus:")
-        print("  (Die 5 haeufigsten Farben werden automatisch genommen)")
+        print("\n  Wähle einen Bereich auf dem Item aus:")
+        print("  (Die 5 häufigsten Farben werden automatisch genommen)")
         region = select_region()
         if not region:
             return []
@@ -477,7 +477,7 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
         print("  -> Fehler beim Screenshot!")
         return []
 
-    # Farben zaehlen (mit Rundung fuer Gruppierung)
+    # Farben zählen (mit Rundung für Gruppierung)
     color_counts = {}
     pixels = img.load()
     width, height = img.size
@@ -485,11 +485,11 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
     for x in range(width):
         for y in range(height):
             pixel = pixels[x, y][:3]
-            # Runde auf 5er-Schritte fuer Gruppierung aehnlicher Farben
+            # Runde auf 5er-Schritte für Gruppierung ähnlicher Farben
             rounded = (pixel[0] // 5 * 5, pixel[1] // 5 * 5, pixel[2] // 5 * 5)
             color_counts[rounded] = color_counts.get(rounded, 0) + 1
 
-    # Slot-Hintergrundfarbe ausschliessen (falls vorhanden)
+    # Slot-Hintergrundfarbe ausschließen (falls vorhanden)
     if exclude_color:
         exclude_rounded = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
 
@@ -505,9 +505,9 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
 
         if total_excluded > 0:
             color_name = get_color_name(exclude_color)
-            print(f"  -> Slot-Hintergrund ~RGB{exclude_color} ({color_name}) ausgeschlossen ({total_excluded} Pixel, {len(colors_to_remove)} Farbtoene)")
+            print(f"  -> Slot-Hintergrund ~RGB{exclude_color} ({color_name}) ausgeschlossen ({total_excluded} Pixel, {len(colors_to_remove)} Farbtöne)")
 
-    # Top N haeufigste Farben (aus Config)
+    # Top N häufigste Farben (aus Config)
     marker_count = CONFIG.get("marker_count", 5)
     sorted_colors = sorted(color_counts.items(), key=lambda x: x[1], reverse=True)[:marker_count]
     colors = [color for color, count in sorted_colors]
@@ -520,77 +520,12 @@ def collect_marker_colors(region: tuple = None, exclude_color: tuple = None) -> 
     return colors
 
 
-def collect_marker_colors_free() -> list[tuple]:
-    """Sammelt Marker-Farben aus einem frei gewaehlten Bereich mit optionalem Hintergrund-Ausschluss."""
-    print("\n  Waehle einen Bereich auf dem Item aus:")
-    print("  (Die 5 haeufigsten Farben werden automatisch genommen)")
-    region = select_region()
-    if not region:
-        return []
-
-    # Optional Hintergrundfarbe ausschliessen
-    exclude_color = None
-    bg_input = safe_input("  Hintergrundfarbe entfernen? (Enter = Nein, 'j' = Farbe aufnehmen): ").strip().lower()
-    if bg_input == "j":
-        print("  -> Bewege die Maus auf den Hintergrund und druecke ENTER...")
-        safe_input()
-        try:
-            x, y = get_cursor_pos()
-            exclude_color = get_pixel_color(x, y)
-            if exclude_color:
-                exclude_color = (exclude_color[0] // 5 * 5, exclude_color[1] // 5 * 5, exclude_color[2] // 5 * 5)
-                color_name = get_color_name(exclude_color)
-                print(f"  -> Hintergrund: RGB{exclude_color} ({color_name}) wird ausgeschlossen")
-        except (OSError, TypeError, AttributeError):
-            print("  -> Konnte Hintergrundfarbe nicht aufnehmen, fahre ohne fort")
-
-    return collect_marker_colors(region, exclude_color)
-
-
-def remove_common_colors(items: list) -> list:
-    """Entfernt Farben die bei ALLEN Items vorkommen (= Hintergrund)."""
-    if len(items) < 2:
-        return items
-
-    # Finde Farben die in ALLEN Items vorkommen
-    common_colors = set(items[0].marker_colors)
-    for item in items[1:]:
-        common_colors &= set(item.marker_colors)
-
-    if not common_colors:
-        return items
-
-    print(f"\n  {len(common_colors)} gemeinsame Farbe(n) gefunden (bei allen Items gleich):")
-
-    colors_to_remove = []
-    for color in common_colors:
-        color_name = get_color_name(color)
-        answer = safe_input(f"    RGB{color} ({color_name}) entfernen? (j/n): ").strip().lower()
-        if answer == "j":
-            colors_to_remove.append(color)
-            print(f"      -> wird entfernt")
-        else:
-            print(f"      -> behalten")
-
-    if not colors_to_remove:
-        print("  Keine Farben entfernt.")
-        return items
-
-    for item in items:
-        item.marker_colors = [c for c in item.marker_colors if c not in colors_to_remove]
-        if not item.marker_colors:
-            print(f"  [WARNUNG] {item.name} hat keine eindeutigen Farben mehr!")
-
-    print(f"  {len(colors_to_remove)} Farbe(n) entfernt")
-    return items
-
-
 # =============================================================================
 # LEARN-BEFEHL (Bulk und Single)
 # =============================================================================
 
 def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
-    """Verarbeitet den learn-Befehl (Bulk und Single). Gibt True zurueck wenn verarbeitet."""
+    """Verarbeitet den learn-Befehl (Bulk und Single). Gibt True zurück wenn verarbeitet."""
     with state.lock:
         slot_list = list(state.global_slots.values())
 
@@ -611,7 +546,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             end_slot = int(range_parts[1])
 
             if start_slot < 1 or end_slot > len(slot_list) or start_slot > end_slot:
-                print(f"  -> Ungueltiger Bereich! Verfuegbar: 1-{len(slot_list)}")
+                print(f"  -> Ungültiger Bereich! Verfügbar: 1-{len(slot_list)}")
                 return True
 
             use_template = mode_part.lower() in ("template", "t")
@@ -619,21 +554,21 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
             print(f"\n  === BULK LEARN: Slots {start_slot}-{end_slot} ({mode_str}) ===")
 
-            # Kategorie einmal fuer alle abfragen
-            print("  Kategorie fuer alle Items (Enter = keine):")
+            # Kategorie einmal für alle abfragen
+            print("  Kategorie für alle Items (Enter = keine):")
             category = select_category(state, show_explanation=False)
 
-            # Bestaetigungs-Punkt einmal fuer alle abfragen
+            # Bestätigungs-Punkt einmal für alle abfragen
             confirm_point = None
             confirm_delay = state.config.get("default_confirm_delay", CONFIG.get("default_confirm_delay", 0.5))
-            confirm_input = safe_input("  Bestaetigungs-Punkt-ID fuer alle (Enter = keine): ").strip()
+            confirm_input = safe_input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
             if confirm_input:
                 try:
                     point_id = int(confirm_input)
                     found_point = get_point_by_id(state, point_id)
                     if found_point:
                         confirm_point = ClickPoint(found_point.x, found_point.y)
-                        delay_input = safe_input(f"  Wartezeit vor Bestaetigung (Enter = {confirm_delay}s): ").strip()
+                        delay_input = safe_input(f"  Wartezeit vor Bestätigung (Enter = {confirm_delay}s): ").strip()
                         if delay_input:
                             try:
                                 confirm_delay = float(delay_input)
@@ -667,7 +602,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                     min_confidence=DEFAULT_MIN_CONFIDENCE
                 )
 
-                # Template speichern wenn gewuenscht
+                # Template speichern wenn gewünscht
                 if use_template and OPENCV_AVAILABLE:
                     template_img = take_screenshot(slot.scan_region)
                     if template_img:
@@ -704,7 +639,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             pass
 
     if slot_num is None:
-        print(f"\n  Verfuegbare Slots (1-{len(slot_list)}):")
+        print(f"\n  Verfügbare Slots (1-{len(slot_list)}):")
         for i, slot in enumerate(slot_list):
             print(f"    {i+1}. {slot.name}")
         try:
@@ -713,11 +648,11 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                 return True
             slot_num = int(slot_input)
         except ValueError:
-            print("  -> Ungueltige Eingabe!")
+            print("  -> Ungültige Eingabe!")
             return True
 
     if slot_num < 1 or slot_num > len(slot_list):
-        print(f"  -> Ungueltiger Slot! Verfuegbar: 1-{len(slot_list)}")
+        print(f"  -> Ungültiger Slot! Verfügbar: 1-{len(slot_list)}")
         return True
 
     selected_slot = slot_list[slot_num - 1]
@@ -731,19 +666,19 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     if not item_name:
         item_name = f"Item {item_num}"
 
-    # Pruefen ob Name schon existiert
+    # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
             print(f"  -> Item '{item_name}' existiert bereits!")
             return True
 
-    # Kategorie zuerst (fuer Prioritaets-Verschiebung)
+    # Kategorie zuerst (für Prioritäts-Verschiebung)
     category = select_category(state)
 
-    # Prioritaet
+    # Priorität
     priority = 1
     try:
-        prio_input = safe_input(f"  Prioritaet (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
+        prio_input = safe_input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
         if is_cancel(prio_input):
             print("  -> Abgebrochen")
             return True
@@ -754,7 +689,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                     shift_category_priorities(state, category)
                     priority = 1
                 else:
-                    print("  -> Prioritaet 0 nur mit Kategorie moeglich!")
+                    print("  -> Priorität 0 nur mit Kategorie möglich!")
                     priority = 1
             else:
                 priority = max(1, prio_val)
@@ -769,12 +704,12 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
         print("  -> Keine Farben gefunden!")
         return True
 
-    # Bestaetigungs-Klick abfragen
+    # Bestätigungs-Klick abfragen
     confirm_point = None
     confirm_delay = state.config.get("default_confirm_delay", CONFIG.get("default_confirm_delay", 0.5))
-    print("\n  Soll nach dem Item-Klick noch ein Bestaetigungs-Klick erfolgen?")
+    print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
     print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
-    confirm_input = safe_input("  Punkt-ID fuer Bestaetigung (Enter = Nein): ").strip()
+    confirm_input = safe_input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
     if is_cancel(confirm_input):
         print("  -> Abgebrochen")
         return True
@@ -784,7 +719,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             found_point = get_point_by_id(state, point_id)
             if found_point:
                 confirm_point = ClickPoint(found_point.x, found_point.y)
-                delay_input = safe_input(f"  Wartezeit vor Bestaetigung in Sek (Enter = {confirm_delay}): ").strip()
+                delay_input = safe_input(f"  Wartezeit vor Bestätigung in Sek (Enter = {confirm_delay}): ").strip()
                 if delay_input:
                     try:
                         confirm_delay = float(delay_input)
@@ -793,7 +728,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             else:
                 print(f"  -> Punkt #{point_id} existiert nicht")
         except ValueError:
-            print("  -> Keine gueltige Zahl, keine Bestaetigung")
+            print("  -> Keine gültige Zahl, keine Bestätigung")
 
     # Item erstellen und speichern
     item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
@@ -812,7 +747,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                 item.template = template_file
 
                 # Konfidenz abfragen
-                conf_input = safe_input(f"  Min. Konfidenz fuer Template (Enter={item.min_confidence:.0%}): ").strip()
+                conf_input = safe_input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
                 if conf_input:
                     try:
                         conf = float(conf_input.replace("%", "")) / 100
@@ -857,7 +792,7 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
                     return
 
                 if new_name == old_name:
-                    print("  -> Name ist identisch, nichts geaendert")
+                    print("  -> Name ist identisch, nichts geändert")
                     return
 
                 if new_name in state.global_items:
@@ -898,7 +833,7 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
 
                 print(f"  + Item umbenannt: '{old_name}' -> '{new_name}' (gespeichert)")
             else:
-                print(f"  -> Ungueltiges Item! Verfuegbar: 1-{len(item_names)}")
+                print(f"  -> Ungültiges Item! Verfügbar: 1-{len(item_names)}")
     except ValueError:
         print("  -> Format: rename <Nr>")
 
@@ -908,7 +843,7 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
 # =============================================================================
 
 def handle_templates_command() -> None:
-    """Zeigt verfuegbare Templates an."""
+    """Zeigt verfügbare Templates an."""
     if not Path(TEMPLATES_DIR).exists():
         print("  -> Keine Templates vorhanden")
         return
@@ -917,7 +852,7 @@ def handle_templates_command() -> None:
         print("  -> Keine Templates vorhanden")
         print(f"    (Ordner: {TEMPLATES_DIR})")
     else:
-        print(f"\n  Verfuegbare Templates ({len(templates)}):")
+        print(f"\n  Verfügbare Templates ({len(templates)}):")
         for t in sorted(templates):
             print(f"    - {t.name}")
 
@@ -932,10 +867,10 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                 name = item_names[item_num - 1]
                 item = state.global_items[name]
 
-                # Verfuegbare Templates anzeigen
+                # Verfügbare Templates anzeigen
                 templates = list(Path(TEMPLATES_DIR).glob("*.png")) if Path(TEMPLATES_DIR).exists() else []
                 if templates:
-                    print(f"\n  Verfuegbare Templates:")
+                    print(f"\n  Verfügbare Templates:")
                     for i, t in enumerate(sorted(templates)):
                         print(f"    {i+1}. {t.name}")
 
@@ -946,7 +881,7 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
 
                 print("\n  Optionen:")
                 print("    <Dateiname.png> - Template setzen")
-                print("    <Nr>            - Template aus Liste waehlen")
+                print("    <Nr>            - Template aus Liste wählen")
                 print("    capture         - Screenshot als Template speichern")
                 print("    remove          - Template entfernen")
                 print("    Enter           - Abbrechen")
@@ -965,7 +900,7 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                         slot_list = list(state.global_slots.values())
                     if slot_list:
                         print(f"\n  Screenshot von:")
-                        print("    0. Freie Region waehlen")
+                        print("    0. Freie Region wählen")
                         for i, slot in enumerate(slot_list):
                             print(f"    {i+1}. {slot.name}")
                         try:
@@ -977,7 +912,7 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                                 if 0 <= slot_idx < len(slot_list):
                                     region = slot_list[slot_idx].scan_region
                                 else:
-                                    print("  -> Ungueltiger Slot!")
+                                    print("  -> Ungültiger Slot!")
                                     return
                         except ValueError:
                             region = select_region()
@@ -1013,7 +948,7 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                         if 1 <= template_num <= len(templates):
                             item.template = sorted(templates)[template_num - 1].name
                         else:
-                            print("  -> Ungueltige Nummer!")
+                            print("  -> Ungültige Nummer!")
                             return
                     except ValueError:
                         if not template_input.endswith(".png"):
@@ -1032,6 +967,6 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                     save_global_items(state)
                     print(f"  + Template gesetzt: {item.template} (>={item.min_confidence:.0%})")
             else:
-                print(f"  -> Ungueltiges Item!")
+                print(f"  -> Ungültiges Item!")
     except ValueError:
         print("  -> Format: template <Nr>")
