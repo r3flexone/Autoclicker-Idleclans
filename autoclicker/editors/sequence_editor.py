@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
-from ..utils import safe_input
+from ..utils import safe_input, is_cancel, confirm
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
@@ -15,6 +15,43 @@ from ..persistence import (
 )
 from ..imaging import PILLOW_AVAILABLE, take_screenshot, get_pixel_color
 
+
+
+def apply_else_to_step(step: SequenceStep, else_parts: list, state: AutoClickerState) -> None:
+    """Wendet eine geparste ELSE-Bedingung auf einen SequenceStep an.
+
+    Vermeidet die 3-fache Duplizierung des Else-Anwendungscodes.
+    """
+    if not else_parts:
+        return
+    else_result = parse_else_condition(else_parts, state)
+    step.else_action = else_result.get("else_action")
+    step.else_x = else_result.get("else_x", 0)
+    step.else_y = else_result.get("else_y", 0)
+    step.else_delay = else_result.get("else_delay", 0)
+    step.else_key = else_result.get("else_key")
+    step.else_name = else_result.get("else_name", "")
+
+
+def capture_pixel_color() -> tuple:
+    """Erfasst eine Pixelfarbe an der aktuellen Mausposition.
+
+    Zeigt Anweisung an, wartet auf Enter, liest Farbe.
+
+    Returns:
+        (x, y, color) oder (None, None, None) wenn fehlgeschlagen.
+    """
+    if not PILLOW_AVAILABLE:
+        print("  -> Pillow nicht installiert!")
+        return None, None, None
+    print("  Bewege Maus zum Pixel, dann Enter...")
+    safe_input()
+    x, y = get_cursor_pos()
+    color = get_pixel_color(x, y)
+    if not color:
+        print("  -> Farbe konnte nicht gelesen werden!")
+        return None, None, None
+    return x, y, color
 
 
 def run_sequence_editor(state: AutoClickerState) -> None:
@@ -47,7 +84,7 @@ def run_sequence_editor(state: AutoClickerState) -> None:
         try:
             choice = safe_input("> ").strip().lower()
 
-            if choice in ("cancel", "abbruch"):
+            if is_cancel(choice):
                 print("[CANCEL] Editor beendet.")
                 return
 
@@ -243,16 +280,19 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
         for i, lp in enumerate(loop_phases):
             print(f"  {i+1}. {lp}")
 
-    print("\n" + "-" * 60)
-    print("Befehle:")
-    print("  add            - Neue Loop-Phase hinzufügen")
-    print("  edit <Nr>      - Loop-Phase bearbeiten (z.B. 'edit 1')")
-    print("  del <Nr>       - Loop-Phase löschen")
-    print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
-    print("  del all        - ALLE Loop-Phasen löschen")
-    print("  show           - Alle Loop-Phasen anzeigen")
-    print("  done | cancel")
-    print("-" * 60)
+    def _print_loops_help():
+        print("\n" + "-" * 60)
+        print("Befehle:")
+        print("  add            - Neue Loop-Phase hinzufügen")
+        print("  edit <Nr>      - Loop-Phase bearbeiten (z.B. 'edit 1')")
+        print("  del <Nr>       - Loop-Phase löschen")
+        print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
+        print("  del all        - ALLE Loop-Phasen löschen")
+        print("  show           - Alle Loop-Phasen anzeigen")
+        print("  help | done | cancel")
+        print("-" * 60)
+
+    _print_loops_help()
 
     while True:
         try:
@@ -261,9 +301,12 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
 
             if user_input == "done":
                 return loop_phases
-            elif user_input == "cancel":
+            elif is_cancel(user_input):
                 return None  # Abbruch signalisieren
             elif user_input == "":
+                continue
+            elif user_input == "help":
+                _print_loops_help()
                 continue
             elif user_input == "show":
                 if loop_phases:
@@ -326,8 +369,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                 if not loop_phases:
                     print("  -> Keine Loop-Phasen vorhanden!")
                     continue
-                confirm = safe_input(f"  {len(loop_phases)} Loop-Phase(n) wirklich löschen? (j/n): ").strip().lower()
-                if confirm == "j":
+                if confirm(f"  {len(loop_phases)} Loop-Phase(n) wirklich löschen?"):
                     count = len(loop_phases)
                     loop_phases.clear()
                     print(f"  + {count} Loop-Phase(n) gelöscht!")
@@ -344,8 +386,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                         print(f"  -> Ungültiger Bereich! Verfügbar: 1-{len(loop_phases)}")
                         continue
                     count = end - start + 1
-                    confirm = safe_input(f"  {count} Loop-Phase(n) ({start}-{end}) wirklich löschen? (j/n): ").strip().lower()
-                    if confirm == "j":
+                    if confirm(f"  {count} Loop-Phase(n) ({start}-{end}) wirklich löschen?"):
                         del loop_phases[start-1:end]
                         print(f"  + {count} Loop-Phase(n) gelöscht!")
                     else:
@@ -435,18 +476,8 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     return {}
 
 
-def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
-    """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
-
-    Returns:
-        Liste der Schritte bei 'fertig', None bei 'cancel'.
-    """
-
-    if steps:
-        print(f"\nAktuelle {phase_name}-Schritte ({len(steps)}):")
-        for i, step in enumerate(steps):
-            print(f"  {i+1}. {step}")
-
+def _print_phase_help() -> None:
+    """Zeigt die Hilfe für den Phase-Editor an."""
     print("\n" + "-" * 60)
     print("Befehle (Logik: erst warten, DANN klicken):")
     print("  <Nr> <Zeit>       - Warte Xs, dann klicke (z.B. '1 30')")
@@ -477,8 +508,23 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     print("  del <Nr>-<Nr>     - Bereich löschen (z.B. del 1-5)")
     print("  del all           - ALLE Schritte löschen")
     print("  ins <Nr>          - Nächsten Schritt an Position einfügen")
-    print("  show | done | cancel")
+    print("  help | show | done | cancel")
     print("-" * 60)
+
+
+def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: str) -> Optional[list[SequenceStep]]:
+    """Bearbeitet eine Phase (Start oder Loop) der Sequenz.
+
+    Returns:
+        Liste der Schritte bei 'fertig', None bei 'cancel'.
+    """
+
+    if steps:
+        print(f"\nAktuelle {phase_name}-Schritte ({len(steps)}):")
+        for i, step in enumerate(steps):
+            print(f"  {i+1}. {step}")
+
+    _print_phase_help()
 
     insert_position = None  # None = am Ende anfügen, Zahl = an Position einfügen
 
@@ -504,10 +550,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
 
             if user_input.lower() == "done":
                 return steps
-            elif user_input.lower() == "cancel":
+            elif is_cancel(user_input):
                 print("[CANCEL] Phase abgebrochen.")
                 return None
             elif user_input.lower() == "":
+                continue
+            elif user_input.lower() == "help":
+                _print_phase_help()
                 continue
             elif user_input.lower() == "show":
                 if steps:
@@ -600,7 +649,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     point_name = parts[1].strip()
                 else:
                     point_name = safe_input("  Punkt-Name: ").strip()
-                    if not point_name or point_name.lower() in ("cancel", "abbruch"):
+                    if not point_name or is_cancel(point_name):
                         print("  -> Abgebrochen")
                         continue
 
@@ -652,16 +701,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     item_scan_mode=mode
                 )
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
-
+                apply_else_to_step(step, else_parts, state)
                 add_step(step)
                 continue
 
@@ -723,41 +763,17 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 arg = main_parts[0].lower()
                 step = SequenceStep(x=0, y=0, delay_before=0, name="Wait", wait_only=True)
 
-                if arg == "pixel":
-                    # wait pixel - Farbe abfragen
-                    if PILLOW_AVAILABLE:
-                        print("  Bewege Maus zum Pixel, dann Enter...")
-                        safe_input()
-                        x, y = get_cursor_pos()
-                        color = get_pixel_color(x, y)
-                        if color:
-                            step.wait_pixel = (x, y)
-                            step.wait_color = color
-                            step.name = f"Wait:Pixel"
-                        else:
-                            print("  -> Farbe konnte nicht gelesen werden!")
-                            continue
-                    else:
-                        print("  -> Pillow nicht installiert!")
+                if arg in ("pixel", "gone"):
+                    px, py, color = capture_pixel_color()
+                    if color is None:
                         continue
-                elif arg == "gone":
-                    # wait gone - Farbe weg
-                    if PILLOW_AVAILABLE:
-                        print("  Bewege Maus zum Pixel, dann Enter...")
-                        safe_input()
-                        x, y = get_cursor_pos()
-                        color = get_pixel_color(x, y)
-                        if color:
-                            step.wait_pixel = (x, y)
-                            step.wait_color = color
-                            step.wait_until_gone = True
-                            step.name = f"Wait:Gone"
-                        else:
-                            print("  -> Farbe konnte nicht gelesen werden!")
-                            continue
+                    step.wait_pixel = (px, py)
+                    step.wait_color = color
+                    if arg == "gone":
+                        step.wait_until_gone = True
+                        step.name = "Wait:Gone"
                     else:
-                        print("  -> Pillow nicht installiert!")
-                        continue
+                        step.name = "Wait:Pixel"
                 else:
                     # wait <Zeit> oder wait <Min>-<Max>
                     if "-" in arg:
@@ -777,16 +793,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                             print("  -> Format: wait <Zeit>")
                             continue
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
-
+                apply_else_to_step(step, else_parts, state)
                 add_step(step)
                 continue
 
@@ -833,26 +840,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 if len(main_parts) > 1:
                     arg = main_parts[1].lower()
 
-                    if arg == "pixel":
-                        # <Nr> pixel
-                        if PILLOW_AVAILABLE:
-                            print("  Bewege Maus zum Pixel, dann Enter...")
-                            safe_input()
-                            px, py = get_cursor_pos()
-                            color = get_pixel_color(px, py)
-                            if color:
-                                wait_pixel = (px, py)
-                                wait_color = color
-                    elif arg == "gone":
-                        # <Nr> gone
-                        if PILLOW_AVAILABLE:
-                            print("  Bewege Maus zum Pixel, dann Enter...")
-                            safe_input()
-                            px, py = get_cursor_pos()
-                            color = get_pixel_color(px, py)
-                            if color:
-                                wait_pixel = (px, py)
-                                wait_color = color
+                    if arg in ("pixel", "gone"):
+                        # <Nr> pixel / <Nr> gone
+                        px, py, color = capture_pixel_color()
+                        if color:
+                            wait_pixel = (px, py)
+                            wait_color = color
+                            if arg == "gone":
                                 wait_until_gone = True
                     elif "-" in arg:
                         # <Nr> <Min>-<Max>
@@ -872,23 +866,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         # Optional: <Nr> <Zeit> pixel/gone
                         if len(main_parts) > 2:
                             opt = main_parts[2].lower()
-                            if opt == "pixel" and PILLOW_AVAILABLE:
-                                print("  Bewege Maus zum Pixel, dann Enter...")
-                                safe_input()
-                                px, py = get_cursor_pos()
-                                color = get_pixel_color(px, py)
+                            if opt in ("pixel", "gone"):
+                                px, py, color = capture_pixel_color()
                                 if color:
                                     wait_pixel = (px, py)
                                     wait_color = color
-                            elif opt == "gone" and PILLOW_AVAILABLE:
-                                print("  Bewege Maus zum Pixel, dann Enter...")
-                                safe_input()
-                                px, py = get_cursor_pos()
-                                color = get_pixel_color(px, py)
-                                if color:
-                                    wait_pixel = (px, py)
-                                    wait_color = color
-                                    wait_until_gone = True
+                                    if opt == "gone":
+                                        wait_until_gone = True
 
                 step = SequenceStep(
                     x=point.x, y=point.y, delay_before=delay,
@@ -898,16 +882,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     delay_max=delay_max
                 )
 
-                # Else-Aktion parsen
-                if else_parts:
-                    else_result = parse_else_condition(else_parts, state)
-                    step.else_action = else_result.get("else_action")
-                    step.else_x = else_result.get("else_x", 0)
-                    step.else_y = else_result.get("else_y", 0)
-                    step.else_delay = else_result.get("else_delay", 0)
-                    step.else_key = else_result.get("else_key")
-                    step.else_name = else_result.get("else_name", "")
-
+                apply_else_to_step(step, else_parts, state)
                 add_step(step)
                 continue
 

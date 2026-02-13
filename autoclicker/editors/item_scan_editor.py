@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -50,7 +50,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
             run_global_item_editor(state)
         elif choice == "3":
             run_item_scan_editor(state)
-        elif choice == "0" or choice.lower() in ("cancel", "abbruch"):
+        elif choice == "0" or is_cancel(choice):
             return
         else:
             print("[FEHLER] Ungültige Auswahl")
@@ -89,7 +89,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
         try:
             choice = safe_input("> ").strip().lower()
 
-            if choice in ("cancel", "abbruch"):
+            if is_cancel(choice):
                 print("[CANCEL] Editor beendet.")
                 return
 
@@ -99,8 +99,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
                     del_num = int(choice[4:])
                     if 1 <= del_num <= len(available_scans):
                         name, path = available_scans[del_num - 1]
-                        confirm = safe_input(f"Item-Scan '{name}' wirklich löschen? (j/n): ").strip().lower()
-                        if confirm == "j":
+                        if confirm(f"Item-Scan '{name}' wirklich löschen?"):
                             Path(path).unlink()
                             with state.lock:
                                 if name in state.item_scans:
@@ -156,7 +155,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     while True:
         try:
             slot_choice = safe_input("\nSlot-Preset wählen (Enter=0, 'cancel'): ").strip()
-            if slot_choice.lower() in ("cancel", "abbruch"):
+            if is_cancel(slot_choice):
                 print("  -> Abgebrochen")
                 return
             if not slot_choice or slot_choice == "0":
@@ -185,7 +184,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     while True:
         try:
             item_choice = safe_input("\nItem-Preset wählen (Enter=0, 'cancel'): ").strip()
-            if item_choice.lower() in ("cancel", "abbruch"):
+            if is_cancel(item_choice):
                 print("  -> Abgebrochen")
                 return
             if not item_choice or item_choice == "0":
@@ -248,7 +247,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             inp = safe_input("[Slots] > ").strip().lower()
             if inp == "done":
                 break
-            elif inp == "cancel":
+            elif is_cancel(inp):
                 return
             elif inp == "all":
                 selected_slot_names = list(slot_list)
@@ -340,7 +339,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
             if inp_lower == "done":
                 break
-            elif inp_lower == "cancel":
+            elif is_cancel(inp_lower):
                 return
             elif inp_lower == "all":
                 selected_item_names = list(item_list)
@@ -516,7 +515,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
     if not selected_item_names:
         print("\n[INFO] Keine Items ausgewählt.")
-        if safe_input("Trotzdem speichern? (j/n): ").strip().lower() != "j":
+        if not confirm("Trotzdem speichern?"):
             print("[ABBRUCH] Scan nicht gespeichert.")
             return
 

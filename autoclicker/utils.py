@@ -97,6 +97,14 @@ def load_json_file(filepath: Path, default=None):
     return default
 
 
+def is_cancel(value: str) -> bool:
+    """Prüft ob die Eingabe ein Abbruch-Befehl ist.
+
+    Akzeptiert: cancel, abbruch, q, quit (case-insensitive).
+    """
+    return value.strip().lower() in ("cancel", "abbruch", "q", "quit")
+
+
 def flush_input_buffer() -> None:
     """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke)."""
     while msvcrt.kbhit():

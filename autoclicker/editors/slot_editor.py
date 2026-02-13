@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -51,19 +51,22 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         for name, path, count in presets:
             print(f"  - {name} ({count} Slots)")
 
-    print("\n" + "-" * 60)
-    print("Befehle:")
-    print("  auto           - AUTOMATISCHE Slot-Erkennung (empfohlen)")
-    print("  add            - Neuen Slot hinzufügen")
-    print("  edit <Nr>      - Slot bearbeiten")
-    print("  del <Nr>       - Slot löschen")
-    print("  del all        - ALLE Slots löschen")
-    print("  show           - Alle Slots anzeigen")
-    print("  save <Name>    - Als Preset speichern")
-    print("  load <Name>    - Preset laden")
-    print("  preset del <N> - Preset löschen")
-    print("  done | cancel")
-    print("-" * 60)
+    def _print_slot_help():
+        print("\n" + "-" * 60)
+        print("Befehle:")
+        print("  auto           - AUTOMATISCHE Slot-Erkennung (empfohlen)")
+        print("  add            - Neuen Slot hinzufügen")
+        print("  edit <Nr>      - Slot bearbeiten")
+        print("  del <Nr>       - Slot löschen")
+        print("  del all        - ALLE Slots löschen")
+        print("  show           - Alle Slots anzeigen")
+        print("  save <Name>    - Als Preset speichern")
+        print("  load <Name>    - Preset laden")
+        print("  preset del <N> - Preset löschen")
+        print("  help | done | cancel")
+        print("-" * 60)
+
+    _print_slot_help()
 
     while True:
         try:
@@ -76,10 +79,13 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             if cmd == "done":
                 print("[OK] Slot-Editor beendet.")
                 return
-            elif cmd == "cancel":
+            elif is_cancel(cmd):
                 print("[ABBRUCH] Slot-Editor beendet.")
                 return
             elif cmd == "":
+                continue
+            elif cmd == "help":
+                _print_slot_help()
                 continue
             elif cmd == "show":
                 with state.lock:
@@ -132,8 +138,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                         print("  -> Keine Slots vorhanden!")
                         continue
                     count = len(state.global_slots)
-                confirm = safe_input(f"  {count} Slot(s) wirklich löschen? (j/n): ").strip().lower()
-                if confirm == "j":
+                if confirm(f"  {count} Slot(s) wirklich löschen?"):
                     with state.lock:
                         state.global_slots.clear()
                     save_global_slots(state)
@@ -196,7 +201,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
         slot_num = len(state.global_slots) + 1
 
     slot_name = safe_input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
-    if slot_name.lower() in ("cancel", "abbruch"):
+    if is_cancel(slot_name):
         print("  -> Slot-Erstellung abgebrochen")
         return None
     if not slot_name:
@@ -235,7 +240,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
     print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
     print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'skip')...")
     bg_input = safe_input().strip().lower()
-    if bg_input in ("cancel", "abbruch"):
+    if is_cancel(bg_input):
         print("  -> Slot-Erstellung abgebrochen")
         return None
     elif bg_input != "skip":

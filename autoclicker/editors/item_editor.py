@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -60,24 +60,27 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         for name, path, count in presets:
             print(f"  - {name} ({count} Items)")
 
-    print("\n" + "-" * 60)
-    print("Befehle:")
-    print("  learn <Nr>       - Item aus Slot lernen (automatisch!)")
-    print("  learn <Nr>-<Nr>  - Bulk: Items fuer Slot-Bereich (mit Template)")
-    print("  learn <Nr>-<Nr> simple - Bulk: ohne Template")
-    print("  add              - Neues Item manuell hinzufuegen")
-    print("  edit <Nr>        - Item bearbeiten")
-    print("  rename <Nr>      - Item umbenennen (inkl. Template)")
-    print("  del <Nr>         - Item loeschen")
-    print("  del all          - Alle Items loeschen")
-    print("  show             - Alle Items anzeigen")
-    print("  template <Nr>    - Template fuer Item setzen/entfernen")
-    print("  templates        - Verfuegbare Templates anzeigen")
-    print("  save <Name>      - Als Preset speichern")
-    print("  load <Name>      - Preset laden")
-    print("  preset del <N>   - Preset loeschen")
-    print("  done | cancel")
-    print("-" * 60)
+    def _print_item_help():
+        print("\n" + "-" * 60)
+        print("Befehle:")
+        print("  learn <Nr>       - Item aus Slot lernen (automatisch!)")
+        print("  learn <Nr>-<Nr>  - Bulk: Items fuer Slot-Bereich (mit Template)")
+        print("  learn <Nr>-<Nr> simple - Bulk: ohne Template")
+        print("  add              - Neues Item manuell hinzufuegen")
+        print("  edit <Nr>        - Item bearbeiten")
+        print("  rename <Nr>      - Item umbenennen (inkl. Template)")
+        print("  del <Nr>         - Item loeschen")
+        print("  del all          - Alle Items loeschen")
+        print("  show             - Alle Items anzeigen")
+        print("  template <Nr>    - Template fuer Item setzen/entfernen")
+        print("  templates        - Verfuegbare Templates anzeigen")
+        print("  save <Name>      - Als Preset speichern")
+        print("  load <Name>      - Preset laden")
+        print("  preset del <N>   - Preset loeschen")
+        print("  help | done | cancel")
+        print("-" * 60)
+
+    _print_item_help()
 
     while True:
         try:
@@ -90,10 +93,13 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             if cmd == "done":
                 print("[OK] Item-Editor beendet.")
                 return
-            elif cmd == "cancel":
+            elif is_cancel(cmd):
                 print("[ABBRUCH] Item-Editor beendet.")
                 return
             elif cmd == "":
+                continue
+            elif cmd == "help":
+                _print_item_help()
                 continue
             elif cmd == "show":
                 with state.lock:
@@ -146,8 +152,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                         print("  -> Keine Items vorhanden!")
                         continue
                     count = len(state.global_items)
-                confirm = safe_input(f"  {count} Item(s) wirklich löschen? (j/n): ").strip().lower()
-                if confirm == "j":
+                if confirm(f"  {count} Item(s) wirklich löschen?"):
                     with state.lock:
                         state.global_items.clear()
                     save_global_items(state)
@@ -251,7 +256,7 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
         item_num = len(state.global_items) + 1
 
     item_name = safe_input(f"  Item-Name (Enter = 'Item {item_num}', 'cancel'): ").strip()
-    if item_name.lower() in ("cancel", "abbruch"):
+    if is_cancel(item_name):
         print("  -> Item-Erstellung abgebrochen")
         return None
     if not item_name:
@@ -714,7 +719,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
             print(f"    {i+1}. {slot.name}")
         try:
             slot_input = safe_input("  Slot-Nr wo das Item liegt: ").strip()
-            if slot_input.lower() in ("cancel", "abbruch"):
+            if is_cancel(slot_input):
                 return True
             slot_num = int(slot_input)
         except ValueError:
@@ -731,7 +736,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     # Item-Name abfragen
     item_num = len(state.global_items) + 1
     item_name = safe_input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
-    if item_name.lower() in ("cancel", "abbruch"):
+    if is_cancel(item_name):
         return True
     if not item_name:
         item_name = f"Item {item_num}"
@@ -749,7 +754,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     priority = 1
     try:
         prio_input = safe_input(f"  Prioritaet (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
-        if prio_input.lower() in ("cancel", "abbruch"):
+        if is_cancel(prio_input):
             print("  -> Abgebrochen")
             return True
         if prio_input:
@@ -780,7 +785,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     print("\n  Soll nach dem Item-Klick noch ein Bestaetigungs-Klick erfolgen?")
     print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
     confirm_input = safe_input("  Punkt-ID fuer Bestaetigung (Enter = Nein): ").strip()
-    if confirm_input.lower() in ("cancel", "abbruch"):
+    if is_cancel(confirm_input):
         print("  -> Abgebrochen")
         return True
     if confirm_input:
@@ -857,7 +862,7 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
                     print(f"  Template: {item.template}")
 
                 new_name = safe_input("  Neuer Name (Enter = abbrechen): ").strip()
-                if not new_name or new_name.lower() in ("cancel", "abbruch"):
+                if not new_name or is_cancel(new_name):
                     print("  -> Abgebrochen")
                     return
 

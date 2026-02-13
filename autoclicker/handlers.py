@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
-from .utils import safe_input, format_duration, parse_time_input
+from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm
 from .winapi import get_cursor_pos, set_cursor_pos, user32
 from .persistence import (
     save_data, ensure_sequences_dir, list_available_sequences,
@@ -400,7 +400,7 @@ def handle_schedule(state: AutoClickerState) -> None:
     try:
         time_input = safe_input("> ").strip()
 
-        if not time_input or time_input.lower() == "cancel":
+        if not time_input or is_cancel(time_input):
             print("[ABBRUCH]")
             return
 
@@ -434,8 +434,8 @@ def handle_schedule(state: AutoClickerState) -> None:
         print("\n          Enter drücken zum Starten, 'cancel' zum Abbrechen")
 
         # Bestätigung abwarten
-        confirm = safe_input("> ").strip().lower()
-        if confirm == "cancel":
+        confirm_input = safe_input("> ").strip()
+        if is_cancel(confirm_input):
             print("[ABBRUCH]")
             return
 
