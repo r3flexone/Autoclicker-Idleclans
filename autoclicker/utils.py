@@ -82,9 +82,18 @@ def is_cancel(value: str) -> bool:
 
 
 def flush_input_buffer() -> None:
-    """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke)."""
-    while msvcrt.kbhit():
-        msvcrt.getch()
+    """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke).
+
+    Funktioniert nur in echter Windows-Konsole. In PyCharm/IDE wird
+    der Aufruf übersprungen (msvcrt.kbhit/getch funktionieren dort nicht).
+    """
+    if not _REAL_CONSOLE:
+        return
+    try:
+        while msvcrt.kbhit():
+            msvcrt.getch()
+    except Exception:
+        pass
 
 
 def safe_input(prompt: str = "") -> str:
@@ -113,14 +122,34 @@ def clear_line() -> None:
 
 
 # =============================================================================
-# ANSI-SUPPORT UND PFEILTASTEN-NAVIGATION
+# KONSOLEN-ERKENNUNG, ANSI-SUPPORT UND PFEILTASTEN-NAVIGATION
 # =============================================================================
+
+def _is_real_console() -> bool:
+    """Prüft ob stdin ein echtes Windows-Console-Handle hat.
+
+    In PyCharm/IDE-Konsolen gibt es kein echtes Console-Handle,
+    daher funktionieren msvcrt.getch()/kbhit() dort nicht.
+    """
+    try:
+        kernel32 = ctypes.windll.kernel32
+        STD_INPUT_HANDLE = -10
+        handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        mode = ctypes.c_ulong()
+        result = kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+        return result != 0
+    except (AttributeError, OSError):
+        return False
+
 
 def _enable_ansi() -> bool:
     """Aktiviert ANSI-Escape-Codes in der Windows-Konsole.
 
     Nötig für Cursor-Bewegung (hoch/runter) beim Menü-Neuzeichnen.
+    Funktioniert nur in echter Windows-Konsole (nicht in PyCharm/IDE).
     """
+    if not _REAL_CONSOLE:
+        return False
     try:
         kernel32 = ctypes.windll.kernel32
         STD_OUTPUT_HANDLE = -11
@@ -133,8 +162,12 @@ def _enable_ansi() -> bool:
     except (AttributeError, OSError):
         return False
 
-# Beim Import einmalig aktivieren
+# Beim Import einmalig prüfen
+_REAL_CONSOLE = _is_real_console()
 _ANSI_ENABLED = _enable_ansi()
+
+if not _REAL_CONSOLE:
+    print("[INFO] IDE-Konsole erkannt (PyCharm/etc.) - Pfeiltasten-Navigation deaktiviert, Nummern-Eingabe aktiv")
 
 
 def read_key() -> str:
