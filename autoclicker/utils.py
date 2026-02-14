@@ -7,6 +7,7 @@ import ctypes
 import json
 import logging
 import msvcrt
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -142,43 +143,62 @@ def _is_real_console() -> bool:
         return False
 
 
-def _enable_ansi() -> bool:
-    """Aktiviert ANSI-Escape-Codes in der Windows-Konsole.
+def _detect_ansi_support() -> bool:
+    """Prüft ob ANSI-Escape-Codes unterstützt werden.
 
-    Nötig für Cursor-Bewegung (hoch/runter) beim Menü-Neuzeichnen.
-    Funktioniert nur in echter Windows-Konsole (nicht in PyCharm/IDE).
+    - Echte Windows-Konsole: Muss explizit aktiviert werden
+    - PyCharm/IntelliJ: Unterstützt ANSI nativ (PYCHARM_HOSTED)
+    - Andere IDEs: Viele moderne Terminals unterstützen ANSI
     """
-    if not _REAL_CONSOLE:
-        return False
-    try:
-        kernel32 = ctypes.windll.kernel32
-        STD_OUTPUT_HANDLE = -11
-        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
-        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-        mode = ctypes.c_ulong()
-        kernel32.GetConsoleMode(handle, ctypes.byref(mode))
-        kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    # PyCharm unterstützt ANSI nativ
+    if os.environ.get("PYCHARM_HOSTED"):
         return True
-    except (AttributeError, OSError):
-        return False
+
+    # Echte Windows-Konsole: ANSI manuell aktivieren
+    if _REAL_CONSOLE:
+        try:
+            kernel32 = ctypes.windll.kernel32
+            STD_OUTPUT_HANDLE = -11
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+            handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+            mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+            return True
+        except (AttributeError, OSError):
+            return False
+
+    return False
+
+
+# Virtual Key Codes für GetAsyncKeyState
+_VK_MAP = {
+    0x26: 'up',        # VK_UP
+    0x28: 'down',      # VK_DOWN
+    0x25: 'left',      # VK_LEFT
+    0x27: 'right',     # VK_RIGHT
+    0x0D: 'enter',     # VK_RETURN
+    0x1B: 'escape',    # VK_ESCAPE
+    0x08: 'backspace', # VK_BACK
+}
+# Zifferntasten 0-9
+for _i in range(10):
+    _VK_MAP[0x30 + _i] = str(_i)
+
 
 # Beim Import einmalig prüfen
 _REAL_CONSOLE = _is_real_console()
-_ANSI_ENABLED = _enable_ansi()
+_ANSI_ENABLED = _detect_ansi_support()
 
 if not _REAL_CONSOLE:
-    print("[INFO] IDE-Konsole erkannt (PyCharm/etc.) - Pfeiltasten-Navigation deaktiviert, Nummern-Eingabe aktiv")
+    if _ANSI_ENABLED:
+        print("[INFO] IDE-Konsole erkannt (PyCharm) - Pfeiltasten-Navigation via GetAsyncKeyState aktiv")
+    else:
+        print("[INFO] IDE-Konsole erkannt - Fallback auf Nummern-Eingabe")
 
 
-def read_key() -> str:
-    """Liest einen einzelnen Tastendruck (blockierend).
-
-    Behandelt Pfeiltasten (2-Byte-Sequenz auf Windows) korrekt.
-
-    Returns:
-        'up', 'down', 'left', 'right', 'enter', 'escape',
-        'backspace', oder das gedrückte Zeichen als String.
-    """
+def _read_key_msvcrt() -> str:
+    """Liest Tastendruck via msvcrt.getch() (echte Windows-Konsole)."""
     byte = msvcrt.getch()
 
     # Pfeiltasten und andere erweiterte Tasten (0xE0 oder 0x00 Prefix)
@@ -201,11 +221,51 @@ def read_key() -> str:
     if byte == b'\x08':
         return 'backspace'
 
-    # Normales Zeichen
     try:
         return byte.decode('utf-8')
     except UnicodeDecodeError:
         return 'unknown'
+
+
+def _read_key_polling() -> str:
+    """Liest Tastendruck via GetAsyncKeyState (funktioniert in PyCharm/IDE).
+
+    Nutzt die gleiche Windows API wie die Hotkeys - funktioniert überall,
+    auch ohne echtes Console-Handle.
+    """
+    user32 = ctypes.windll.user32
+
+    # Vorherige Zustände initialisieren (Flanken-Erkennung)
+    prev_states = {}
+    for vk in _VK_MAP:
+        prev_states[vk] = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+
+    while True:
+        for vk, name in _VK_MAP.items():
+            is_down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+            was_down = prev_states[vk]
+            prev_states[vk] = is_down
+
+            # Steigende Flanke = Taste gerade gedrückt
+            if is_down and not was_down:
+                return name
+
+        time.sleep(0.02)  # 50Hz Polling - reaktionsschnell, CPU-schonend
+
+
+def read_key() -> str:
+    """Liest einen einzelnen Tastendruck (blockierend).
+
+    Nutzt msvcrt.getch() in echten Windows-Konsolen,
+    oder GetAsyncKeyState-Polling in PyCharm/IDE-Konsolen.
+
+    Returns:
+        'up', 'down', 'left', 'right', 'enter', 'escape',
+        'backspace', oder das gedrückte Zeichen als String.
+    """
+    if _REAL_CONSOLE:
+        return _read_key_msvcrt()
+    return _read_key_polling()
 
 
 def interactive_select(options: list[str], title: str = "",
@@ -217,6 +277,10 @@ def interactive_select(options: list[str], title: str = "",
         Enter/Rechts - Bestätigen
         Escape/Links - Abbrechen (gibt -1 zurück)
         0-9          - Direkte Nummern-Eingabe
+
+    Funktioniert in:
+        - Echte Windows-Konsole (cmd/PowerShell): via msvcrt.getch()
+        - PyCharm/IDE-Konsole: via GetAsyncKeyState-Polling
 
     Args:
         options: Liste der Optionen (werden als Text angezeigt)
@@ -230,7 +294,7 @@ def interactive_select(options: list[str], title: str = "",
         return -1
 
     if not _ANSI_ENABLED:
-        # Fallback: Klassische Nummern-Eingabe
+        # Fallback: Klassische Nummern-Eingabe (nur wenn ANSI nicht geht)
         return _fallback_select(options, title, allow_cancel)
 
     selected = 0
