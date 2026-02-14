@@ -27,6 +27,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
+- **IDE-Kompatibel**: Volle Pfeiltasten-Navigation auch in PyCharm/IDE-Konsolen
 
 ## Voraussetzungen
 
@@ -373,6 +374,19 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 
 Ohne `else` stoppt die Sequenz bei Fehlschlag.
 
+## IDE-Kompatibilität (PyCharm, VS Code, etc.)
+
+Das Programm erkennt automatisch die Konsolen-Umgebung und passt sich an:
+
+| Umgebung | Menü-Navigation | Hotkeys | Eingabe |
+|----------|----------------|---------|---------|
+| **cmd / PowerShell** | Pfeiltasten via `msvcrt.getch()` | Funktionieren | `input()` |
+| **PyCharm Run-Konsole** | Pfeiltasten via `GetAsyncKeyState` | Funktionieren | `input()` |
+| **Andere IDEs** | Nummern-Eingabe (Fallback) | Funktionieren | `input()` |
+
+Die Hotkeys (`CTRL+ALT+...`) funktionieren **immer**, da sie über `RegisterHotKey` (Windows Messages) laufen.
+Die Pfeiltasten-Navigation nutzt in PyCharm `GetAsyncKeyState` aus `user32.dll` - die gleiche Windows API.
+
 ## Konfiguration (`config.json`)
 
 Wird beim ersten Start automatisch erstellt:
@@ -475,7 +489,7 @@ Wird beim ersten Start automatisch erstellt:
 ```
 Autoclicker-Idleclans/
 ├── main.py                 # Einstiegspunkt
-├── autoclicker/            # Hauptmodul (~5800 Zeilen)
+├── autoclicker/            # Hauptmodul (~6600 Zeilen)
 │   ├── __init__.py
 │   ├── config.py           # Konfiguration (Hotkeys, Defaults)
 │   ├── models.py           # Datenmodelle (ClickPoint, Sequence, etc.)
@@ -516,7 +530,7 @@ Autoclicker-Idleclans/
 
 ### Architektur
 
-Das Programm ist modular aufgebaut (~5800 Zeilen in 15 Dateien):
+Das Programm ist modular aufgebaut (~6600 Zeilen in 15 Dateien):
 
 ```
 main.py                      Einstiegspunkt, Event-Loop
@@ -583,6 +597,7 @@ main.py                      Einstiegspunkt, Event-Loop
 - JSON-Persistenz für alle Daten
 - Multi-Monitor Unterstützung (DPI-aware)
 - Sichere Dateinamen (Path-Traversal-Schutz)
+- IDE-Kompatibel: `GetAsyncKeyState`-Polling als Fallback für Pfeiltasten in PyCharm/IDE-Konsolen
 
 ## Tools
 
@@ -610,7 +625,14 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
-- **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~5800 Zeilen)
+- **PyCharm/IDE-Support**: Pfeiltasten-Navigation funktioniert jetzt auch in IDE-Konsolen
+  - `GetAsyncKeyState`-Polling als Fallback wenn `msvcrt.getch()` nicht verfügbar
+  - PyCharm ANSI-Erkennung via `PYCHARM_HOSTED` Umgebungsvariable
+  - Gleiche Windows API wie die Hotkeys - funktioniert überall
+- **Verbesserte Benutzereingabe**: Robustes Input-Handling für alle Konsolen-Typen
+  - `interactive_select()` mit automatischer Erkennung der Konsolen-Fähigkeiten
+  - Sauberes Fallback-System: Pfeiltasten → Nummern-Eingabe
+- **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~6600 Zeilen)
   - `main.py` als Einstiegspunkt
   - `autoclicker/` Package mit spezialisierten Modulen
   - `editors/` Subpackage für alle interaktiven Editoren
