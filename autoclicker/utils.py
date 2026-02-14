@@ -146,15 +146,11 @@ def _is_real_console() -> bool:
 def _detect_ansi_support() -> bool:
     """Prüft ob ANSI-Escape-Codes unterstützt werden.
 
-    - Echte Windows-Konsole: Muss explizit aktiviert werden
-    - PyCharm/IntelliJ: Unterstützt ANSI nativ (PYCHARM_HOSTED)
-    - Andere IDEs: Viele moderne Terminals unterstützen ANSI
+    Unterscheidet zwischen:
+    - Voller ANSI-Support (Farben + Cursor-Bewegung): Nur echte Windows-Konsole
+    - Teilweiser ANSI-Support (nur Farben): PyCharm/IntelliJ
     """
-    # PyCharm unterstützt ANSI nativ
-    if os.environ.get("PYCHARM_HOSTED"):
-        return True
-
-    # Echte Windows-Konsole: ANSI manuell aktivieren
+    # Echte Windows-Konsole: Voller ANSI-Support (Farben + Cursor)
     if _REAL_CONSOLE:
         try:
             kernel32 = ctypes.windll.kernel32
@@ -169,6 +165,14 @@ def _detect_ansi_support() -> bool:
             return False
 
     return False
+
+
+def _is_pycharm() -> bool:
+    """Prüft ob PyCharm/IntelliJ die Host-Umgebung ist.
+
+    PyCharm unterstützt ANSI-Farben (\\033[7m) aber KEINE Cursor-Bewegung (\\033[A).
+    """
+    return bool(os.environ.get("PYCHARM_HOSTED"))
 
 
 # Virtual Key Codes für GetAsyncKeyState
@@ -188,11 +192,12 @@ for _i in range(10):
 
 # Beim Import einmalig prüfen
 _REAL_CONSOLE = _is_real_console()
-_ANSI_ENABLED = _detect_ansi_support()
+_ANSI_ENABLED = _detect_ansi_support()  # Voller ANSI (Farben + Cursor)
+_PYCHARM = _is_pycharm()               # Nur ANSI-Farben, kein Cursor
 
 if not _REAL_CONSOLE:
-    if _ANSI_ENABLED:
-        print("[INFO] IDE-Konsole erkannt (PyCharm) - Pfeiltasten-Navigation via GetAsyncKeyState aktiv")
+    if _PYCHARM:
+        print("[INFO] PyCharm erkannt - Pfeiltasten-Navigation via GetAsyncKeyState aktiv")
     else:
         print("[INFO] IDE-Konsole erkannt - Fallback auf Nummern-Eingabe")
 
@@ -278,9 +283,10 @@ def interactive_select(options: list[str], title: str = "",
         Escape/Links - Abbrechen (gibt -1 zurück)
         0-9          - Direkte Nummern-Eingabe
 
-    Funktioniert in:
-        - Echte Windows-Konsole (cmd/PowerShell): via msvcrt.getch()
-        - PyCharm/IDE-Konsole: via GetAsyncKeyState-Polling
+    Drei Modi je nach Konsolen-Umgebung:
+        - cmd/PowerShell: Mehrzeiliges Menü mit Cursor-Bewegung
+        - PyCharm/IDE:    Einzeilen-Navigation (\\r überschreibt)
+        - Sonstige:       Klassische Nummern-Eingabe
 
     Args:
         options: Liste der Optionen (werden als Text angezeigt)
@@ -293,24 +299,31 @@ def interactive_select(options: list[str], title: str = "",
     if not options:
         return -1
 
-    if not _ANSI_ENABLED:
-        # Fallback: Klassische Nummern-Eingabe (nur wenn ANSI nicht geht)
+    if _ANSI_ENABLED:
+        # Voller ANSI: Mehrzeiliges Menü mit Cursor-Bewegung (cmd/PowerShell)
+        return _ansi_select(options, title, allow_cancel)
+    elif _PYCHARM:
+        # PyCharm: Einzeilen-Navigation mit \r (ANSI-Farben ja, Cursor nein)
+        return _single_line_select(options, title, allow_cancel)
+    else:
+        # Fallback: Klassische Nummern-Eingabe
         return _fallback_select(options, title, allow_cancel)
 
+
+def _ansi_select(options: list[str], title: str,
+                 allow_cancel: bool) -> int:
+    """Mehrzeiliges Menü mit ANSI-Cursor-Bewegung (echte Windows-Konsole)."""
     selected = 0
     num_options = len(options)
 
     flush_input_buffer()
 
-    # Titel anzeigen
     if title:
         print(title)
 
-    # Hilfe-Zeile
     cancel_hint = ", Esc=Abbruch" if allow_cancel else ""
     print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_hint})")
 
-    # Menü initial zeichnen
     _draw_menu(options, selected)
 
     while True:
@@ -329,7 +342,6 @@ def interactive_select(options: list[str], title: str = "",
             print("  (Abgebrochen)")
             return -1
         elif key.isdigit():
-            # Direkte Nummern-Eingabe (1-basiert)
             num = int(key)
             if 1 <= num <= num_options:
                 _clear_menu_lines(num_options)
@@ -343,13 +355,73 @@ def interactive_select(options: list[str], title: str = "",
         else:
             continue
 
-        # Menü neu zeichnen
         _clear_menu_lines(num_options)
         _draw_menu(options, selected)
 
 
+def _single_line_select(options: list[str], title: str,
+                        allow_cancel: bool) -> int:
+    """Einzeilen-Navigation für PyCharm/IDE (kein Cursor-Movement nötig).
+
+    Zeigt die aktuelle Auswahl auf EINER Zeile und überschreibt mit \\r.
+    PyCharm unterstützt ANSI-Farben aber keine Cursor-Bewegung.
+    """
+    selected = 0
+    num_options = len(options)
+
+    if title:
+        print(title)
+
+    cancel_hint = ", Esc=Abbruch" if allow_cancel else ""
+    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_hint})")
+
+    # Alle Optionen einmal auflisten (statisch)
+    for i, opt in enumerate(options):
+        print(f"   {i+1}. {opt}")
+
+    # Aktuelle Auswahl auf einer Zeile anzeigen (überschreibbar)
+    _print_single_selection(options, selected, num_options)
+
+    while True:
+        key = read_key()
+
+        if key == 'up':
+            selected = (selected - 1) % num_options
+        elif key == 'down':
+            selected = (selected + 1) % num_options
+        elif key in ('enter', 'right'):
+            text = f"  > {options[selected]}"
+            print(f"\r{text}{' ' * (60 - len(text))}")
+            return selected
+        elif key in ('escape', 'left') and allow_cancel:
+            print(f"\r  (Abgebrochen){' ' * 40}")
+            return -1
+        elif key.isdigit():
+            num = int(key)
+            if 1 <= num <= num_options:
+                text = f"  > {options[num - 1]}"
+                print(f"\r{text}{' ' * (60 - len(text))}")
+                return num - 1
+            elif num == 0 and allow_cancel:
+                print(f"\r  (Abgebrochen){' ' * 40}")
+                return -1
+            continue
+        else:
+            continue
+
+        _print_single_selection(options, selected, num_options)
+
+
+def _print_single_selection(options: list[str], selected: int,
+                            total: int) -> None:
+    """Zeigt aktuelle Auswahl auf einer Zeile mit \\r (PyCharm-kompatibel)."""
+    text = f"  \033[7m >> [{selected+1}/{total}] {options[selected]} \033[0m"
+    # \r springt an Zeilenanfang, Leerzeichen löschen Rest der alten Zeile
+    print(f"\r{text}{' ' * 20}", end="", flush=True)
+
+
 def _draw_menu(options: list[str], selected: int) -> None:
-    """Zeichnet das Menü mit Auswahl-Markierung."""
+    """Zeichnet das Menü mit Auswahl-Markierung (nur echte Konsole)."""
     for i, opt in enumerate(options):
         if i == selected:
             print(f"  \033[7m {i+1}. {opt} \033[0m")  # Invertiert (highlighted)
@@ -358,7 +430,7 @@ def _draw_menu(options: list[str], selected: int) -> None:
 
 
 def _clear_menu_lines(num_lines: int) -> None:
-    """Bewegt den Cursor num_lines nach oben und löscht jede Zeile."""
+    """Bewegt den Cursor num_lines nach oben und löscht jede Zeile (nur echte Konsole)."""
     for _ in range(num_lines):
         print(f"\033[A\033[2K", end="", flush=True)
 
