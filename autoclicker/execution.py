@@ -166,7 +166,8 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
             continue
 
         if debug:
-            print(f"[DEBUG] Scanne {slot.name}... (Screenshot: {screenshot_ms:.0f}ms)")
+            size_info = f"{img.size[0]}x{img.size[1]}" if img else "?"
+            print(f"[DEBUG] Scanne {slot.name}... (Screenshot: {screenshot_ms:.0f}ms, {size_info}px)")
 
         for item in config.items:
             template_ok = True

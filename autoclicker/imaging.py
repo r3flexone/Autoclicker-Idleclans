@@ -145,6 +145,18 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             logger.error(f"Konnte Template nicht laden: {template_path}")
             return (False, 0.0, None)
 
+        # Größenvergleich: Template muss zum Scan-Bild passen
+        th, tw = template_cv.shape[:2]
+        ih, iw = img_cv.shape[:2]
+
+        if tw != iw or th != ih:
+            # Größen-Diskrepanz! Template an Scan-Bildgröße anpassen
+            # Passiert wenn Slot-Regionen nach Template-Erstellung geändert wurden
+            # (z.B. neue Auto-Erkennung, Monitor-Wechsel, DPI-Änderung)
+            if tw > 0 and th > 0:
+                logger.debug(f"Template '{template_name}' Größe {tw}x{th} != Scan {iw}x{ih} - resize")
+                template_cv = cv2.resize(template_cv, (iw, ih), interpolation=cv2.INTER_AREA)
+
         # Debug: Scan-Bild und Template speichern zum Vergleich
         if CONFIG.get("debug_save_templates", False):
             debug_dir = os.path.join(ITEMS_DIR, "debug")
@@ -167,6 +179,13 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             # Position ist obere linke Ecke des Matches
             return (True, max_val, max_loc)
         else:
+            # Bei sehr niedrigen Werten: Größen-Mismatch als mögliche Ursache loggen
+            if max_val < 0.3 and (tw != iw or th != ih):
+                logger.debug(
+                    f"Template '{template_name}': {max_val:.1%} - "
+                    f"Größen-Mismatch (Template {tw}x{th}, Scan {iw}x{ih}) könnte Ursache sein. "
+                    f"Templates neu erstellen empfohlen."
+                )
             return (False, max_val, None)
 
     except (ValueError, TypeError, AttributeError) as e:
