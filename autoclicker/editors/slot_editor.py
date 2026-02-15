@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -24,9 +24,7 @@ from ..persistence import (
 
 def run_global_slot_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für globale Slot-Definitionen."""
-    print("\n" + "=" * 60)
-    print("  SLOT-EDITOR (Globale Slot-Definitionen)")
-    print("=" * 60)
+    print(header("SLOT-EDITOR (Globale Slot-Definitionen)"))
 
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
@@ -76,18 +74,18 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             user_input = safe_input(f"{prompt} > ").strip()
             cmd = user_input.lower()
 
-            if cmd == "done":
-                print("[OK] Slot-Editor beendet.")
+            if cmd == "done" or cmd == "d":
+                print(ok("Slot-Editor beendet."))
                 return
             elif is_cancel(cmd):
-                print("[ABBRUCH] Slot-Editor beendet.")
+                print(col("[ABBRUCH]", "yellow") + " Slot-Editor beendet.")
                 return
             elif cmd == "":
                 continue
-            elif cmd == "help":
+            elif cmd == "help" or cmd == "?":
                 _print_slot_help()
                 continue
-            elif cmd == "show":
+            elif cmd == "show" or cmd == "s":
                 with state.lock:
                     if state.global_slots:
                         print(f"\nSlots ({len(state.global_slots)}):")
@@ -188,10 +186,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 continue
 
             else:
-                print("  -> Unbekannter Befehl")
+                print(f"  -> Unbekannter Befehl {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH] Slot-Editor beendet.")
+            print("\n" + col("[ABBRUCH]", "yellow") + " Slot-Editor beendet.")
             return
 
 
@@ -351,9 +349,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
     import numpy as np
     import cv2
 
-    print("\n" + "=" * 50)
-    print("  AUTOMATISCHE SLOT-ERKENNUNG")
-    print("=" * 50)
+    print(header("AUTOMATISCHE SLOT-ERKENNUNG", width=50))
     print("\nMarkiere den Bereich mit den Slots:")
     print("  1. Maus auf OBEN-LINKS, ENTER")
     print("  2. Maus auf UNTEN-RECHTS, ENTER")
@@ -483,7 +479,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
         added += 1
         print(f"    + {slot_name}: {scan_region}")
 
-    print(f"\n  [OK] {added} Slots hinzugefügt!")
+    print(f"\n  {ok(f'{added} Slots hinzugefügt!')}")
 
     # Screenshots speichern
     try:

@@ -21,6 +21,88 @@ if TYPE_CHECKING:
 logger = logging.getLogger("autoclicker")
 
 
+# =============================================================================
+# ANSI-FARBAUSGABE
+# =============================================================================
+
+def _supports_colors() -> bool:
+    """Prüft ob die Konsole ANSI-Farben unterstützt."""
+    # PyCharm unterstützt ANSI-Farben
+    if os.environ.get("PYCHARM_HOSTED"):
+        return True
+    # Echte Windows-Konsole: wird später in _detect_ansi_support() aktiviert
+    # Für den Moment optimistisch annehmen - wird durch _ANSI_ENABLED/_PYCHARM korrigiert
+    return True
+
+_COLORS_ENABLED = _supports_colors()
+
+# ANSI-Farbcodes
+_C = {
+    "reset":   "\033[0m",
+    "bold":    "\033[1m",
+    "dim":     "\033[2m",
+    "green":   "\033[32m",
+    "red":     "\033[31m",
+    "yellow":  "\033[33m",
+    "blue":    "\033[34m",
+    "cyan":    "\033[36m",
+    "magenta": "\033[35m",
+    "gray":    "\033[90m",
+    "white":   "\033[97m",
+    "bg_green": "\033[42m",
+    "bg_red":   "\033[41m",
+}
+
+
+def col(text: str, color: str) -> str:
+    """Färbt Text mit ANSI-Escape-Codes.
+
+    Farben: green, red, yellow, blue, cyan, magenta, gray, bold, dim
+    """
+    if not _COLORS_ENABLED:
+        return text
+    code = _C.get(color, "")
+    if not code:
+        return text
+    return f"{code}{text}{_C['reset']}"
+
+
+def ok(msg: str) -> str:
+    """Formatiert eine Erfolgsmeldung: [OK] grün."""
+    return f"{col('[OK]', 'green')} {msg}"
+
+
+def err(msg: str) -> str:
+    """Formatiert eine Fehlermeldung: [FEHLER] rot."""
+    return f"{col('[FEHLER]', 'red')} {msg}"
+
+
+def warn(msg: str) -> str:
+    """Formatiert eine Warnung: [WARNUNG] gelb."""
+    return f"{col('[WARNUNG]', 'yellow')} {msg}"
+
+
+def info(msg: str) -> str:
+    """Formatiert eine Info-Meldung: [INFO] cyan."""
+    return f"{col('[INFO]', 'cyan')} {msg}"
+
+
+def hint(msg: str) -> str:
+    """Formatiert einen Hinweis in grau."""
+    return col(msg, 'gray')
+
+
+def header(title: str, width: int = 60) -> str:
+    """Erzeugt eine farbige Überschrift."""
+    line = "=" * width
+    return f"\n{col(line, 'cyan')}\n  {col(title, 'bold')}\n{col(line, 'cyan')}"
+
+
+def cmd_hint(cmd: str, desc: str) -> str:
+    """Formatiert einen Befehl mit Beschreibung für Hilfe-Texte."""
+    return f"  {col(cmd, 'yellow'):30s} {desc}"
+
+
 def sanitize_filename(name: str) -> str:
     """Bereinigt einen Namen für sichere Dateinamen.
 
@@ -184,6 +266,11 @@ _VK_MAP = {
     0x0D: 'enter',     # VK_RETURN
     0x1B: 'escape',    # VK_ESCAPE
     0x08: 'backspace', # VK_BACK
+    # Numpad-Pfeiltasten
+    0x68: 'up',        # VK_NUMPAD8
+    0x62: 'down',      # VK_NUMPAD2
+    0x64: 'left',      # VK_NUMPAD4
+    0x66: 'right',     # VK_NUMPAD6
 }
 # Zifferntasten 0-9
 for _i in range(10):
@@ -195,11 +282,14 @@ _REAL_CONSOLE = _is_real_console()
 _ANSI_ENABLED = _detect_ansi_support()  # Voller ANSI (Farben + Cursor)
 _PYCHARM = _is_pycharm()               # Nur ANSI-Farben, kein Cursor
 
+# Farben erst jetzt final konfigurieren (nach _ANSI_ENABLED/_PYCHARM Check)
+_COLORS_ENABLED = _ANSI_ENABLED or _PYCHARM
+
 if not _REAL_CONSOLE:
     if _PYCHARM:
-        print("[INFO] PyCharm erkannt - Pfeiltasten-Navigation via GetAsyncKeyState aktiv")
+        print(info("PyCharm erkannt - Pfeiltasten-Navigation via GetAsyncKeyState aktiv"))
     else:
-        print("[INFO] IDE-Konsole erkannt - Fallback auf Nummern-Eingabe")
+        print(info("IDE-Konsole erkannt - Fallback auf Nummern-Eingabe"))
 
 
 def _read_key_msvcrt() -> str:

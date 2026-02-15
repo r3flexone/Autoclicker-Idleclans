@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -25,9 +25,7 @@ from ..persistence import (
 
 def run_global_item_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für globale Item-Definitionen."""
-    print("\n" + "=" * 60)
-    print("  ITEM-EDITOR (Globale Item-Definitionen)")
-    print("=" * 60)
+    print(header("ITEM-EDITOR (Globale Item-Definitionen)"))
 
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
@@ -60,25 +58,36 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         for name, path, count in presets:
             print(f"  - {name} ({count} Items)")
 
-    def _print_item_help():
-        print("\n" + "-" * 60)
-        print("Befehle:")
-        print("  learn <Nr>       - Item aus Slot lernen (automatisch!)")
-        print("  learn <Nr>-<Nr>  - Bulk: Items für Slot-Bereich (mit Template)")
-        print("  learn <Nr>-<Nr> simple - Bulk: ohne Template")
-        print("  add              - Neues Item manuell hinzufügen")
-        print("  edit <Nr>        - Item bearbeiten")
-        print("  rename <Nr>      - Item umbenennen (inkl. Template)")
-        print("  del <Nr>         - Item löschen")
-        print("  del all          - Alle Items löschen")
-        print("  show             - Alle Items anzeigen")
-        print("  template <Nr>    - Template für Item setzen/entfernen")
-        print("  templates        - Verfügbare Templates anzeigen")
-        print("  save <Name>      - Als Preset speichern")
-        print("  load <Name>      - Preset laden")
-        print("  preset del <N>   - Preset löschen")
-        print("  help | done | cancel")
-        print("-" * 60)
+    def _print_item_help(full=False):
+        if not full:
+            print("\n  Kurzübersicht (? = vollständige Hilfe):")
+            print("    learn <Nr>       Item aus Slot lernen")
+            print("    add              Neues Item manuell")
+            print("    edit <Nr>        Item bearbeiten")
+            print("    show             Alle Items anzeigen")
+            print("    done | cancel    Fertig / Abbrechen")
+        else:
+            print("\n" + "-" * 60)
+            print("Befehle:")
+            print(cmd_hint("learn <Nr>", "Item aus Slot lernen (automatisch!)"))
+            print(cmd_hint("learn <Nr>-<Nr>", "Bulk: Items für Slot-Bereich (mit Template)"))
+            print(cmd_hint("learn <Nr>-<Nr> simple", "Bulk: ohne Template"))
+            print(cmd_hint("add", "Neues Item manuell hinzufügen"))
+            print(cmd_hint("edit <Nr>", "Item bearbeiten"))
+            print(cmd_hint("rename <Nr>", "Item umbenennen (inkl. Template)"))
+            print(cmd_hint("del <Nr>", "Item löschen"))
+            print(cmd_hint("del all", "Alle Items löschen"))
+            print(cmd_hint("show / s", "Alle Items anzeigen"))
+            print(cmd_hint("template <Nr>", "Template für Item setzen/entfernen"))
+            print(cmd_hint("templates", "Verfügbare Templates anzeigen"))
+            print(cmd_hint("save <Name>", "Als Preset speichern"))
+            print(cmd_hint("load <Name>", "Preset laden"))
+            print(cmd_hint("preset del <N>", "Preset löschen"))
+            print(cmd_hint("help / ?", "Kurzübersicht"))
+            print(cmd_hint("help full / ??", "Vollständige Hilfe"))
+            print(cmd_hint("done / d", "Fertig"))
+            print(cmd_hint("cancel", "Abbrechen"))
+            print("-" * 60)
 
     _print_item_help()
 
@@ -90,18 +99,21 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             user_input = safe_input(f"{prompt} > ").strip()
             cmd = user_input.lower()
 
-            if cmd == "done":
-                print("[OK] Item-Editor beendet.")
+            if cmd in ("done", "d"):
+                print(ok("Item-Editor beendet."))
                 return
             elif is_cancel(cmd):
-                print("[ABBRUCH] Item-Editor beendet.")
+                print(col("[ABBRUCH]", "yellow") + " Item-Editor beendet.")
                 return
             elif cmd == "":
                 continue
-            elif cmd == "help":
+            elif cmd in ("help", "?"):
                 _print_item_help()
                 continue
-            elif cmd == "show":
+            elif cmd in ("help full", "??"):
+                _print_item_help(full=True)
+                continue
+            elif cmd in ("show", "s"):
                 with state.lock:
                     if state.global_items:
                         print(f"\nItems ({len(state.global_items)}):")
@@ -214,10 +226,10 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 continue
 
             else:
-                print("  -> Unbekannter Befehl")
+                print(f"  -> Unbekannter Befehl {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH] Item-Editor beendet.")
+            print("\n" + col("[ABBRUCH]", "yellow") + " Item-Editor beendet.")
             return
 
 
@@ -265,7 +277,7 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
     # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
-            print(f"  -> '{item_name}' existiert bereits!")
+            print(f"  {err(f\"'{item_name}' existiert bereits!\")} {hint('(show = anzeigen, del = löschen)')}")
             return None
 
     # Template erstellen (Screenshot von Slot)

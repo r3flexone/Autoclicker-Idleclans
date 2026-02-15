@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -28,9 +28,7 @@ from .item_editor import run_global_item_editor, select_category
 
 def run_item_scan_menu(state: AutoClickerState) -> None:
     """Hauptmenü für Item-Scan Konfiguration (Slots, Items, Scans)."""
-    print("\n" + "=" * 60)
-    print("  ITEM-SCAN MENÜ")
-    print("=" * 60)
+    print(header("ITEM-SCAN MENÜ"))
 
     with state.lock:
         slot_count = len(state.global_slots)
@@ -55,12 +53,10 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
 
 def run_item_scan_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für Item-Scan Konfigurationen (verknüpft Slots + Items)."""
-    print("\n" + "=" * 60)
-    print("  SCAN-EDITOR (Slots + Items verknüpfen)")
-    print("=" * 60)
+    print(header("SCAN-EDITOR (Slots + Items verknüpfen)"))
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
@@ -80,7 +76,7 @@ def run_item_scan_editor(state: AutoClickerState) -> None:
     choice = interactive_select(menu_options, title="\nWas möchtest du tun?")
 
     if choice == -1:
-        print("[CANCEL] Editor beendet.")
+        print(f"{col('[CANCEL]', 'yellow')} Editor beendet.")
         return
     elif choice == 0:
         edit_item_scan(state, None)
@@ -92,9 +88,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     """Bearbeitet eine Item-Scan Konfiguration (verknüpft globale Slots + Items)."""
 
     # === SCHRITT 0: Presets auswählen ===
-    print("\n" + "=" * 60)
-    print("  PRESETS AUSWÄHLEN")
-    print("=" * 60)
+    print(header("PRESETS AUSWÄHLEN"))
 
     # Slot-Presets anzeigen
     slot_presets = list_slot_presets()
@@ -160,13 +154,13 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         available_items = dict(state.global_items)
 
     if not available_slots:
-        print("\n[FEHLER] Keine Slots im gewählten Preset!")
+        print(f"\n{err('Keine Slots im gewählten Preset!')}")
         print("         Erstelle zuerst Slots im Slot-Editor (Option 1)")
         return
 
     # Items sind optional - können im Scan-Editor erstellt werden
     if not available_items:
-        print("\n[INFO] Keine Items im gewählten Preset.")
+        print(f"\n{info('Keine Items im gewählten Preset.')}")
         print("       Du kannst sie gleich per Template erstellen!")
 
     if existing:
@@ -185,9 +179,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         tolerance = 40
 
     # Schritt 1: Slots auswählen
-    print("\n" + "=" * 60)
-    print("  SCHRITT 1: SLOTS AUSWÄHLEN")
-    print("=" * 60)
+    print(header("SCHRITT 1: SLOTS AUSWÄHLEN"))
     print("\nVerfügbare Slots:")
     slot_list = list(available_slots.keys())
     for i, name in enumerate(slot_list):
@@ -245,13 +237,11 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             return
 
     if not selected_slot_names:
-        print("\n[FEHLER] Mindestens 1 Slot erforderlich!")
+        print(f"\n{err('Mindestens 1 Slot erforderlich!')}")
         return
 
     # Schritt 2: Items auswählen oder erstellen
-    print("\n" + "=" * 60)
-    print("  SCHRITT 2: ITEMS AUSWÄHLEN / ERSTELLEN")
-    print("=" * 60)
+    print(header("SCHRITT 2: ITEMS AUSWÄHLEN / ERSTELLEN"))
 
     # Zeige verfügbare Templates
     templates_dir = Path(TEMPLATES_DIR)
@@ -467,15 +457,13 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             return
 
     if not selected_item_names:
-        print("\n[INFO] Keine Items ausgewählt.")
+        print(f"\n{info('Keine Items ausgewählt.')}")
         if not confirm("Trotzdem speichern?"):
-            print("[ABBRUCH] Scan nicht gespeichert.")
+            print(f"{col('[CANCEL]', 'yellow')} Scan nicht gespeichert.")
             return
 
     # Schritt 3: Toleranz
-    print("\n" + "=" * 60)
-    print("  SCHRITT 3: FARBTOLERANZ")
-    print("=" * 60)
+    print(header("SCHRITT 3: FARBTOLERANZ"))
     print(f"\nAktuelle Toleranz: {tolerance}")
     print("(Höher = mehr Farben werden als 'gleich' erkannt)")
     try:
@@ -503,6 +491,6 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
     save_item_scan(config)
 
-    print(f"\n[ERFOLG] Scan '{scan_name}' gespeichert!")
+    print(f"\n{ok(f\"Scan '{scan_name}' gespeichert!\")}")
     print(f"         {len(slots)} Slots, {len(items)} Items")
     print(f"         Nutze im Sequenz-Editor: 'scan {scan_name}'")

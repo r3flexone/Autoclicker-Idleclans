@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
-from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select
+from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint
 from .winapi import get_cursor_pos, set_cursor_pos, user32
 from .persistence import (
     save_data, ensure_sequences_dir, list_available_sequences,
@@ -39,7 +39,7 @@ def handle_record(state: AutoClickerState) -> None:
     # Auto-speichern
     save_data(state)
 
-    print(f"\n[RECORD] #{new_id} {name} hinzugefügt: ({x}, {y})")
+    print(f"\n{col('[RECORD]', 'green')} #{new_id} {name} hinzugefügt: ({x}, {y})")
     print_status(state)
 
 
@@ -48,10 +48,10 @@ def handle_undo(state: AutoClickerState) -> None:
     with state.lock:
         if state.points:
             removed = state.points.pop()
-            print(f"\n[UNDO] Punkt entfernt: {removed}")
+            print(f"\n{col('[UNDO]', 'yellow')} Punkt entfernt: {removed}")
             save_data(state)
         else:
-            print("\n[UNDO] Keine Punkte zum Entfernen.")
+            print(f"\n{col('[UNDO]', 'yellow')} Keine Punkte zum Entfernen.")
     print_status(state)
 
 
@@ -59,7 +59,7 @@ def handle_clear(state: AutoClickerState) -> None:
     """Löscht ALLE Punkte."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
 
         count = len(state.points)
@@ -71,7 +71,7 @@ def handle_clear(state: AutoClickerState) -> None:
         state.active_sequence = None
 
     save_data(state)
-    print(f"\n[CLEAR] Alle {count} Punkte gelöscht!")
+    print(f"\n{ok(f'Alle {count} Punkte gelöscht!')}")
     print_status(state)
 
 
@@ -79,12 +79,10 @@ def handle_reset(state: AutoClickerState) -> None:
     """Löscht ALLES - kompletter Factory Reset wie frisch von GitHub."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
 
-    print("\n" + "=" * 60)
-    print("  FACTORY RESET - ALLES WIRD GELÖSCHT!")
-    print("=" * 60)
+    print(header("FACTORY RESET - ALLES WIRD GELÖSCHT!"))
     print("\nFolgendes wird gelöscht:")
     print(f"  - {len(state.points)} Punkt(e)")
     print(f"  - {len(list_available_sequences())} Sequenz-Datei(en)")
@@ -132,8 +130,8 @@ def handle_reset(state: AutoClickerState) -> None:
         with state.lock:
             state.config = DEFAULT_CONFIG.copy()
 
-        print("\n[RESET] Factory Reset abgeschlossen!")
-        print("[RESET] Das Programm ist jetzt wie frisch von GitHub.")
+        print(f"\n{ok('Factory Reset abgeschlossen!')}")
+        print(ok("Das Programm ist jetzt wie frisch von GitHub."))
         print_status(state)
 
     except (KeyboardInterrupt, EOFError):
@@ -144,7 +142,7 @@ def handle_editor(state: AutoClickerState) -> None:
     """Öffnet den Sequenz-Editor."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
     from .editors.sequence_editor import run_sequence_editor
     run_sequence_editor(state)
@@ -154,7 +152,7 @@ def handle_item_scan_editor(state: AutoClickerState) -> None:
     """Öffnet das Item-Scan Menü (Slots, Items, Scans)."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
     from .editors.item_scan_editor import run_item_scan_menu
     run_item_scan_menu(state)
@@ -164,7 +162,7 @@ def handle_load(state: AutoClickerState) -> None:
     """Lädt eine Sequenz."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
     from .editors.sequence_editor import run_sequence_loader
     run_sequence_loader(state)
@@ -300,10 +298,10 @@ def handle_pause(state: AutoClickerState) -> None:
 
         if state.pause_event.is_set():
             state.pause_event.clear()
-            print("\n[RESUME] Sequenz fortgesetzt.")
+            print(f"\n{col('[RESUME]', 'green')} Sequenz fortgesetzt.")
         else:
             state.pause_event.set()
-            print("\n[PAUSE] Sequenz pausiert. Fortsetzen: CTRL+ALT+G")
+            print(f"\n{col('[PAUSE]', 'yellow')} Sequenz pausiert. Fortsetzen: {col('CTRL+ALT+G', 'yellow')}")
 
 
 def handle_skip(state: AutoClickerState) -> None:
@@ -314,14 +312,14 @@ def handle_skip(state: AutoClickerState) -> None:
             return
 
         state.skip_event.set()
-        print("\n[SKIP] Wartezeit übersprungen!")
+        print(f"\n{col('[SKIP]', 'cyan')} Wartezeit übersprungen!")
 
 
 def handle_switch(state: AutoClickerState) -> None:
     """Schneller Wechsel zwischen gespeicherten Sequenzen."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
 
     sequences = list_available_sequences()
@@ -348,15 +346,15 @@ def handle_switch(state: AutoClickerState) -> None:
     seq = loaded_sequences[choice]
     with state.lock:
         state.active_sequence = seq
-    print(f"\n[OK] Gewechselt zu: {seq.name}")
-    print("     Starten mit CTRL+ALT+S")
+    print(f"\n{ok(f'Gewechselt zu: {seq.name}')}")
+    print(f"     Starten mit {col('CTRL+ALT+S', 'yellow')}")
 
 
 def handle_schedule(state: AutoClickerState) -> None:
     """Plant den Start einer Sequenz zu einem bestimmten Zeitpunkt."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
 
     # Keine Sequenz geladen → automatisch Lade-Menü öffnen
@@ -485,7 +483,7 @@ def handle_analyze(state: AutoClickerState) -> None:
     """Startet den Farb-Analysator."""
     with state.lock:
         if state.is_running:
-            print("\n[FEHLER] Stoppe zuerst den Klicker (CTRL+ALT+S)!")
+            print(f"\n{err('Stoppe zuerst den Klicker')} {hint('(CTRL+ALT+S)')}")
             return
     run_color_analyzer()
 

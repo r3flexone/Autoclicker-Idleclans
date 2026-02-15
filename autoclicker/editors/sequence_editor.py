@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
-from ..utils import safe_input, is_cancel, confirm, interactive_select
+from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
@@ -56,9 +56,7 @@ def capture_pixel_color() -> tuple:
 
 def run_sequence_editor(state: AutoClickerState) -> None:
     """Interaktiver Sequenz-Editor - neu erstellen oder bestehende bearbeiten."""
-    print("\n" + "=" * 60)
-    print("  SEQUENZ-EDITOR")
-    print("=" * 60)
+    print(header("SEQUENZ-EDITOR"))
 
     with state.lock:
         if not state.points:
@@ -144,9 +142,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
             print(f"  {p}")
 
     # Erst START-Phase bearbeiten
-    print("\n" + "=" * 60)
-    print("  PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)")
-    print("=" * 60)
+    print(header("PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)"))
     result = edit_phase(state, start_steps, "START")
     if result is None:
         print("[ABBRUCH] Sequenz nicht gespeichert.")
@@ -154,9 +150,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     start_steps = result
 
     # Dann LOOP-Phasen bearbeiten (mehrere möglich)
-    print("\n" + "=" * 60)
-    print("  PHASE 2: LOOP-PHASEN (können mehrere sein)")
-    print("=" * 60)
+    print(header("PHASE 2: LOOP-PHASEN (können mehrere sein)"))
     loop_phases = edit_loop_phases(state, loop_phases)
     if loop_phases is None:
         print("[ABBRUCH] Sequenz nicht gespeichert.")
@@ -164,9 +158,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
 
     # Gesamt-Zyklen abfragen
     if loop_phases:
-        print("\n" + "=" * 60)
-        print("  GESAMT-WIEDERHOLUNGEN")
-        print("=" * 60)
+        print(header("GESAMT-WIEDERHOLUNGEN"))
         print("\nAblauf: START -> Loop1 -> Loop2 -> ... -> (wieder von vorne?)")
         print("\nWie oft soll der GESAMTE Ablauf wiederholt werden?")
         print("  0 = Unendlich (manuell stoppen)")
@@ -259,16 +251,16 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
             prompt = f"[LOOPS: {len(loop_phases)}]"
             user_input = safe_input(f"{prompt} > ").strip().lower()
 
-            if user_input == "done":
+            if user_input in ("done", "d"):
                 return loop_phases
             elif is_cancel(user_input):
                 return None  # Abbruch signalisieren
             elif user_input == "":
                 continue
-            elif user_input == "help":
+            elif user_input in ("help", "?"):
                 _print_loops_help()
                 continue
-            elif user_input == "show":
+            elif user_input in ("show", "s"):
                 if loop_phases:
                     print(f"\nLoop-Phasen:")
                     for i, lp in enumerate(loop_phases):
@@ -436,39 +428,54 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     return {}
 
 
-def _print_phase_help() -> None:
-    """Zeigt die Hilfe für den Phase-Editor an."""
+def _print_phase_help(full: bool = False) -> None:
+    """Zeigt die Hilfe für den Phase-Editor an.
+
+    Args:
+        full: Wenn True, vollständige Hilfe anzeigen. Sonst Kurzübersicht.
+    """
+    if not full:
+        print("\n" + "-" * 60)
+        print("  Kurzübersicht (? = vollständige Hilfe):")
+        print(cmd_hint("<Nr> <Zeit>", "Warte Xs, klicke Punkt    (z.B. '1 30')"))
+        print(cmd_hint("scan <Name>", "Item-Scan ausführen"))
+        print(cmd_hint("key <Taste>", "Taste drücken              (z.B. 'key enter')"))
+        print(cmd_hint("wait <Zeit>", "Nur warten, kein Klick"))
+        print(cmd_hint("done | cancel", "Fertig / Abbrechen"))
+        print("-" * 60)
+        return
+
     print("\n" + "-" * 60)
     print("Befehle (Logik: erst warten, DANN klicken):")
-    print("  <Nr> <Zeit>       - Warte Xs, dann klicke (z.B. '1 30')")
-    print("  <Nr> <Min>-<Max>  - Zufällig warten (z.B. '1 30-45')")
-    print("  <Nr> 0            - Sofort klicken")
-    print("  <Nr> pixel        - Warte auf Farbe, dann klicke")
-    print("  <Nr> <Zeit> pixel - Erst Xs warten, dann auf Farbe")
-    print("  <Nr> gone         - Warte bis Farbe WEG, dann klicke")
-    print("  <Nr> <Zeit> gone  - Erst Xs warten, dann bis Farbe WEG")
-    print("  wait <Zeit>       - Nur warten, KEIN Klick (z.B. 'wait 10')")
-    print("  wait <Min>-<Max>  - Zufällig warten (z.B. 'wait 30-45')")
-    print("  wait pixel        - Auf Farbe warten, KEIN Klick")
-    print("  wait gone         - Warten bis Farbe WEG ist, KEIN Klick")
-    print("  key <Taste>       - Taste sofort drücken (z.B. 'key enter')")
-    print("  key <Zeit> <Taste> - Warten, dann Taste (z.B. 'key 5 space')")
-    print("  scan <Name>       - Item-Scan: bestes pro Kategorie (Standard)")
-    print("  scan <Name> best  - Item-Scan: nur 1 Item total")
-    print("  scan <Name> every - Item-Scan: alle Treffer (für Duplikate)")
+    print(cmd_hint("<Nr> <Zeit>", "Warte Xs, dann klicke (z.B. '1 30')"))
+    print(cmd_hint("<Nr> <Min>-<Max>", "Zufällig warten (z.B. '1 30-45')"))
+    print(cmd_hint("<Nr> 0", "Sofort klicken"))
+    print(cmd_hint("<Nr> pixel", "Warte auf Farbe, dann klicke"))
+    print(cmd_hint("<Nr> <Zeit> pixel", "Erst Xs warten, dann auf Farbe"))
+    print(cmd_hint("<Nr> gone", "Warte bis Farbe WEG, dann klicke"))
+    print(cmd_hint("<Nr> <Zeit> gone", "Erst Xs warten, dann bis Farbe WEG"))
+    print(cmd_hint("wait <Zeit>", "Nur warten, KEIN Klick (z.B. 'wait 10')"))
+    print(cmd_hint("wait <Min>-<Max>", "Zufällig warten (z.B. 'wait 30-45')"))
+    print(cmd_hint("wait pixel", "Auf Farbe warten, KEIN Klick"))
+    print(cmd_hint("wait gone", "Warten bis Farbe WEG ist, KEIN Klick"))
+    print(cmd_hint("key <Taste>", "Taste sofort drücken (z.B. 'key enter')"))
+    print(cmd_hint("key <Zeit> <Taste>", "Warten, dann Taste (z.B. 'key 5 space')"))
+    print(cmd_hint("scan <Name>", "Item-Scan: bestes pro Kategorie (Standard)"))
+    print(cmd_hint("scan <Name> best", "Item-Scan: nur 1 Item total"))
+    print(cmd_hint("scan <Name> every", "Item-Scan: alle Treffer (für Duplikate)"))
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
-    print("  ... else skip     - Überspringen (z.B. 'scan items else skip')")
-    print("  ... else restart  - Sequenz neu starten (z.B. 'scan items else restart')")
-    print("  ... else <Nr> [s] - Punkt klicken (z.B. 'scan items else 2 5')")
-    print("  ... else key <T>  - Taste drücken (z.B. '1 pixel else key enter')")
+    print(cmd_hint("... else skip", "Überspringen (z.B. 'scan items else skip')"))
+    print(cmd_hint("... else restart", "Sequenz neu starten (z.B. 'scan items else restart')"))
+    print(cmd_hint("... else <Nr> [s]", "Punkt klicken (z.B. 'scan items else 2 5')"))
+    print(cmd_hint("... else key <T>", "Taste drücken (z.B. '1 pixel else key enter')"))
     print("Punkte verwalten:")
-    print("  learn <Name>      - Neuen Punkt erstellen")
-    print("  points            - Alle Punkte anzeigen")
-    print("  del <Nr>          - Schritt löschen")
-    print("  del <Nr>-<Nr>     - Bereich löschen (z.B. del 1-5)")
-    print("  del all           - ALLE Schritte löschen")
-    print("  ins <Nr>          - Nächsten Schritt an Position einfügen")
-    print("  help | show | done | cancel")
+    print(cmd_hint("learn <Name>", "Neuen Punkt erstellen"))
+    print(cmd_hint("points", "Alle Punkte anzeigen"))
+    print(cmd_hint("del <Nr>", "Schritt löschen"))
+    print(cmd_hint("del <Nr>-<Nr>", "Bereich löschen (z.B. del 1-5)"))
+    print(cmd_hint("del all", "ALLE Schritte löschen"))
+    print(cmd_hint("ins <Nr>", "Nächsten Schritt an Position einfügen"))
+    print(cmd_hint("help | show | done | cancel", ""))
     print("-" * 60)
 
 
@@ -508,17 +515,20 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 prompt = f"[{phase_name}: {len(steps)}]"
             user_input = safe_input(f"{prompt} > ").strip()
 
-            if user_input.lower() == "done":
+            if user_input.lower() in ("done", "d"):
                 return steps
             elif is_cancel(user_input):
-                print("[CANCEL] Phase abgebrochen.")
+                print(col("[CANCEL]", "yellow") + " Phase abgebrochen.")
                 return None
             elif user_input.lower() == "":
                 continue
-            elif user_input.lower() == "help":
+            elif user_input.lower() in ("help", "?"):
                 _print_phase_help()
                 continue
-            elif user_input.lower() == "show":
+            elif user_input.lower() in ("help full", "??"):
+                _print_phase_help(full=True)
+                continue
+            elif user_input.lower() in ("show", "s"):
                 if steps:
                     print(f"\n{phase_name}-Schritte:")
                     for i, step in enumerate(steps):
@@ -590,7 +600,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     print("  -> Insert-Modus war nicht aktiv")
                 continue
 
-            elif user_input.lower() == "points":
+            elif user_input.lower() in ("points", "p"):
                 # Alle Punkte anzeigen
                 with state.lock:
                     if state.points:

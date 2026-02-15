@@ -11,7 +11,7 @@ from .models import AutoClickerState, SequenceStep
 from .winapi import (
     send_click, send_key, check_failsafe, set_cursor_pos
 )
-from .utils import clear_line, wait_while_paused, safe_input, format_duration
+from .utils import clear_line, wait_while_paused, safe_input, format_duration, col, ok, err, info, hint
 from .imaging import (
     PILLOW_AVAILABLE, take_screenshot, color_distance, get_color_name,
     PIXEL_WAIT_TIMEOUT, PIXEL_CHECK_INTERVAL, find_color_in_image,
@@ -506,29 +506,35 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
     with state.lock:
-        status = "RUNNING" if state.is_running else "STOPPED"
+        is_running = state.is_running
         seq_name = state.active_sequence.name if state.active_sequence else "Keine"
         points_str = f"{len(state.points)} Punkt(e)"
 
         clear_line()
-        if state.is_running and state.active_sequence:
-            print(f"[{status}] Sequenz: {seq_name} | Klicks: {state.total_clicks}", flush=True)
+        if is_running and state.active_sequence:
+            status_tag = col("[RUNNING]", "green")
+            duration = format_duration(time.time() - state.start_time) if state.start_time else "0:00"
+            stats = f"Klicks: {state.total_clicks}"
+            if state.items_found > 0:
+                stats += f" | Items: {state.items_found}"
+            print(f"{status_tag} {seq_name} | {stats} | {hint(duration)}", flush=True)
         else:
+            status_tag = col("[STOPPED]", "red")
             if state.active_sequence:
                 seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loops: {len(state.active_sequence.loop_phases)}"
-                print(f"[{status}] {points_str} | Sequenz: {seq_name} ({seq_info})", flush=True)
+                print(f"{status_tag} {points_str} | Sequenz: {col(seq_name, 'cyan')} ({seq_info})", flush=True)
             else:
-                print(f"[{status}] {points_str} | Sequenz: {seq_name}", flush=True)
+                print(f"{status_tag} {points_str} | Sequenz: {seq_name}", flush=True)
 
 
 def sequence_worker(state: AutoClickerState) -> None:
     """Worker-Thread, der die Sequenz ausführt."""
-    print("\n[WORKER] Sequenz gestartet.")
+    print(f"\n{col('[START]', 'green')} Sequenz gestartet.")
 
     with state.lock:
         sequence = state.active_sequence
         if not sequence:
-            print("[FEHLER] Keine gültige Sequenz!")
+            print(err("Keine gültige Sequenz!"))
             state.is_running = False
             return
 
@@ -538,7 +544,7 @@ def sequence_worker(state: AutoClickerState) -> None:
         total_cycles = sequence.total_cycles
 
         if not has_start and not has_loops:
-            print("[FEHLER] Sequenz ist leer!")
+            print(err("Sequenz ist leer!"))
             state.is_running = False
             return
 
@@ -576,14 +582,14 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.clicked_categories.clear()
 
         if total_cycles > 0 and cycle_count > total_cycles:
-            print(f"\n[FERTIG] Alle {total_cycles} Zyklen abgeschlossen!")
+            print(f"\n{ok(f'Alle {total_cycles} Zyklen abgeschlossen!')}")
             break
 
         cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
 
         # START-Phase
         if has_start and not state.stop_event.is_set():
-            print(f"\n[START] Führe Start-Sequenz aus... ({cycle_str})")
+            print(f"\n{col('[START]', 'blue')} Führe Start-Sequenz aus... ({cycle_str})")
             total_start = len(sequence.start_steps)
 
             for i, step in enumerate(sequence.start_steps):
@@ -607,7 +613,7 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if total_steps == 0:
                     continue
 
-                print(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}")
+                print(f"\n{col(f'[{loop_phase.name}]', 'magenta')} Starte ({loop_phase.repeat}x) | {cycle_str}")
 
                 for repeat_num in range(1, loop_phase.repeat + 1):
                     if state.stop_event.is_set() or state.quit_event.is_set():
@@ -642,7 +648,7 @@ def sequence_worker(state: AutoClickerState) -> None:
             continue
 
         if not has_loops or total_cycles == 1:
-            print("\n[FERTIG] Sequenz einmal durchgelaufen.")
+            print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
             break
 
     # END-Phase
@@ -662,15 +668,15 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.is_running = False
         duration = time.time() - state.start_time if state.start_time else 0
 
-    print("\n[WORKER] Sequenz gestoppt.")
-    print("-" * 50)
-    print("STATISTIKEN:")
-    print(f"  Laufzeit:     {format_duration(duration)}")
-    print(f"  Zyklen:       {cycle_count}")
-    print(f"  Klicks:       {state.total_clicks}")
+    print(f"\n{col('[STOP]', 'red')} Sequenz gestoppt.")
+    print(col("-" * 50, 'cyan'))
+    print(col("STATISTIKEN:", 'bold'))
+    print(f"  {col('Laufzeit:', 'cyan'):22s} {format_duration(duration)}")
+    print(f"  {col('Zyklen:', 'cyan'):22s} {cycle_count}")
+    print(f"  {col('Klicks:', 'cyan'):22s} {state.total_clicks}")
     if state.items_found > 0:
-        print(f"  Items:        {state.items_found}")
+        print(f"  {col('Items:', 'cyan'):22s} {state.items_found}")
     if state.key_presses > 0:
-        print(f"  Tasten:       {state.key_presses}")
-    print("-" * 50)
+        print(f"  {col('Tasten:', 'cyan'):22s} {state.key_presses}")
+    print(col("-" * 50, 'cyan'))
     print_status(state)
