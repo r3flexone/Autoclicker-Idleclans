@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, coord_context
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -25,6 +25,7 @@ from ..persistence import (
 def run_global_slot_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für globale Slot-Definitionen."""
     print(header("SLOT-EDITOR (Globale Slot-Definitionen)"))
+    print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Slots')}")
 
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
@@ -186,7 +187,9 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 continue
 
             else:
-                print(f"  -> Unbekannter Befehl {hint('(? = Hilfe)')}")
+                _known = ["auto", "add", "edit", "del", "show", "save", "load", "preset", "help", "done", "cancel"]
+                suggestion = suggest_command(cmd, _known)
+                print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
             print("\n" + col("[ABBRUCH]", "yellow") + " Slot-Editor beendet.")
@@ -263,7 +266,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
     else:
         click_x, click_y = get_cursor_pos()
 
-    print(f"  -> Klickposition: ({click_x}, {click_y})")
+    print(f"  -> Klickposition: {coord_context(click_x, click_y)}")
 
     # Optional: Screenshot speichern
     if img:

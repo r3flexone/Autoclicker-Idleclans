@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
-from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint
+from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, coord_context
 from .winapi import get_cursor_pos, set_cursor_pos, user32
 from .persistence import (
     save_data, ensure_sequences_dir, list_available_sequences,
@@ -39,7 +39,7 @@ def handle_record(state: AutoClickerState) -> None:
     # Auto-speichern
     save_data(state)
 
-    print(f"\n{col('[RECORD]', 'green')} #{new_id} {name} hinzugefügt: ({x}, {y})")
+    print(f"\n{col('[RECORD]', 'green')} #{new_id} {name} hinzugefügt: {coord_context(x, y)}")
     print_status(state)
 
 
@@ -198,7 +198,7 @@ def handle_show(state: AutoClickerState) -> None:
                     with state.lock:
                         point_to_del = get_point_by_id(state, del_id)
                         if not point_to_del:
-                            print(f"[FEHLER] Punkt #{del_id} nicht gefunden!")
+                            print(f"{err(f'Punkt #{del_id} nicht gefunden!')} {hint('(Enter = Punkte anzeigen)')}")
                             continue
                         state.points.remove(point_to_del)
                         num_points = len(state.points)
@@ -222,7 +222,7 @@ def handle_show(state: AutoClickerState) -> None:
 
             if len(parts) == 1:
                 # Nur ID → Testen (Maus hinbewegen)
-                print(f"[TEST] Bewege Maus zu {point.name} ({point.x}, {point.y})...")
+                print(f"[TEST] Bewege Maus zu {point.name} {coord_context(point.x, point.y)}...")
                 set_cursor_pos(point.x, point.y)
                 print(f"[TEST] Maus ist jetzt bei {point.name}. Neuer Name? (Enter = behalten)")
 
@@ -244,7 +244,7 @@ def handle_show(state: AutoClickerState) -> None:
                 print(f"[OK] Punkt #{point_id} umbenannt zu '{new_name}'")
 
         except ValueError:
-            print("[FEHLER] Ungültige Eingabe!")
+            print(f"{err('Ungültige Eingabe!')} {hint('(Zahl = testen, <Nr> <Name> = umbenennen, del <Nr> = löschen)')}")
         except (KeyboardInterrupt, EOFError):
             return
 

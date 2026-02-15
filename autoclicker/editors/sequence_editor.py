@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
-from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint
+from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
@@ -57,6 +57,7 @@ def capture_pixel_color() -> tuple:
 def run_sequence_editor(state: AutoClickerState) -> None:
     """Interaktiver Sequenz-Editor - neu erstellen oder bestehende bearbeiten."""
     print(header("SEQUENZ-EDITOR"))
+    print(f"  {breadcrumb('Hauptmenü', 'Sequenz-Editor')}")
 
     with state.lock:
         if not state.points:
@@ -183,6 +184,50 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         print("[ABBRUCH] Sequenz nicht gespeichert.")
         return
     end_steps = result
+
+    # Pre-Save Summary: Zeige was sich geändert hat
+    print(f"\n{col('Zusammenfassung:', 'bold')}")
+    if existing:
+        changes = []
+        old_s, new_s = len(existing.start_steps), len(start_steps)
+        if old_s != new_s:
+            changes.append(f"  Start: {old_s} → {new_s} Schritte")
+        else:
+            print(f"  Start: {new_s} Schritte {hint('(unverändert)')}")
+
+        old_l, new_l = len(existing.loop_phases), len(loop_phases)
+        if old_l != new_l:
+            changes.append(f"  Loop-Phasen: {old_l} → {new_l}")
+        for i, lp in enumerate(loop_phases):
+            if i < len(existing.loop_phases):
+                old_lp = existing.loop_phases[i]
+                if len(lp.steps) != len(old_lp.steps) or lp.repeat != old_lp.repeat:
+                    changes.append(f"    {lp.name}: {len(old_lp.steps)}x{old_lp.repeat} → {len(lp.steps)}x{lp.repeat}")
+            else:
+                changes.append(f"    {lp.name}: {col('NEU', 'green')} ({len(lp.steps)} Schritte x{lp.repeat})")
+
+        old_e, new_e = len(existing.end_steps), len(end_steps)
+        if old_e != new_e:
+            changes.append(f"  End: {old_e} → {new_e} Schritte")
+
+        if existing.total_cycles != total_cycles:
+            changes.append(f"  Zyklen: {existing.total_cycles} → {total_cycles}")
+
+        if changes:
+            print(col("  Änderungen:", "yellow"))
+            for c in changes:
+                print(f"  {c}")
+        else:
+            print(f"  {hint('Keine Änderungen')}")
+    else:
+        print(f"  {col('Neue Sequenz:', 'green')} '{seq_name}'")
+        print(f"    Start: {len(start_steps)} Schritte")
+        for lp in loop_phases:
+            print(f"    {lp.name}: {len(lp.steps)} Schritte x{lp.repeat}")
+        if end_steps:
+            print(f"    End: {len(end_steps)} Schritte")
+        cycles_desc = "Unendlich" if total_cycles == 0 else f"{total_cycles}x"
+        print(f"    Zyklen: {cycles_desc}")
 
     # Sequenz erstellen und speichern
     new_sequence = Sequence(
@@ -360,7 +405,9 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                 continue
 
             else:
-                print("  -> Unbekannter Befehl")
+                _known = ["add", "edit", "del", "show", "help", "done", "cancel"]
+                suggestion = suggest_command(user_input, _known)
+                print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
             raise
@@ -634,7 +681,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     state.points.append(new_point)
 
                 save_data(state)
-                print(f"  + Punkt #{new_id} '{point_name}' erstellt bei ({x}, {y})")
+                print(f"  + Punkt #{new_id} '{point_name}' erstellt bei {coord_context(x, y)}")
                 continue
 
             # === SCAN-BEFEHL ===
@@ -784,14 +831,18 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                         main_parts.append(p)
 
                 if not main_parts:
-                    print("  -> Unbekannter Befehl")
+                    _known = ["done", "cancel", "help", "show", "del", "ins", "points", "learn", "scan", "key", "wait"]
+                    suggestion = suggest_command(user_input, _known)
+                    print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
                     continue
 
                 # Punkt-ID
                 try:
                     point_id = int(main_parts[0])
                 except ValueError:
-                    print("  -> Unbekannter Befehl")
+                    _known = ["done", "cancel", "help", "show", "del", "ins", "points", "learn", "scan", "key", "wait"]
+                    suggestion = suggest_command(user_input, _known)
+                    print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
                     continue
 
                 with state.lock:

@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint, breadcrumb, suggest_command
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -26,6 +26,7 @@ from ..persistence import (
 def run_global_item_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für globale Item-Definitionen."""
     print(header("ITEM-EDITOR (Globale Item-Definitionen)"))
+    print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Items')}")
 
     if not PILLOW_AVAILABLE:
         print("\n[FEHLER] Pillow nicht installiert!")
@@ -226,7 +227,9 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 continue
 
             else:
-                print(f"  -> Unbekannter Befehl {hint('(? = Hilfe)')}")
+                _known = ["learn", "add", "edit", "rename", "del", "show", "template", "templates", "save", "load", "preset", "help", "done", "cancel"]
+                suggestion = suggest_command(cmd, _known)
+                print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
             print("\n" + col("[ABBRUCH]", "yellow") + " Item-Editor beendet.")
@@ -277,7 +280,8 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
     # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
-            print(f"  {err(f\"'{item_name}' existiert bereits!\")} {hint('(show = anzeigen, del = löschen)')}")
+            msg = err(f"'{item_name}' existiert bereits!")
+            print(f"  {msg} {hint('(show = anzeigen, del = löschen)')}")
             return None
 
     # Template erstellen (Screenshot von Slot)
@@ -681,7 +685,8 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
-            print(f"  -> Item '{item_name}' existiert bereits!")
+            msg = err(f"'{item_name}' existiert bereits!")
+            print(f"  {msg} {hint('(rename = umbenennen, del = löschen)')}")
             return True
 
     # Kategorie zuerst (für Prioritäts-Verschiebung)
@@ -808,7 +813,8 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
                     return
 
                 if new_name in state.global_items:
-                    print(f"  -> Name '{new_name}' existiert bereits!")
+                    msg = err(f"Name '{new_name}' existiert bereits!")
+                    print(f"  {msg} {hint('(del = löschen)')}")
                     return
 
                 # Template umbenennen falls vorhanden

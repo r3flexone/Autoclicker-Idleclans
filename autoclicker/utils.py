@@ -103,6 +103,85 @@ def cmd_hint(cmd: str, desc: str) -> str:
     return f"  {col(cmd, 'yellow'):30s} {desc}"
 
 
+def breadcrumb(*parts: str) -> str:
+    """Formatiert eine Breadcrumb-Navigation (z.B. Hauptmenü > Item-Scan > Slots)."""
+    colored = []
+    for i, part in enumerate(parts):
+        if i == len(parts) - 1:
+            colored.append(col(part, 'bold'))
+        else:
+            colored.append(col(part, 'gray'))
+    sep = col(" > ", 'gray')
+    return sep.join(colored)
+
+
+def suggest_command(cmd: str, known_commands: list[str]) -> str:
+    """Gibt einen Vorschlag für einen ähnlichen Befehl zurück.
+
+    Nutzt difflib.get_close_matches für Fuzzy-Matching.
+
+    Returns:
+        Formatierter Hinweis-String oder leerer String.
+    """
+    from difflib import get_close_matches
+    # Nur das erste Wort matchen (z.B. "delet 3" → "del")
+    first_word = cmd.split()[0] if cmd else ""
+    if not first_word:
+        return ""
+    matches = get_close_matches(first_word, known_commands, n=1, cutoff=0.5)
+    if matches:
+        colored_match = col(matches[0], "yellow")
+        return f" {hint(f'Meintest du {colored_match}?')}"
+    return ""
+
+
+def coord_context(x: int, y: int) -> str:
+    """Beschreibt Koordinaten mit räumlichem Kontext.
+
+    Nutzt die Bildschirmauflösung für relative Positionsangaben.
+    Beispiel: (1920, 1080) = rechts unten (100%, 100%)
+    """
+    try:
+        screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+        screen_h = ctypes.windll.user32.GetSystemMetrics(1)
+    except (AttributeError, OSError):
+        return f"({x}, {y})"
+
+    if screen_w <= 0 or screen_h <= 0:
+        return f"({x}, {y})"
+
+    # Horizontale Position
+    if x < screen_w * 0.33:
+        h_pos = "links"
+    elif x < screen_w * 0.66:
+        h_pos = "mitte"
+    else:
+        h_pos = "rechts"
+
+    # Vertikale Position
+    if y < screen_h * 0.33:
+        v_pos = "oben"
+    elif y < screen_h * 0.66:
+        v_pos = "mitte"
+    else:
+        v_pos = "unten"
+
+    # Kombination
+    if v_pos == "mitte" and h_pos == "mitte":
+        pos_str = "Mitte"
+    elif v_pos == "mitte":
+        pos_str = h_pos
+    elif h_pos == "mitte":
+        pos_str = v_pos
+    else:
+        pos_str = f"{v_pos} {h_pos}"
+
+    pct_x = x * 100 // screen_w
+    pct_y = y * 100 // screen_h
+
+    return f"({x}, {y}) {hint(f'= {pos_str} ({pct_x}%, {pct_y}%)')}"
+
+
 def sanitize_filename(name: str) -> str:
     """Bereinigt einen Namen für sichere Dateinamen.
 

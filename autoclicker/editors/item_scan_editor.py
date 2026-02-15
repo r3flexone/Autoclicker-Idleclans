@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -29,6 +29,7 @@ from .item_editor import run_global_item_editor, select_category
 def run_item_scan_menu(state: AutoClickerState) -> None:
     """Hauptmenü für Item-Scan Konfiguration (Slots, Items, Scans)."""
     print(header("ITEM-SCAN MENÜ"))
+    print(f"  {breadcrumb('Hauptmenü', 'Item-Scan')}")
 
     with state.lock:
         slot_count = len(state.global_slots)
@@ -54,6 +55,7 @@ def run_item_scan_menu(state: AutoClickerState) -> None:
 def run_item_scan_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für Item-Scan Konfigurationen (verknüpft Slots + Items)."""
     print(header("SCAN-EDITOR (Slots + Items verknüpfen)"))
+    print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Scans')}")
 
     if not PILLOW_AVAILABLE:
         print(f"\n{err('Pillow nicht installiert!')}")
@@ -232,7 +234,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                     else:
                         print(f"  -> Ungültig! 1-{len(slot_list)}")
                 except ValueError:
-                    print("  -> Unbekannter Befehl")
+                    _known = ["done", "cancel", "all", "clear", "show"]
+                    suggestion = suggest_command(inp, _known)
+                    print(f"  -> Unbekannter Befehl.{suggestion}")
         except (KeyboardInterrupt, EOFError):
             return
 
@@ -336,7 +340,8 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
                 # Prüfen ob Name schon existiert
                 if item_name in available_items:
-                    print(f"  -> '{item_name}' existiert bereits!")
+                    msg = err(f"'{item_name}' existiert bereits!")
+                    print(f"  {msg} {hint('(anderer Name oder done = weiter)')}")
                     continue
 
                 # Template speichern
@@ -452,7 +457,9 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                     else:
                         print(f"  -> Ungültig! 1-{len(item_list)}")
                 except ValueError:
-                    print("  -> Unbekannter Befehl")
+                    _known = ["done", "cancel", "all", "clear", "show", "new"]
+                    suggestion = suggest_command(inp, _known)
+                    print(f"  -> Unbekannter Befehl.{suggestion}")
         except (KeyboardInterrupt, EOFError):
             return
 
@@ -491,6 +498,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
     save_item_scan(config)
 
-    print(f"\n{ok(f\"Scan '{scan_name}' gespeichert!\")}")
+    save_msg = ok(f"Scan '{scan_name}' gespeichert!")
+    print(f"\n{save_msg}")
     print(f"         {len(slots)} Slots, {len(items)} Items")
     print(f"         Nutze im Sequenz-Editor: 'scan {scan_name}'")
