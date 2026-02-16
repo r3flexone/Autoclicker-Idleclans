@@ -524,7 +524,7 @@ def print_status(state: AutoClickerState) -> None:
             if state.total_clicks > 0:
                 status_tag = col("[STOPPED]", "red")
             else:
-                status_tag = col("[BEREIT]", "yellow")
+                status_tag = col("[BEREIT]", "green")
             if state.active_sequence:
                 seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loops: {len(state.active_sequence.loop_phases)}"
                 print(f"{status_tag} {points_str} | Sequenz: {col(seq_name, 'cyan')} ({seq_info})", flush=True)
