@@ -317,11 +317,77 @@ def safe_input(prompt: str = "") -> str:
                 chars.append(ch)
                 print(ch, end='', flush=True)
     else:
-        try:
-            return input(prompt)
-        except UnicodeDecodeError:
-            flush_input_buffer()
-            return ""
+        return _safe_input_polling(prompt)
+
+
+def _safe_input_polling(prompt: str) -> str:
+    """Text-Eingabe via GetAsyncKeyState + ToUnicode (für PyCharm/IDE).
+
+    Pollt Tastaturzustand und nutzt Windows ToUnicode API für korrekte
+    Zeichenzuordnung bei jedem Tastaturlayout. Unterstützt ESC zum Abbrechen.
+    """
+    user32 = ctypes.windll.user32
+
+    if prompt:
+        print(prompt, end="", flush=True)
+
+    chars = []
+
+    # VK-Codes die für Texteingabe relevant sind
+    text_vks = (
+        [0x08, 0x0D, 0x1B, 0x20]          # Backspace, Enter, ESC, Space
+        + list(range(0x30, 0x3A))          # 0-9
+        + list(range(0x41, 0x5B))          # A-Z
+        + list(range(0x60, 0x70))          # Numpad 0-9, Operatoren
+        + [0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0]  # OEM: ;+,-./ und `
+        + [0xDB, 0xDC, 0xDD, 0xDE]        # OEM: [\]'
+    )
+
+    # Flanken-Erkennung initialisieren
+    prev_states = {vk: bool(user32.GetAsyncKeyState(vk) & 0x8000) for vk in text_vks}
+
+    while True:
+        for vk in text_vks:
+            is_down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+            was_down = prev_states[vk]
+            prev_states[vk] = is_down
+
+            if not (is_down and not was_down):
+                continue
+
+            # ESC
+            if vk == 0x1B:
+                print()
+                return "\x1b"
+
+            # Enter
+            if vk == 0x0D:
+                print()
+                return ''.join(chars)
+
+            # Backspace
+            if vk == 0x08:
+                if chars:
+                    chars.pop()
+                    print('\b \b', end='', flush=True)
+                continue
+
+            # ToUnicode: VK-Code -> Zeichen (Layout-korrekt)
+            keyboard_state = (ctypes.c_ubyte * 256)()
+            user32.GetKeyboardState(keyboard_state)
+            scan_code = user32.MapVirtualKeyW(vk, 0)
+            buf = (ctypes.c_wchar * 5)()
+            # Flag 0x04 = Keyboard-State nicht verändern (Dead-Keys schonen)
+            result = user32.ToUnicode(vk, scan_code, keyboard_state, buf, 5, 0x04)
+
+            if result >= 1:
+                for i in range(result):
+                    ch = buf[i]
+                    if ch >= ' ':
+                        chars.append(ch)
+                        print(ch, end='', flush=True)
+
+        time.sleep(0.02)  # 50Hz Polling
 
 
 def confirm(message: str, default: bool = False) -> bool:
