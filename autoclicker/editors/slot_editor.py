@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, warn, hint, header, breadcrumb, suggest_command, coord_context
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, warn, hint, header, breadcrumb, suggest_command, coord_context, cancel_hint
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -62,7 +62,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         print("  save <Name>    - Als Preset speichern")
         print("  load <Name>    - Preset laden")
         print("  preset del <N> - Preset löschen")
-        print("  help | done | cancel | ESC")
+        print(f"  help | done | cancel | {cancel_hint()}")
         print("-" * 60)
 
     _print_slot_help()

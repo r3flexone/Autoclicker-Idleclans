@@ -9,7 +9,6 @@ import logging
 import msvcrt
 import os
 import re
-import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -261,6 +260,15 @@ def is_cancel(value: str) -> bool:
     return value.strip().lower() in ("cancel", "abbruch", "q", "quit")
 
 
+def cancel_hint() -> str:
+    """Gibt den passenden Abbruch-Hinweis zurück je nach Umgebung.
+
+    Echte Konsole: 'ESC' (funktioniert via msvcrt).
+    PyCharm/IDE: 'q' (ESC springt ins Code-Fenster).
+    """
+    return "ESC" if _REAL_CONSOLE else "q"
+
+
 def flush_input_buffer() -> None:
     """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke).
 
@@ -277,11 +285,11 @@ def flush_input_buffer() -> None:
 
 
 def safe_input(prompt: str = "") -> str:
-    """Sicherer Input mit ESC-Abbruch-Support.
+    """Sicherer Input mit Abbruch-Support.
 
     In echter Windows-Konsole: Zeichenweise Eingabe via msvcrt mit ESC-Erkennung.
-    In PyCharm/IDE: Non-blocking stdin-Polling + ESC via GetAsyncKeyState.
-    ESC gibt "\\x1b" zurück → is_cancel() erkennt das als Abbruch.
+    In PyCharm/IDE: Normaler input() (ESC springt ins Code-Fenster, daher
+    'q', 'cancel' oder 'abbruch' zum Abbrechen tippen).
     """
     flush_input_buffer()
 
@@ -322,54 +330,15 @@ def safe_input(prompt: str = "") -> str:
 
 
 def _safe_input_polling(prompt: str) -> str:
-    """Text-Eingabe für PyCharm/IDE mit ESC-Abbruch.
+    """Fallback für PyCharm/IDE: normaler input().
 
-    Nutzt PeekNamedPipe für non-blocking stdin-Check + GetAsyncKeyState für ESC.
-    PyCharm handhabt Zeilenbearbeitung (Backspace, Cursor etc.) nativ über
-    sein Input-Feld - kein manuelles Echo nötig.
+    ESC ist in PyCharm nicht nutzbar (springt ins Code-Fenster).
+    Stattdessen: 'q', 'cancel' oder 'abbruch' zum Abbrechen tippen.
     """
-    kernel32 = ctypes.windll.kernel32
-    user32 = ctypes.windll.user32
-
-    stdin_handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
-
-    # Prüfen ob PeekNamedPipe funktioniert (nur bei Pipes, nicht bei Console)
-    test_avail = ctypes.c_ulong(0)
-    can_peek = bool(kernel32.PeekNamedPipe(
-        stdin_handle, None, 0, None, ctypes.byref(test_avail), None
-    ))
-
-    if not can_peek:
-        # Fallback: normaler input() ohne ESC-Support
-        try:
-            return input(prompt)
-        except (EOFError, KeyboardInterrupt):
-            return ""
-
-    if prompt:
-        print(prompt, end="", flush=True)
-
-    # ESC Flanken-Erkennung
-    prev_esc = bool(user32.GetAsyncKeyState(0x1B) & 0x8000)
-
-    while True:
-        # ESC prüfen (steigende Flanke)
-        esc_down = bool(user32.GetAsyncKeyState(0x1B) & 0x8000)
-        if esc_down and not prev_esc:
-            print()
-            return "\x1b"
-        prev_esc = esc_down
-
-        # Prüfen ob stdin Daten bereit hat
-        bytes_avail = ctypes.c_ulong(0)
-        if kernel32.PeekNamedPipe(
-            stdin_handle, None, 0, None, ctypes.byref(bytes_avail), None
-        ) and bytes_avail.value > 0:
-            # Daten vorhanden → Zeile lesen (blockiert nicht, da Daten da)
-            line = sys.stdin.readline()
-            return line.rstrip('\r\n')
-
-        time.sleep(0.02)  # 50Hz Polling
+    try:
+        return input(prompt)
+    except (EOFError, KeyboardInterrupt):
+        return ""
 
 
 def confirm(message: str, default: bool = False) -> bool:

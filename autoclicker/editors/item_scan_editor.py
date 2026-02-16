@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, cancel_hint
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -188,7 +188,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "X" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel/ESC'")
+    print(f"\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel/{cancel_hint()}")
     while True:
         try:
             inp = safe_input("[Slots] > ").strip().lower()
@@ -276,7 +276,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     print("  <Von>-<Bis>       - Bereich auswählen (z.B. 1-5)")
     print("  all | clear       - Alle auswählen / Auswahl löschen")
     print("  new <Slot-Nr>     - Neues Item per Template von Slot erstellen")
-    print("  done | cancel | ESC")
+    print(f"  done | cancel | {cancel_hint()}")
     print("-" * 40)
 
     while True:

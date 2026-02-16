@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint, breadcrumb, suggest_command
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint, breadcrumb, suggest_command, cancel_hint
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -66,7 +66,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             print("    add              Neues Item manuell")
             print("    edit <Nr>        Item bearbeiten")
             print("    show             Alle Items anzeigen")
-            print("    done | cancel | ESC  Fertig / Abbrechen")
+            print(f"    done | cancel | {cancel_hint()}  Fertig / Abbrechen")
         else:
             print("\n" + "-" * 60)
             print("Befehle:")
@@ -87,7 +87,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             print(cmd_hint("help / ?", "Kurzübersicht"))
             print(cmd_hint("help full / ??", "Vollständige Hilfe"))
             print(cmd_hint("done / d", "Fertig"))
-            print(cmd_hint("cancel / ESC", "Abbrechen"))
+            print(cmd_hint(f"cancel / {cancel_hint()}", "Abbrechen"))
             print("-" * 60)
 
     _print_item_help()
