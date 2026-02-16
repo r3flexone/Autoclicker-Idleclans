@@ -9,6 +9,7 @@ import logging
 import msvcrt
 import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -278,9 +279,9 @@ def flush_input_buffer() -> None:
 def safe_input(prompt: str = "") -> str:
     """Sicherer Input mit ESC-Abbruch-Support.
 
-    In echter Windows-Konsole: Zeichenweise Eingabe mit ESC-Erkennung.
+    In echter Windows-Konsole: Zeichenweise Eingabe via msvcrt mit ESC-Erkennung.
+    In PyCharm/IDE: Non-blocking stdin-Polling + ESC via GetAsyncKeyState.
     ESC gibt "\\x1b" zurück → is_cancel() erkennt das als Abbruch.
-    In IDE-Konsolen: Normaler input() (ESC nicht verfügbar, 'cancel' tippen).
     """
     flush_input_buffer()
 
@@ -321,71 +322,52 @@ def safe_input(prompt: str = "") -> str:
 
 
 def _safe_input_polling(prompt: str) -> str:
-    """Text-Eingabe via GetAsyncKeyState + ToUnicode (für PyCharm/IDE).
+    """Text-Eingabe für PyCharm/IDE mit ESC-Abbruch.
 
-    Pollt Tastaturzustand und nutzt Windows ToUnicode API für korrekte
-    Zeichenzuordnung bei jedem Tastaturlayout. Unterstützt ESC zum Abbrechen.
+    Nutzt PeekNamedPipe für non-blocking stdin-Check + GetAsyncKeyState für ESC.
+    PyCharm handhabt Zeilenbearbeitung (Backspace, Cursor etc.) nativ über
+    sein Input-Feld - kein manuelles Echo nötig.
     """
+    kernel32 = ctypes.windll.kernel32
     user32 = ctypes.windll.user32
+
+    stdin_handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+
+    # Prüfen ob PeekNamedPipe funktioniert (nur bei Pipes, nicht bei Console)
+    test_avail = ctypes.c_ulong(0)
+    can_peek = bool(kernel32.PeekNamedPipe(
+        stdin_handle, None, 0, None, ctypes.byref(test_avail), None
+    ))
+
+    if not can_peek:
+        # Fallback: normaler input() ohne ESC-Support
+        try:
+            return input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            return ""
 
     if prompt:
         print(prompt, end="", flush=True)
 
-    chars = []
-
-    # VK-Codes die für Texteingabe relevant sind
-    text_vks = (
-        [0x08, 0x0D, 0x1B, 0x20]          # Backspace, Enter, ESC, Space
-        + list(range(0x30, 0x3A))          # 0-9
-        + list(range(0x41, 0x5B))          # A-Z
-        + list(range(0x60, 0x70))          # Numpad 0-9, Operatoren
-        + [0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0]  # OEM: ;+,-./ und `
-        + [0xDB, 0xDC, 0xDD, 0xDE]        # OEM: [\]'
-    )
-
-    # Flanken-Erkennung initialisieren
-    prev_states = {vk: bool(user32.GetAsyncKeyState(vk) & 0x8000) for vk in text_vks}
+    # ESC Flanken-Erkennung
+    prev_esc = bool(user32.GetAsyncKeyState(0x1B) & 0x8000)
 
     while True:
-        for vk in text_vks:
-            is_down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
-            was_down = prev_states[vk]
-            prev_states[vk] = is_down
+        # ESC prüfen (steigende Flanke)
+        esc_down = bool(user32.GetAsyncKeyState(0x1B) & 0x8000)
+        if esc_down and not prev_esc:
+            print()
+            return "\x1b"
+        prev_esc = esc_down
 
-            if not (is_down and not was_down):
-                continue
-
-            # ESC
-            if vk == 0x1B:
-                print()
-                return "\x1b"
-
-            # Enter
-            if vk == 0x0D:
-                print()
-                return ''.join(chars)
-
-            # Backspace
-            if vk == 0x08:
-                if chars:
-                    chars.pop()
-                    print('\b \b', end='', flush=True)
-                continue
-
-            # ToUnicode: VK-Code -> Zeichen (Layout-korrekt)
-            keyboard_state = (ctypes.c_ubyte * 256)()
-            user32.GetKeyboardState(keyboard_state)
-            scan_code = user32.MapVirtualKeyW(vk, 0)
-            buf = (ctypes.c_wchar * 5)()
-            # Flag 0x04 = Keyboard-State nicht verändern (Dead-Keys schonen)
-            result = user32.ToUnicode(vk, scan_code, keyboard_state, buf, 5, 0x04)
-
-            if result >= 1:
-                for i in range(result):
-                    ch = buf[i]
-                    if ch >= ' ':
-                        chars.append(ch)
-                        print(ch, end='', flush=True)
+        # Prüfen ob stdin Daten bereit hat
+        bytes_avail = ctypes.c_ulong(0)
+        if kernel32.PeekNamedPipe(
+            stdin_handle, None, 0, None, ctypes.byref(bytes_avail), None
+        ) and bytes_avail.value > 0:
+            # Daten vorhanden → Zeile lesen (blockiert nicht, da Daten da)
+            line = sys.stdin.readline()
+            return line.rstrip('\r\n')
 
         time.sleep(0.02)  # 50Hz Polling
 
