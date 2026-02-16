@@ -7,17 +7,14 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE
 from .models import (
     ClickPoint, SequenceStep, LoopPhase, Sequence,
     ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
 )
-from .utils import compact_json, sanitize_filename
-
-if TYPE_CHECKING:
-    pass
+from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag
 
 # Logger
 logger = logging.getLogger("autoclicker")
@@ -39,6 +36,46 @@ def init_directories() -> None:
     for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR,
                    TEMPLATES_DIR, SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
         os.makedirs(folder, exist_ok=True)
+
+
+# =============================================================================
+# ITEM SERIALISIERUNG (gemeinsame Helfer)
+# =============================================================================
+
+def _item_to_dict(item: ItemProfile) -> dict:
+    """Serialisiert ein ItemProfile zu einem Dict."""
+    return {
+        "name": item.name,
+        "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+        "category": item.category,
+        "priority": item.priority,
+        "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
+        "confirm_delay": item.confirm_delay,
+        "template": item.template,
+        "min_confidence": item.min_confidence
+    }
+
+
+def _item_from_dict(data: dict) -> ItemProfile:
+    """Deserialisiert ein ItemProfile aus einem Dict."""
+    # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
+    cp_data = data.get("confirm_point")
+    cp = None
+    if cp_data:
+        if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
+            cp = ClickPoint(cp_data["x"], cp_data["y"])
+        elif isinstance(cp_data, list) and len(cp_data) == 2:
+            cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
+    return ItemProfile(
+        name=data["name"],
+        marker_colors=[tuple(c) for c in data.get("marker_colors", [])],
+        category=data.get("category"),
+        priority=data.get("priority", 1),
+        confirm_point=cp,
+        confirm_delay=data.get("confirm_delay", 0.5),
+        template=data.get("template"),
+        min_confidence=data.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
+    )
 
 
 # =============================================================================
@@ -90,7 +127,7 @@ def save_data(state: AutoClickerState) -> None:
         with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
             f.write(compact_json(seq_data))
 
-    print(f"[SAVE] Daten gespeichert in '{SEQUENCES_DIR}/'")
+    print(save_tag(f"Daten gespeichert in '{SEQUENCES_DIR}/'"))
 
 
 def load_points(state: AutoClickerState) -> None:
@@ -105,7 +142,7 @@ def load_points(state: AutoClickerState) -> None:
                 for i, p in enumerate(data):
                     point_id = p.get("id", i + 1)  # Fallback: Index + 1 für alte Dateien
                     state.points.append(ClickPoint(p["x"], p["y"], p.get("name", ""), point_id))
-            print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
+            print(load_tag(f"{len(state.points)} Punkt(e) geladen"))
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"[WARNUNG] points.json konnte nicht geladen werden: {e}")
             print("[INFO] Starte mit leerer Punktliste.")
@@ -262,26 +299,14 @@ def save_item_scan(config: ItemScanConfig) -> None:
             }
             for slot in config.slots
         ],
-        "items": [
-            {
-                "name": item.name,
-                "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-                "category": item.category,
-                "priority": item.priority,
-                "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-                "confirm_delay": item.confirm_delay,
-                "template": item.template,
-                "min_confidence": item.min_confidence
-            }
-            for item in config.items
-        ]
+        "items": [_item_to_dict(item) for item in config.items]
     }
 
     filename = f"{sanitize_filename(config.name)}.json"
     with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
 
-    print(f"[SAVE] Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'")
+    print(save_tag(f"Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'"))
 
 
 def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
@@ -305,24 +330,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             items = []
             for i in data.get("items", []):
-                # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
-                cp_data = i.get("confirm_point")
-                cp = None
-                if cp_data:
-                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                        cp = ClickPoint(cp_data["x"], cp_data["y"])
-                    elif isinstance(cp_data, list) and len(cp_data) == 2:
-                        cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
-                item = ItemProfile(
-                    name=i["name"],
-                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    category=i.get("category"),
-                    priority=i.get("priority", 1),
-                    confirm_point=cp,
-                    confirm_delay=i.get("confirm_delay", 0.5),
-                    template=i.get("template"),
-                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-                )
+                item = _item_from_dict(i)
                 items.append(item)
 
             return ItemScanConfig(
@@ -362,7 +370,7 @@ def load_all_item_scans(state: AutoClickerState) -> None:
         if config:
             state.item_scans[config.name] = config
     if state.item_scans:
-        print(f"[LOAD] {len(state.item_scans)} Item-Scan(s) geladen")
+        print(load_tag(f"{len(state.item_scans)} Item-Scan(s) geladen"))
 
 
 # =============================================================================
@@ -381,7 +389,7 @@ def save_global_slots(state: AutoClickerState) -> None:
     }
     with open(SLOTS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_slots)} Slot(s) gespeichert")
+    print(save_tag(f"{len(state.global_slots)} Slot(s) gespeichert"))
 
 
 def load_global_slots(state: AutoClickerState) -> None:
@@ -400,29 +408,17 @@ def load_global_slots(state: AutoClickerState) -> None:
                 slot_color=slot_color
             )
         if state.global_slots:
-            print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
+            print(load_tag(f"{len(state.global_slots)} Slot(s) geladen"))
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 
 def save_global_items(state: AutoClickerState) -> None:
     """Speichert alle globalen Items."""
-    data = {
-        name: {
-            "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-            "category": item.category,
-            "priority": item.priority,
-            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-            "confirm_delay": item.confirm_delay,
-            "template": item.template,
-            "min_confidence": item.min_confidence
-        }
-        for name, item in state.global_items.items()
-    }
+    data = {name: _item_to_dict(item) for name, item in state.global_items.items()}
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
+    print(save_tag(f"{len(state.global_items)} Item(s) gespeichert"))
 
 
 def load_global_items(state: AutoClickerState) -> None:
@@ -433,26 +429,9 @@ def load_global_items(state: AutoClickerState) -> None:
         with open(ITEMS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         for name, i in data.items():
-            # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
-            cp_data = i.get("confirm_point")
-            cp = None
-            if cp_data:
-                if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                    cp = ClickPoint(cp_data["x"], cp_data["y"])
-                elif isinstance(cp_data, list) and len(cp_data) == 2:
-                    cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
-            state.global_items[name] = ItemProfile(
-                name=i["name"],
-                marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                category=i.get("category"),
-                priority=i.get("priority", 1),
-                confirm_point=cp,
-                confirm_delay=i.get("confirm_delay", 0.5),
-                template=i.get("template"),
-                min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-            )
+            state.global_items[name] = _item_from_dict(i)
         if state.global_items:
-            print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
+            print(load_tag(f"{len(state.global_items)} Item(s) geladen"))
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Items laden fehlgeschlagen: {e}")
 
@@ -498,7 +477,7 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
+    print(save_tag(f"Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)"))
     return True
 
 
@@ -527,7 +506,7 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
 
         # Auch in aktive Datei speichern
         save_global_slots(state)
-        print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
+        print(load_tag(f"Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
@@ -542,7 +521,7 @@ def delete_slot_preset(preset_name: str) -> bool:
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
     filepath.unlink()
-    print(f"[DELETE] Slot-Preset '{preset_name}' gelöscht")
+    print(delete_tag(f"Slot-Preset '{preset_name}' gelöscht"))
     return True
 
 
@@ -570,25 +549,13 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         print("[FEHLER] Keine Items vorhanden zum Speichern!")
         return False
 
-    data = {
-        name: {
-            "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-            "category": item.category,
-            "priority": item.priority,
-            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-            "confirm_delay": item.confirm_delay,
-            "template": item.template,
-            "min_confidence": item.min_confidence
-        }
-        for name, item in state.global_items.items()
-    }
+    data = {name: _item_to_dict(item) for name, item in state.global_items.items()}
 
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
+    print(save_tag(f"Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)"))
     return True
 
 
@@ -607,27 +574,11 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         with state.lock:
             state.global_items.clear()
             for name, i in data.items():
-                cp_data = i.get("confirm_point")
-                cp = None
-                if cp_data:
-                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                        cp = ClickPoint(cp_data["x"], cp_data["y"])
-                    elif isinstance(cp_data, list) and len(cp_data) == 2:
-                        cp = ClickPoint(cp_data[0], cp_data[1])
-                state.global_items[name] = ItemProfile(
-                    name=i["name"],
-                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    category=i.get("category"),
-                    priority=i.get("priority", 1),
-                    confirm_point=cp,
-                    confirm_delay=i.get("confirm_delay", 0.5),
-                    template=i.get("template"),
-                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-                )
+                state.global_items[name] = _item_from_dict(i)
 
         # Auch in aktive Datei speichern
         save_global_items(state)
-        print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
+        print(load_tag(f"Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
@@ -642,7 +593,7 @@ def delete_item_preset(preset_name: str) -> bool:
         print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
         return False
     filepath.unlink()
-    print(f"[DELETE] Item-Preset '{preset_name}' gelöscht")
+    print(delete_tag(f"Item-Preset '{preset_name}' gelöscht"))
     return True
 
 

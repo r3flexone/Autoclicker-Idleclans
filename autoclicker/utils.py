@@ -25,16 +25,8 @@ logger = logging.getLogger("autoclicker")
 # ANSI-FARBAUSGABE
 # =============================================================================
 
-def _supports_colors() -> bool:
-    """Prüft ob die Konsole ANSI-Farben unterstützt."""
-    # PyCharm unterstützt ANSI-Farben
-    if os.environ.get("PYCHARM_HOSTED"):
-        return True
-    # Echte Windows-Konsole: wird später in _detect_ansi_support() aktiviert
-    # Für den Moment optimistisch annehmen - wird durch _ANSI_ENABLED/_PYCHARM korrigiert
-    return True
-
-_COLORS_ENABLED = _supports_colors()
+# Optimistisch starten - wird nach _detect_ansi_support()/_is_pycharm() korrekt gesetzt
+_COLORS_ENABLED = True
 
 # ANSI-Farbcodes
 _C = {
@@ -90,6 +82,26 @@ def info(msg: str) -> str:
 def hint(msg: str) -> str:
     """Formatiert einen Hinweis in grau."""
     return col(msg, 'gray')
+
+
+def save_tag(msg: str) -> str:
+    """Formatiert eine Speicher-Meldung: [SAVE] grün."""
+    return f"{col('[SAVE]', 'green')} {msg}"
+
+
+def load_tag(msg: str) -> str:
+    """Formatiert eine Lade-Meldung: [LOAD] cyan."""
+    return f"{col('[LOAD]', 'cyan')} {msg}"
+
+
+def delete_tag(msg: str) -> str:
+    """Formatiert eine Lösch-Meldung: [DELETE] gelb."""
+    return f"{col('[DELETE]', 'yellow')} {msg}"
+
+
+def debug_tag(msg: str) -> str:
+    """Formatiert eine Debug-Meldung: [DEBUG] grau."""
+    return f"{col('[DEBUG]', 'gray')} {msg}"
 
 
 def header(title: str, width: int = 60) -> str:
@@ -215,10 +227,13 @@ def compact_json(data: dict, indent: int = 2) -> str:
     """
     json_str = json.dumps(data, indent=indent, ensure_ascii=False)
     # Regex: Finde Arrays die nur Zahlen enthalten und über mehrere Zeilen gehen
-    # Pattern: [ gefolgt von Whitespace/Newlines, dann Zahlen mit Kommas, dann ]
-    pattern = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
-    json_str = re.sub(pattern, r'[\1, \2, \3]', json_str)
-    # Auch für 2er-Arrays (x, y Koordinaten)
+    # 4er-Arrays (scan_region: x1, y1, x2, y2)
+    pattern4 = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+),\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
+    json_str = re.sub(pattern4, r'[\1, \2, \3, \4]', json_str)
+    # 3er-Arrays (RGB-Farben)
+    pattern3 = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
+    json_str = re.sub(pattern3, r'[\1, \2, \3]', json_str)
+    # 2er-Arrays (x, y Koordinaten)
     pattern2 = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
     json_str = re.sub(pattern2, r'[\1, \2]', json_str)
     return json_str
@@ -691,9 +706,6 @@ def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
 
         seconds = (target - now).total_seconds()
         target_timestamp = target.timestamp()
-
-        # Debug-Info
-        print(f"[DEBUG] Jetzt: {now.strftime('%H:%M:%S')} | Ziel: {target.strftime('%Y-%m-%d %H:%M:%S')} | Sekunden: {seconds:.0f}")
 
         return (seconds, f"{day_str} um {hour:02d}:{minute:02d}", target_timestamp)
 

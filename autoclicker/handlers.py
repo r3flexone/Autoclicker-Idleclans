@@ -8,7 +8,6 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
@@ -21,9 +20,6 @@ from .persistence import (
 )
 from .execution import sequence_worker, print_status
 from .imaging import run_color_analyzer
-
-if TYPE_CHECKING:
-    pass
 
 
 def handle_record(state: AutoClickerState) -> None:
@@ -276,10 +272,6 @@ def handle_toggle(state: AutoClickerState) -> None:
 
     # Jetzt starten
     with state.lock:
-        if not state.points:
-            print("\n[FEHLER] Keine Punkte gespeichert!")
-            return
-
         state.is_running = True
         state.stop_event.clear()
         state.pause_event.clear()

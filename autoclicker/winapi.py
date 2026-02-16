@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import AutoClickerState
 
-from .config import CONFIG, FAILSAFE_ENABLED
+from .config import CONFIG
 
 # =============================================================================
 # DPI-AWARENESS (muss früh gesetzt werden)
@@ -238,11 +238,10 @@ def send_key(key_name: str) -> bool:
 
 def check_failsafe(state: 'AutoClickerState' = None) -> bool:
     """Prüft, ob die Maus in der Fail-Safe-Ecke ist."""
-    if not FAILSAFE_ENABLED:
+    cfg = state.config if state else CONFIG
+    if not cfg.get("failsafe_enabled", True):
         return False
     x, y = get_cursor_pos()
-    # Nutze state.config wenn vorhanden, sonst globale CONFIG
-    cfg = state.config if state else CONFIG
     failsafe_x = cfg.get("failsafe_x", 5)
     failsafe_y = cfg.get("failsafe_y", 5)
     return x <= failsafe_x and y <= failsafe_y

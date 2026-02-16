@@ -116,8 +116,7 @@ def save_config(config: dict) -> None:
 # Konfiguration laden (wird beim Import ausgeführt)
 CONFIG = load_config()
 
-# Konfig-Werte als Variablen (für einfacheren Zugriff)
-CLICKS_PER_POINT: int = CONFIG["clicks_per_point"]
-MAX_TOTAL_CLICKS: Optional[int] = CONFIG["max_total_clicks"]
-FAILSAFE_ENABLED: bool = CONFIG["failsafe_enabled"]
+# Konfig-Werte als Variablen (nur Werte die sich zur Laufzeit nicht ändern)
+# ACHTUNG: Werte die sich durch Factory Reset ändern können, immer über
+# state.config.get() abrufen statt über Modul-Variablen!
 DEFAULT_MIN_CONFIDENCE: float = CONFIG["default_min_confidence"]

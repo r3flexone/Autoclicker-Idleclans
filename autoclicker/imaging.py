@@ -18,9 +18,8 @@ if TYPE_CHECKING:
 # Logger
 logger = logging.getLogger("autoclicker")
 
-# Verzeichnisse
-ITEMS_DIR: str = "items"
-TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")
+# Verzeichnisse (importiert aus persistence um Duplizierung zu vermeiden)
+from .persistence import ITEMS_DIR, TEMPLATES_DIR
 
 # Optionale Imports
 try:
@@ -45,12 +44,6 @@ except ImportError:
     logger.warning("OpenCV nicht installiert. Template Matching deaktiviert.")
     logger.warning("Installieren mit: pip install opencv-python")
 
-
-# Toleranzen aus Config
-COLOR_TOLERANCE = CONFIG["color_tolerance"]
-PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
-PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
-PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
 
 
 def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
