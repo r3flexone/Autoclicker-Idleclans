@@ -548,7 +548,7 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
-        if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
+        if state.config.get("debug_mode", False):
             print("\n" + "=" * 60)
             print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
             for i, step in enumerate(sequence.start_steps):
