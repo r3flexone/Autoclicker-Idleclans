@@ -520,7 +520,11 @@ def print_status(state: AutoClickerState) -> None:
                 stats += f" | Items: {state.items_found}"
             print(f"{status_tag} {seq_name} | {stats} | {hint(duration)}", flush=True)
         else:
-            status_tag = col("[STOPPED]", "red")
+            # "BEREIT" wenn noch nie gestartet, "STOPPED" wenn Sequenz lief und gestoppt wurde
+            if state.total_clicks > 0:
+                status_tag = col("[STOPPED]", "red")
+            else:
+                status_tag = col("[BEREIT]", "yellow")
             if state.active_sequence:
                 seq_info = f"Start: {len(state.active_sequence.start_steps)}, Loops: {len(state.active_sequence.loop_phases)}"
                 print(f"{status_tag} {points_str} | Sequenz: {col(seq_name, 'cyan')} ({seq_info})", flush=True)
