@@ -326,19 +326,11 @@ def safe_input(prompt: str = "") -> str:
                 chars.append(ch)
                 print(ch, end='', flush=True)
     else:
-        return _safe_input_polling(prompt)
-
-
-def _safe_input_polling(prompt: str) -> str:
-    """Fallback für PyCharm/IDE: normaler input().
-
-    ESC ist in PyCharm nicht nutzbar (springt ins Code-Fenster).
-    Stattdessen: 'q', 'cancel' oder 'abbruch' zum Abbrechen tippen.
-    """
-    try:
-        return input(prompt)
-    except (EOFError, KeyboardInterrupt):
-        return ""
+        # PyCharm/IDE: normaler input() (ESC nicht nutzbar, 'q'/'cancel' tippen)
+        try:
+            return input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            return ""
 
 
 def confirm(message: str, default: bool = False) -> bool:
