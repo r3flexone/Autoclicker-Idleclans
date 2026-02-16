@@ -62,7 +62,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         print("  save <Name>    - Als Preset speichern")
         print("  load <Name>    - Preset laden")
         print("  preset del <N> - Preset löschen")
-        print("  help | done | cancel")
+        print("  help | done | cancel | ESC")
         print("-" * 60)
 
     _print_slot_help()

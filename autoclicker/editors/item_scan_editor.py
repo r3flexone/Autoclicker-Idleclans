@@ -188,7 +188,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "X" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel'")
+    print("\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel/ESC'")
     while True:
         try:
             inp = safe_input("[Slots] > ").strip().lower()
@@ -276,7 +276,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     print("  <Von>-<Bis>       - Bereich auswählen (z.B. 1-5)")
     print("  all | clear       - Alle auswählen / Auswahl löschen")
     print("  new <Slot-Nr>     - Neues Item per Template von Slot erstellen")
-    print("  done | cancel")
+    print("  done | cancel | ESC")
     print("-" * 40)
 
     while True:

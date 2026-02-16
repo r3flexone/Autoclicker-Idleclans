@@ -286,7 +286,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
         print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
         print("  del all        - ALLE Loop-Phasen löschen")
         print("  show           - Alle Loop-Phasen anzeigen")
-        print("  help | done | cancel")
+        print("  help | done | cancel | ESC")
         print("-" * 60)
 
     _print_loops_help()
@@ -488,7 +488,7 @@ def _print_phase_help(full: bool = False) -> None:
         print(cmd_hint("scan <Name>", "Item-Scan ausführen"))
         print(cmd_hint("key <Taste>", "Taste drücken              (z.B. 'key enter')"))
         print(cmd_hint("wait <Zeit>", "Nur warten, kein Klick"))
-        print(cmd_hint("done | cancel", "Fertig / Abbrechen"))
+        print(cmd_hint("done | cancel | ESC", "Fertig / Abbrechen"))
         print("-" * 60)
         return
 
@@ -522,7 +522,7 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("del <Nr>-<Nr>", "Bereich löschen (z.B. del 1-5)"))
     print(cmd_hint("del all", "ALLE Schritte löschen"))
     print(cmd_hint("ins <Nr>", "Nächsten Schritt an Position einfügen"))
-    print(cmd_hint("help | show | done | cancel", ""))
+    print(cmd_hint("help | show | done | cancel | ESC", ""))
     print("-" * 60)
 
 

@@ -253,8 +253,10 @@ def save_json(filepath: str, data: dict) -> bool:
 def is_cancel(value: str) -> bool:
     """Prüft ob die Eingabe ein Abbruch-Befehl ist.
 
-    Akzeptiert: cancel, abbruch, q, quit (case-insensitive).
+    Akzeptiert: ESC-Taste, cancel, abbruch, q, quit (case-insensitive).
     """
+    if value == "\x1b":
+        return True
     return value.strip().lower() in ("cancel", "abbruch", "q", "quit")
 
 
@@ -274,14 +276,52 @@ def flush_input_buffer() -> None:
 
 
 def safe_input(prompt: str = "") -> str:
-    """Sicherer Input der UnicodeDecodeError abfängt."""
-    flush_input_buffer()  # Buffer leeren vor Input
-    try:
-        return input(prompt)
-    except UnicodeDecodeError:
-        # Sonderzeichen im Buffer (z.B. ESC) - ignorieren und leeren String zurückgeben
-        flush_input_buffer()
-        return ""
+    """Sicherer Input mit ESC-Abbruch-Support.
+
+    In echter Windows-Konsole: Zeichenweise Eingabe mit ESC-Erkennung.
+    ESC gibt "\\x1b" zurück → is_cancel() erkennt das als Abbruch.
+    In IDE-Konsolen: Normaler input() (ESC nicht verfügbar, 'cancel' tippen).
+    """
+    flush_input_buffer()
+
+    if _REAL_CONSOLE:
+        if prompt:
+            print(prompt, end="", flush=True)
+
+        chars = []
+        while True:
+            try:
+                ch = msvcrt.getwch()
+            except (EOFError, KeyboardInterrupt):
+                raise
+
+            if ch == '\x1b':  # ESC
+                print()
+                return "\x1b"
+            elif ch == '\r':  # Enter
+                print()
+                return ''.join(chars)
+            elif ch in ('\x08', '\x7f'):  # Backspace
+                if chars:
+                    chars.pop()
+                    print('\b \b', end='', flush=True)
+            elif ch == '\x03':  # Ctrl+C
+                print()
+                raise KeyboardInterrupt
+            elif ch == '\x04' or ch == '\x1a':  # Ctrl+D / Ctrl+Z (EOF)
+                print()
+                raise EOFError
+            elif ch in ('\x00', '\xe0'):  # Spezial-Tasten Prefix (Pfeile etc.)
+                msvcrt.getwch()  # Zweites Byte lesen und verwerfen
+            elif ch >= ' ':  # Druckbare Zeichen
+                chars.append(ch)
+                print(ch, end='', flush=True)
+    else:
+        try:
+            return input(prompt)
+        except UnicodeDecodeError:
+            flush_input_buffer()
+            return ""
 
 
 def confirm(message: str, default: bool = False) -> bool:
