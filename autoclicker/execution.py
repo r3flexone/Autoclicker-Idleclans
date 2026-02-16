@@ -63,7 +63,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     if not step.else_action:
         return True
 
-    debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+    debug = state.config.get("debug_mode", False)
 
     if step.else_action == "skip":
         if debug:
@@ -261,7 +261,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Item-Scan Schritt aus."""
-    debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+    debug = state.config.get("debug_mode", False)
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
 
@@ -329,7 +329,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
 def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Tastendruck-Schritt aus."""
-    debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+    debug = state.config.get("debug_mode", False)
     actual_delay = step.get_actual_delay()
     if actual_delay > 0:
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
@@ -389,7 +389,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
                 # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
                 elapsed = time.time() - start_time
-                debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+                debug = state.config.get("debug_mode", False)
                 current_name = get_color_name(current_color)
 
                 if condition_met:
@@ -429,7 +429,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 def _execute_click(state: AutoClickerState, step: SequenceStep,
                    step_num: int, total_steps: int, phase: str) -> bool:
     """Führt den eigentlichen Klick aus."""
-    debug = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+    debug = state.config.get("debug_mode", False)
     clicks = state.config.get("clicks_per_point", 1)
     for _ in range(clicks):
         if state.stop_event.is_set():
@@ -470,7 +470,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
         state.stop_event.set()
         return False
 
-    if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
+    if state.config.get("debug_mode", False):
         print(f"[DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}")
 
     if step.item_scan:
@@ -619,7 +619,7 @@ def sequence_worker(state: AutoClickerState) -> None:
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
 
-                    if state.config.get("debug_mode", False) or state.config.get("debug_detection", False):
+                    if state.config.get("debug_mode", False):
                         print(f"[DEBUG] Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'")
 
                     for i, step in enumerate(loop_phase.steps):
