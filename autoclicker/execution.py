@@ -129,12 +129,12 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all") -> list:
     """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück."""
     if scan_name not in state.item_scans:
-        print(f"[FEHLER] Item-Scan '{scan_name}' nicht gefunden!")
+        print(err(f"Item-Scan '{scan_name}' nicht gefunden!"))
         return []
 
     config = state.item_scans[scan_name]
     if not config.slots or not config.items:
-        print(f"[FEHLER] Item-Scan '{scan_name}' hat keine Slots oder Items!")
+        print(err(f"Item-Scan '{scan_name}' hat keine Slots oder Items!"))
         return []
 
     found_items = []
@@ -455,7 +455,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
 
         max_clicks = state.config.get("max_total_clicks", None)
         if max_clicks and state.total_clicks >= max_clicks:
-            print(f"\n[INFO] Maximum von {max_clicks} Klicks erreicht.")
+            print(f"\n{info(f'Maximum von {max_clicks} Klicks erreicht.')}")
             state.stop_event.set()
             return False
 

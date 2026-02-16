@@ -9,7 +9,7 @@ import os
 from typing import Optional, TYPE_CHECKING
 
 from .config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from .utils import safe_input, interactive_select
+from .utils import safe_input, interactive_select, err
 from .winapi import get_cursor_pos
 
 if TYPE_CHECKING:
@@ -418,7 +418,7 @@ def run_color_analyzer() -> None:
     print("=" * 60)
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
@@ -460,7 +460,7 @@ def analyze_and_print_colors(region: tuple = None) -> None:
 
     color_counts = analyze_screen_colors(region)
     if not color_counts:
-        print("[FEHLER] Keine Farben gefunden!")
+        print(err("Keine Farben gefunden!"))
         return
 
     # Top 20 häufigste Farben

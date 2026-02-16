@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, coord_context
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, warn, hint, header, breadcrumb, suggest_command, coord_context
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
@@ -28,7 +28,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
     print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Slots')}")
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
@@ -343,10 +343,10 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
 def slot_auto_detect(state: AutoClickerState) -> bool:
     """Automatische Slot-Erkennung mit OpenCV. Gibt True zurück wenn erfolgreich."""
     if not OPENCV_AVAILABLE:
-        print("  [FEHLER] OpenCV nicht installiert! pip install opencv-python")
+        print(f"  {err('OpenCV nicht installiert!')} pip install opencv-python")
         return False
     if not NUMPY_AVAILABLE:
-        print("  [FEHLER] NumPy nicht installiert! pip install numpy")
+        print(f"  {err('NumPy nicht installiert!')} pip install numpy")
         return False
 
     import numpy as np
@@ -369,7 +369,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
 
     img = take_screenshot(region)
     if img is None:
-        print("  [FEHLER] Screenshot fehlgeschlagen!")
+        print(f"  {err('Screenshot fehlgeschlagen!')}")
         return False
 
     print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
@@ -381,7 +381,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
 
     slot_color_rgb = get_pixel_color(mx, my)
     if not slot_color_rgb:
-        print("  [FEHLER] Konnte Farbe nicht lesen!")
+        print(f"  {err('Konnte Farbe nicht lesen!')}")
         return False
 
     r, g, b = slot_color_rgb
@@ -431,7 +431,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
     detected_slots.sort(key=lambda s: (s[1] // 50, s[0]))
 
     if not detected_slots:
-        print("\n  [FEHLER] Keine Slots erkannt!")
+        print(f"\n  {err('Keine Slots erkannt!')}")
         print("  Versuche es mit einer anderen Farbe.")
         return False
 
@@ -521,6 +521,6 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
         cv2.imwrite(str(preview_path), preview)
         print(f"  Vorschau: {preview_path}")
     except (OSError, IOError, ValueError) as e:
-        print(f"  [WARNUNG] Screenshots speichern: {e}")
+        print(f"  {warn(f'Screenshots speichern: {e}')}")
 
     return True

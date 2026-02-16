@@ -246,7 +246,7 @@ def save_json(filepath: str, data: dict) -> bool:
             f.write(compact_json(data))
         return True
     except IOError as e:
-        print(f"[FEHLER] Konnte nicht speichern: {filepath} - {e}")
+        print(err(f"Konnte nicht speichern: {filepath} - {e}"))
         return False
 
 

@@ -14,7 +14,7 @@ from .models import (
     ClickPoint, SequenceStep, LoopPhase, Sequence,
     ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
 )
-from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag
+from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag, err, info, warn
 
 # Logger
 logger = logging.getLogger("autoclicker")
@@ -144,11 +144,11 @@ def load_points(state: AutoClickerState) -> None:
                     state.points.append(ClickPoint(p["x"], p["y"], p.get("name", ""), point_id))
             print(load_tag(f"{len(state.points)} Punkt(e) geladen"))
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            print(f"[WARNUNG] points.json konnte nicht geladen werden: {e}")
-            print("[INFO] Starte mit leerer Punktliste.")
+            print(warn(f"points.json konnte nicht geladen werden: {e}"))
+            print(info("Starte mit leerer Punktliste."))
             state.points = []
     else:
-        print("[INFO] Keine gespeicherten Punkte gefunden.")
+        print(info("Keine gespeicherten Punkte gefunden."))
 
 
 def get_next_point_id(state: AutoClickerState) -> int:
@@ -460,7 +460,7 @@ def list_slot_presets() -> list[tuple[str, Path, int]]:
 def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Speichert aktuelle Slots als Preset."""
     if not state.global_slots:
-        print("[FEHLER] Keine Slots vorhanden zum Speichern!")
+        print(err("Keine Slots vorhanden zum Speichern!"))
         return False
 
     data = {
@@ -486,7 +486,7 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
 
     try:
@@ -509,7 +509,7 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
         print(load_tag(f"Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        print(err(f"Preset laden fehlgeschlagen: {e}"))
         return False
 
 
@@ -518,7 +518,7 @@ def delete_slot_preset(preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
     filepath.unlink()
     print(delete_tag(f"Slot-Preset '{preset_name}' gelöscht"))
@@ -546,7 +546,7 @@ def list_item_presets() -> list[tuple[str, Path, int]]:
 def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Speichert aktuelle Items als Preset."""
     if not state.global_items:
-        print("[FEHLER] Keine Items vorhanden zum Speichern!")
+        print(err("Keine Items vorhanden zum Speichern!"))
         return False
 
     data = {name: _item_to_dict(item) for name, item in state.global_items.items()}
@@ -564,7 +564,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
 
     try:
@@ -581,7 +581,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         print(load_tag(f"Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        print(err(f"Preset laden fehlgeschlagen: {e}"))
         return False
 
 
@@ -590,7 +590,7 @@ def delete_item_preset(preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
     filepath.unlink()
     print(delete_tag(f"Item-Preset '{preset_name}' gelöscht"))
@@ -655,7 +655,7 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
                 updated_scans += 1
 
         except (json.JSONDecodeError, IOError, KeyError) as e:
-            print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
+            print(f"  {warn(f'Konnte {scan_file.name} nicht aktualisieren: {e}')}")
 
     return updated_scans
 
@@ -664,7 +664,7 @@ def print_points(state: AutoClickerState) -> None:
     """Zeigt alle gespeicherten Punkte an."""
     with state.lock:
         if not state.points:
-            print("\n[INFO] Keine Punkte vorhanden.")
+            print(f"\n{info('Keine Punkte vorhanden.')}")
             print("       Punkte mit CTRL+ALT+A aufnehmen.")
             return
 

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .models import AutoClickerState
 
 from .config import CONFIG
+from .utils import err, warn
 
 # =============================================================================
 # DPI-AWARENESS (muss früh gesetzt werden)
@@ -216,7 +217,7 @@ def send_key(key_name: str) -> bool:
     """Führt einen Tastendruck aus. Gibt True zurück wenn erfolgreich."""
     key_lower = key_name.lower()
     if key_lower not in VK_CODES:
-        print(f"[FEHLER] Unbekannte Taste: '{key_name}'")
+        print(err(f"Unbekannte Taste: '{key_name}'"))
         print(f"         Verfügbar: {', '.join(sorted(VK_CODES.keys()))}")
         return False
 
@@ -273,7 +274,7 @@ def register_hotkeys() -> bool:
 
     for hotkey_id, modifiers, vk, name in hotkeys:
         if not user32.RegisterHotKey(None, hotkey_id, modifiers, vk):
-            print(f"[WARNUNG] Konnte Hotkey nicht registrieren: {name}")
+            print(warn(f"Konnte Hotkey nicht registrieren: {name}"))
             success = False
 
     return success

@@ -61,7 +61,7 @@ def run_sequence_editor(state: AutoClickerState) -> None:
 
     with state.lock:
         if not state.points:
-            print("\n[FEHLER] Erst Punkte aufnehmen (CTRL+ALT+A)!")
+            print(f"\n{err('Erst Punkte aufnehmen')} {hint('(CTRL+ALT+A)')}")
             return
 
     # Bestehende Sequenzen einmal laden und cachen
@@ -77,7 +77,7 @@ def run_sequence_editor(state: AutoClickerState) -> None:
     choice = interactive_select(menu_options, title="\nWas möchtest du tun?")
 
     if choice == -1:
-        print("[CANCEL] Editor beendet.")
+        print(f"{col('[CANCEL]', 'yellow')} Editor beendet.")
         return
     elif choice == 0:
         edit_sequence(state, None)
@@ -90,8 +90,8 @@ def run_sequence_loader(state: AutoClickerState) -> None:
     sequences = list_available_sequences()
 
     if not sequences:
-        print("\n[INFO] Keine Sequenzen gefunden!")
-        print("       Erstelle eine mit CTRL+ALT+E (Sequenz-Editor)")
+        print(f"\n{info('Keine Sequenzen gefunden!')}")
+        print(f"       Erstelle eine mit {col('CTRL+ALT+E', 'yellow')} (Sequenz-Editor)")
         return
 
     # Sequenzen einmal laden und cachen
@@ -112,8 +112,8 @@ def run_sequence_loader(state: AutoClickerState) -> None:
     seq = loaded_sequences[choice]
     with state.lock:
         state.active_sequence = seq
-    print(f"\n[ERFOLG] Sequenz '{seq.name}' geladen!")
-    print("         Drücke CTRL+ALT+S zum Starten.\n")
+    print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq.name}' geladen!")
+    print(f"         Drücke {col('CTRL+ALT+S', 'yellow')} zum Starten.\n")
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
@@ -146,7 +146,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print(header("PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)"))
     result = edit_phase(state, start_steps, "START")
     if result is None:
-        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        print(f"{col('[ABBRUCH]', 'yellow')} Sequenz nicht gespeichert.")
         return
     start_steps = result
 
@@ -154,7 +154,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print(header("PHASE 2: LOOP-PHASEN (können mehrere sein)"))
     loop_phases = edit_loop_phases(state, loop_phases)
     if loop_phases is None:
-        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        print(f"{col('[ABBRUCH]', 'yellow')} Sequenz nicht gespeichert.")
         return
 
     # Gesamt-Zyklen abfragen
@@ -181,7 +181,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print("\n  (Optional: Aufräumen, Logout, etc.)")
     result = edit_phase(state, end_steps, "END")
     if result is None:
-        print("[ABBRUCH] Sequenz nicht gespeichert.")
+        print(f"{col('[ABBRUCH]', 'yellow')} Sequenz nicht gespeichert.")
         return
     end_steps = result
 
@@ -248,7 +248,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     all_steps = start_steps + [s for lp in loop_phases for s in lp.steps] + end_steps
     pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
 
-    print(f"\n[ERFOLG] Sequenz '{seq_name}' gespeichert!")
+    print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq_name}' gespeichert!")
     print(f"         Start: {len(start_steps)} Schritte (einmal pro Zyklus)")
     for i, lp in enumerate(loop_phases):
         print(f"         {lp.name}: {len(lp.steps)} Schritte x{lp.repeat}")
@@ -262,7 +262,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         print(f"         Gesamt: {total_cycles}x wiederholen")
     if pixel_triggers > 0:
         print(f"         Farb-Trigger: {pixel_triggers} Schritt(e)")
-    print("         Drücke CTRL+ALT+S zum Starten.\n")
+    print(f"         Drücke {col('CTRL+ALT+S', 'yellow')} zum Starten.\n")
 
 
 def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> Optional[list[LoopPhase]]:

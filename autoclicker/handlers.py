@@ -60,7 +60,7 @@ def handle_clear(state: AutoClickerState) -> None:
 
         count = len(state.points)
         if count == 0:
-            print("\n[CLEAR] Keine Punkte vorhanden.")
+            print(f"\n{col('[CLEAR]', 'yellow')} Keine Punkte vorhanden.")
             return
 
         state.points.clear()
@@ -92,7 +92,7 @@ def handle_reset(state: AutoClickerState) -> None:
     try:
         confirm_text = safe_input("> ").strip().upper()
         if confirm_text != "JA":
-            print("[ABBRUCH] Nichts wurde gelöscht.")
+            print(f"{col('[ABBRUCH]', 'yellow')} Nichts wurde gelöscht.")
             return
 
         # Speicher löschen
@@ -131,7 +131,7 @@ def handle_reset(state: AutoClickerState) -> None:
         print_status(state)
 
     except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH] Nichts wurde gelöscht.")
+        print(f"\n{col('[ABBRUCH]', 'yellow')} Nichts wurde gelöscht.")
 
 
 def handle_editor(state: AutoClickerState) -> None:
@@ -199,12 +199,12 @@ def handle_show(state: AutoClickerState) -> None:
                         state.points.remove(point_to_del)
                         num_points = len(state.points)
                     save_data(state)
-                    print(f"[OK] Punkt #{del_id} gelöscht: {point_to_del}")
+                    print(f"{ok(f'Punkt #{del_id} gelöscht: {point_to_del}')}")
                     if num_points == 0:
-                        print("[INFO] Keine Punkte mehr vorhanden.")
+                        print(info("Keine Punkte mehr vorhanden."))
                         return
                 except ValueError:
-                    print("[FEHLER] Format: del <ID>")
+                    print(err("Format: del <ID>"))
                 continue
 
             parts = user_input.split(maxsplit=1)
@@ -213,23 +213,23 @@ def handle_show(state: AutoClickerState) -> None:
             with state.lock:
                 point = get_point_by_id(state, point_id)
                 if not point:
-                    print(f"[FEHLER] Punkt #{point_id} nicht gefunden!")
+                    print(err(f"Punkt #{point_id} nicht gefunden!"))
                     continue
 
             if len(parts) == 1:
                 # Nur ID → Testen (Maus hinbewegen)
-                print(f"[TEST] Bewege Maus zu {point.name} {coord_context(point.x, point.y)}...")
+                print(f"{col('[TEST]', 'cyan')} Bewege Maus zu {point.name} {coord_context(point.x, point.y)}...")
                 set_cursor_pos(point.x, point.y)
-                print(f"[TEST] Maus ist jetzt bei {point.name}. Neuer Name? (Enter = behalten)")
+                print(f"{col('[TEST]', 'cyan')} Maus ist jetzt bei {point.name}. Neuer Name? (Enter = behalten)")
 
                 new_name = safe_input("> ").strip()
                 if new_name:
                     with state.lock:
                         point.name = new_name
                     save_data(state)
-                    print(f"[OK] Punkt #{point_id} umbenannt zu '{new_name}'")
+                    print(ok(f"Punkt #{point_id} umbenannt zu '{new_name}'"))
                 else:
-                    print(f"[OK] Name '{point.name}' beibehalten.")
+                    print(ok(f"Name '{point.name}' beibehalten."))
 
             else:
                 # ID + Name → Direkt umbenennen
@@ -237,7 +237,7 @@ def handle_show(state: AutoClickerState) -> None:
                 with state.lock:
                     point.name = new_name
                 save_data(state)
-                print(f"[OK] Punkt #{point_id} umbenannt zu '{new_name}'")
+                print(ok(f"Punkt #{point_id} umbenannt zu '{new_name}'"))
 
         except ValueError:
             print(f"{err('Ungültige Eingabe!')} {hint('(Zahl = testen, <Nr> <Name> = umbenennen, del <Nr> = löschen)')}")
@@ -251,19 +251,19 @@ def handle_toggle(state: AutoClickerState) -> None:
     with state.lock:
         if state.countdown_active:
             state.stop_event.set()
-            print("\n[TOGGLE] Countdown abgebrochen.")
+            print(f"\n{col('[TOGGLE]', 'yellow')} Countdown abgebrochen.")
             return
 
     # Prüfe ob bereits läuft → stoppen
     with state.lock:
         if state.is_running:
             state.stop_event.set()
-            print("\n[TOGGLE] Stoppe Sequenz...")
+            print(f"\n{col('[TOGGLE]', 'yellow')} Stoppe Sequenz...")
             return
 
     # Keine Sequenz geladen → automatisch Lade-Menü öffnen
     if not state.active_sequence:
-        print("\n[INFO] Keine Sequenz geladen - öffne Lade-Menü...")
+        print(f"\n{info('Keine Sequenz geladen - öffne Lade-Menü...')}")
         from .editors.sequence_editor import run_sequence_loader
         run_sequence_loader(state)
         # Nach dem Laden prüfen ob jetzt eine Sequenz da ist
@@ -285,7 +285,7 @@ def handle_pause(state: AutoClickerState) -> None:
     """Pausiert oder setzt die Sequenz fort."""
     with state.lock:
         if not state.is_running:
-            print("\n[INFO] Keine Sequenz läuft.")
+            print(f"\n{info('Keine Sequenz läuft.')}")
             return
 
         if state.pause_event.is_set():
@@ -300,7 +300,7 @@ def handle_skip(state: AutoClickerState) -> None:
     """Überspringt die aktuelle Wartezeit."""
     with state.lock:
         if not state.is_running:
-            print("\n[INFO] Keine Sequenz läuft.")
+            print(f"\n{info('Keine Sequenz läuft.')}")
             return
 
         state.skip_event.set()
@@ -317,7 +317,7 @@ def handle_switch(state: AutoClickerState) -> None:
     sequences = list_available_sequences()
 
     if not sequences:
-        print("\n[INFO] Keine Sequenzen vorhanden! Erstelle eine mit CTRL+ALT+E")
+        print(f"\n{info('Keine Sequenzen vorhanden!')} Erstelle eine mit {col('CTRL+ALT+E', 'yellow')}")
         return
 
     # Sequenzen einmal laden und cachen
@@ -351,7 +351,7 @@ def handle_schedule(state: AutoClickerState) -> None:
 
     # Keine Sequenz geladen → automatisch Lade-Menü öffnen
     if not state.active_sequence:
-        print("\n[INFO] Keine Sequenz geladen - öffne Lade-Menü...")
+        print(f"\n{info('Keine Sequenz geladen - öffne Lade-Menü...')}")
         from .editors.sequence_editor import run_sequence_loader
         run_sequence_loader(state)
         # Nach dem Laden prüfen ob jetzt eine Sequenz da ist
@@ -375,7 +375,7 @@ def handle_schedule(state: AutoClickerState) -> None:
         time_input = safe_input("> ").strip()
 
         if not time_input or is_cancel(time_input):
-            print("[ABBRUCH]")
+            print(col("[ABBRUCH]", "yellow"))
             return
 
         seconds, desc, target_timestamp = parse_time_input(time_input)
@@ -385,11 +385,11 @@ def handle_schedule(state: AutoClickerState) -> None:
             print(f"[DEBUG] Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}', target_timestamp={target_timestamp}")
 
         if seconds < 0:
-            print(f"[FEHLER] {desc}")
+            print(err(desc))
             return
 
         if seconds < 1:
-            print("[INFO] Zeit zu kurz - starte sofort...")
+            print(info("Zeit zu kurz - starte sofort..."))
             # Starte sofort
             handle_toggle(state)
             return
@@ -402,7 +402,7 @@ def handle_schedule(state: AutoClickerState) -> None:
         else:
             target_time = datetime.now().timestamp() + seconds
         target_dt = datetime.fromtimestamp(target_time)
-        print(f"\n[GEPLANT] Sequenz '{state.active_sequence.name}' startet {desc}")
+        print(f"\n{col('[GEPLANT]', 'cyan')} Sequenz '{state.active_sequence.name}' startet {desc}")
         print(f"          Zielzeit: {target_dt.strftime('%H:%M:%S')}")
         print(f"          Wartezeit: {format_duration(seconds)}")
         print("\n          Enter drücken zum Starten, 'cancel' zum Abbrechen")
@@ -410,7 +410,7 @@ def handle_schedule(state: AutoClickerState) -> None:
         # Bestätigung abwarten
         confirm_input = safe_input("> ").strip()
         if is_cancel(confirm_input):
-            print("[ABBRUCH]")
+            print(col("[ABBRUCH]", "yellow"))
             return
 
         # Nach Enter: Bei relativen Zeiten jetzt die Zielzeit berechnen
@@ -434,14 +434,14 @@ def handle_schedule(state: AutoClickerState) -> None:
                         break
 
                     # Zeige Countdown
-                    print(f"\r[COUNTDOWN] Noch {format_duration(remaining)}... (CTRL+ALT+S zum Abbrechen)    ", end="", flush=True)
+                    print(f"\r{col('[COUNTDOWN]', 'cyan')} Noch {format_duration(remaining)}... ({col('CTRL+ALT+S', 'yellow')} zum Abbrechen)    ", end="", flush=True)
 
                     # Kurz warten
                     if state.stop_event.wait(0.5):
                         break  # Stop-Event wurde gesetzt
 
                 if state.stop_event.is_set():
-                    print("\n[ABBRUCH] Zeitplan abgebrochen.")
+                    print(f"\n{col('[ABBRUCH]', 'yellow')} Zeitplan abgebrochen.")
                     state.stop_event.clear()  # Reset für nächsten Start
                     return
 
@@ -449,7 +449,7 @@ def handle_schedule(state: AutoClickerState) -> None:
                     return
 
                 # Zeit erreicht - starte Sequenz
-                print("\n[START] Zeit erreicht - starte Sequenz!")
+                print(f"\n{col('[START]', 'green')} Zeit erreicht - starte Sequenz!")
                 state.stop_event.clear()  # Reset falls gesetzt
                 state.scheduled_start = True  # Überspringt Debug-Enter-Prompt
             finally:
@@ -459,16 +459,16 @@ def handle_schedule(state: AutoClickerState) -> None:
             # Sequenz starten (außerhalb von finally, damit countdown_active schon False ist)
             handle_toggle(state)
 
-        print("\n[COUNTDOWN] Warte auf Startzeit... (Abbrechen mit CTRL+ALT+S)")
+        print(f"\n{col('[COUNTDOWN]', 'cyan')} Warte auf Startzeit... (Abbrechen mit {col('CTRL+ALT+S', 'yellow')})")
         countdown_thread = threading.Thread(target=countdown_worker, daemon=True)
         countdown_thread.start()
         # Kehre zur Haupt-Event-Loop zurück, damit Hotkeys funktionieren
         return
 
     except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH]")
+        print(f"\n{col('[ABBRUCH]', 'yellow')}")
     except ValueError as e:
-        print(f"[FEHLER] {e}")
+        print(err(str(e)))
 
 
 def handle_analyze(state: AutoClickerState) -> None:
@@ -482,7 +482,7 @@ def handle_analyze(state: AutoClickerState) -> None:
 
 def handle_quit(state: AutoClickerState, main_thread_id: int) -> None:
     """Beendet das Programm."""
-    print("\n[QUIT] Beende Programm...")
+    print(f"\n{col('[QUIT]', 'red')} Beende Programm...")
 
     state.stop_event.set()
     state.quit_event.set()

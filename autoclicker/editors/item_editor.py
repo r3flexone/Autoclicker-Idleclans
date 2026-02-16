@@ -29,7 +29,7 @@ def run_global_item_editor(state: AutoClickerState) -> None:
     print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Items')}")
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
@@ -313,7 +313,7 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
                     except ValueError:
                         pass
     else:
-        print("\n  [INFO] OpenCV nicht installiert - kein Template-Matching möglich")
+        print(f"\n  {info('OpenCV nicht installiert - kein Template-Matching möglich')}")
         print("         Installieren mit: pip install opencv-python")
 
     # Kategorie
