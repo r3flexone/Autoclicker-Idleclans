@@ -280,9 +280,10 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
     # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
-            msg = err(f"'{item_name}' existiert bereits!")
-            print(f"  {msg} {hint('(show = anzeigen, del = löschen)')}")
-            return None
+            if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
+                print("  -> Abgebrochen")
+                return None
+            print(f"  -> '{item_name}' wird überschrieben")
 
     # Template erstellen (Screenshot von Slot)
     template_file = None
@@ -685,9 +686,10 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     # Prüfen ob Name schon existiert
     with state.lock:
         if item_name in state.global_items:
-            msg = err(f"'{item_name}' existiert bereits!")
-            print(f"  {msg} {hint('(rename = umbenennen, del = löschen)')}")
-            return True
+            if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
+                print("  -> Abgebrochen")
+                return True
+            print(f"  -> '{item_name}' wird überschrieben")
 
     # Kategorie zuerst (für Prioritäts-Verschiebung)
     category = select_category(state)
@@ -813,9 +815,12 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
                     return
 
                 if new_name in state.global_items:
-                    msg = err(f"Name '{new_name}' existiert bereits!")
-                    print(f"  {msg} {hint('(del = löschen)')}")
-                    return
+                    if not confirm(f"  '{new_name}' existiert bereits. Überschreiben?"):
+                        print("  -> Abgebrochen")
+                        return
+                    # Altes Item unter dem Ziel-Namen entfernen
+                    del state.global_items[new_name]
+                    print(f"  -> '{new_name}' wird überschrieben")
 
                 # Template umbenennen falls vorhanden
                 old_template = item.template
