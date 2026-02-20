@@ -279,11 +279,12 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
 
     # Prüfen ob Name schon existiert
     with state.lock:
-        if item_name in state.global_items:
-            if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
-                print("  -> Abgebrochen")
-                return None
-            print(f"  -> '{item_name}' wird überschrieben")
+        name_exists = item_name in state.global_items
+    if name_exists:
+        if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
+            print("  -> Abgebrochen")
+            return None
+        print(f"  -> '{item_name}' wird überschrieben")
 
     # Template erstellen (Screenshot von Slot)
     template_file = None
@@ -685,11 +686,12 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
     # Prüfen ob Name schon existiert
     with state.lock:
-        if item_name in state.global_items:
-            if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
-                print("  -> Abgebrochen")
-                return True
-            print(f"  -> '{item_name}' wird überschrieben")
+        name_exists = item_name in state.global_items
+    if name_exists:
+        if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
+            print("  -> Abgebrochen")
+            return True
+        print(f"  -> '{item_name}' wird überschrieben")
 
     # Kategorie zuerst (für Prioritäts-Verschiebung)
     category = select_category(state)
@@ -795,68 +797,80 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
     """Verarbeitet den rename-Befehl im Item-Editor."""
     try:
         rename_num = int(cmd[7:])
+
+        # Daten unter Lock lesen, dann Lock freigeben für User-Input
         with state.lock:
             item_names = list(state.global_items.keys())
-            if 1 <= rename_num <= len(item_names):
-                old_name = item_names[rename_num - 1]
-                item = state.global_items[old_name]
-
-                print(f"\n  Aktueller Name: '{old_name}'")
-                if item.template:
-                    print(f"  Template: {item.template}")
-
-                new_name = safe_input("  Neuer Name (Enter = abbrechen): ").strip()
-                if not new_name or is_cancel(new_name):
-                    print("  -> Abgebrochen")
-                    return
-
-                if new_name == old_name:
-                    print("  -> Name ist identisch, nichts geändert")
-                    return
-
-                if new_name in state.global_items:
-                    if not confirm(f"  '{new_name}' existiert bereits. Überschreiben?"):
-                        print("  -> Abgebrochen")
-                        return
-                    # Altes Item unter dem Ziel-Namen entfernen
-                    del state.global_items[new_name]
-                    print(f"  -> '{new_name}' wird überschrieben")
-
-                # Template umbenennen falls vorhanden
-                old_template = item.template
-                if old_template:
-                    old_template_path = Path(TEMPLATES_DIR) / old_template
-                    safe_name = sanitize_filename(new_name)
-                    new_template = f"{safe_name}.png"
-                    new_template_path = Path(TEMPLATES_DIR) / new_template
-
-                    item.template = new_template
-
-                    if old_template_path.exists():
-                        try:
-                            old_template_path.rename(new_template_path)
-                            print(f"  + Template umbenannt: {old_template} -> {new_template}")
-                        except (OSError, IOError) as e:
-                            print(f"  -> Template-Datei Umbenennung fehlgeschlagen: {e}")
-                            print(f"    Template-Pfad aktualisiert: {new_template}")
-                    else:
-                        print(f"  -> Template-Datei nicht gefunden: {old_template}")
-                        print(f"    Template-Pfad aktualisiert: {new_template}")
-
-                # Item umbenennen
-                item.name = new_name
-                del state.global_items[old_name]
-                state.global_items[new_name] = item
-                save_global_items(state)
-
-                # Auch in allen Scan-Konfigurationen aktualisieren
-                updated_scans = update_item_in_scans(old_name, new_name, item.template)
-                if updated_scans > 0:
-                    print(f"  + {updated_scans} Scan-Konfiguration(en) aktualisiert")
-
-                print(f"  + Item umbenannt: '{old_name}' -> '{new_name}' (gespeichert)")
-            else:
+            if rename_num < 1 or rename_num > len(item_names):
                 print(f"  -> Ungültiges Item! Verfügbar: 1-{len(item_names)}")
+                return
+            old_name = item_names[rename_num - 1]
+            old_template = state.global_items[old_name].template
+
+        # User-Input OHNE Lock (blockiert nicht andere Threads)
+        print(f"\n  Aktueller Name: '{old_name}'")
+        if old_template:
+            print(f"  Template: {old_template}")
+
+        new_name = safe_input("  Neuer Name (Enter = abbrechen): ").strip()
+        if not new_name or is_cancel(new_name):
+            print("  -> Abgebrochen")
+            return
+
+        if new_name == old_name:
+            print("  -> Name ist identisch, nichts geändert")
+            return
+
+        # Duplikat-Check und Bestätigung OHNE Lock
+        with state.lock:
+            name_exists = new_name in state.global_items
+        if name_exists:
+            if not confirm(f"  '{new_name}' existiert bereits. Überschreiben?"):
+                print("  -> Abgebrochen")
+                return
+
+        # Template umbenennen (File-I/O, kein Lock nötig)
+        new_template = None
+        if old_template:
+            old_template_path = Path(TEMPLATES_DIR) / old_template
+            safe_name = sanitize_filename(new_name)
+            new_template = f"{safe_name}.png"
+            new_template_path = Path(TEMPLATES_DIR) / new_template
+
+            if old_template_path.exists():
+                try:
+                    old_template_path.rename(new_template_path)
+                    print(f"  + Template umbenannt: {old_template} -> {new_template}")
+                except (OSError, IOError) as e:
+                    print(f"  -> Template-Datei Umbenennung fehlgeschlagen: {e}")
+                    print(f"    Template-Pfad aktualisiert: {new_template}")
+            else:
+                print(f"  -> Template-Datei nicht gefunden: {old_template}")
+                print(f"    Template-Pfad aktualisiert: {new_template}")
+
+        # Mutation unter Lock
+        with state.lock:
+            if old_name not in state.global_items:
+                print(f"  -> Item '{old_name}' nicht mehr vorhanden!")
+                return
+            item = state.global_items[old_name]
+            if new_name in state.global_items and new_name != old_name:
+                del state.global_items[new_name]
+                print(f"  -> '{new_name}' wird überschrieben")
+            item.name = new_name
+            if new_template is not None:
+                item.template = new_template
+            del state.global_items[old_name]
+            state.global_items[new_name] = item
+
+        save_global_items(state)
+
+        # Auch in allen Scan-Konfigurationen aktualisieren
+        updated_scans = update_item_in_scans(old_name, new_name, item.template)
+        if updated_scans > 0:
+            print(f"  + {updated_scans} Scan-Konfiguration(en) aktualisiert")
+
+        print(f"  + Item umbenannt: '{old_name}' -> '{new_name}' (gespeichert)")
     except ValueError:
         print("  -> Format: rename <Nr>")
 

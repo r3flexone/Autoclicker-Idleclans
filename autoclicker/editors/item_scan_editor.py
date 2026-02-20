@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from ..models import ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
+from ..models import ClickPoint, ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
 from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, cancel_hint
 from ..winapi import get_cursor_pos
@@ -340,9 +340,10 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
 
                 # Prüfen ob Name schon existiert
                 if item_name in available_items:
-                    msg = err(f"'{item_name}' existiert bereits!")
-                    print(f"  {msg} {hint('(anderer Name oder done = weiter)')}")
-                    continue
+                    if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
+                        print("  -> Abgebrochen")
+                        continue
+                    print(f"  -> '{item_name}' wird überschrieben")
 
                 # Template speichern
                 safe_name = sanitize_filename(item_name)
@@ -391,7 +392,6 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                         with state.lock:
                             found_point = get_point_by_id(state, point_id)
                             if found_point:
-                                from ..models import ClickPoint
                                 confirm_point = ClickPoint(found_point.x, found_point.y)
                                 delay_input = safe_input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
                                 if delay_input:

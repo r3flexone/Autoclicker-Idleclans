@@ -11,7 +11,6 @@ import os
 import re
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -97,11 +96,6 @@ def load_tag(msg: str) -> str:
 def delete_tag(msg: str) -> str:
     """Formatiert eine Lösch-Meldung: [DELETE] gelb."""
     return f"{col('[DELETE]', 'yellow')} {msg}"
-
-
-def debug_tag(msg: str) -> str:
-    """Formatiert eine Debug-Meldung: [DEBUG] grau."""
-    return f"{col('[DEBUG]', 'gray')} {msg}"
 
 
 def header(title: str, width: int = 60) -> str:
@@ -237,17 +231,6 @@ def compact_json(data: dict, indent: int = 2) -> str:
     pattern2 = r'\[\s*\n\s*(\d+),\s*\n\s*(\d+)\s*\n\s*\]'
     json_str = re.sub(pattern2, r'[\1, \2]', json_str)
     return json_str
-
-
-def save_json(filepath: str, data: dict) -> bool:
-    """Speichert JSON mit kompakter Formatierung."""
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(compact_json(data))
-        return True
-    except IOError as e:
-        print(err(f"Konnte nicht speichern: {filepath} - {e}"))
-        return False
 
 
 def is_cancel(value: str) -> bool:

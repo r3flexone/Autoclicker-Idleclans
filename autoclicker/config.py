@@ -6,7 +6,6 @@ Lädt und speichert config.json mit Standard-Werten.
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 # Logger
 logger = logging.getLogger("autoclicker")
