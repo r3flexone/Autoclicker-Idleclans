@@ -43,10 +43,10 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
         current_remaining = int(remaining)
         if current_remaining != last_remaining:
             if debug_active:
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...")
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({round(remaining, 1):g}s)...")
             else:
                 clear_line()
-                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({remaining:.0f}s)...", end="", flush=True)
+                print(f"[{phase}] Schritt {step_num}/{total_steps} | {message} ({round(remaining, 1):g}s)...", end="", flush=True)
             last_remaining = current_remaining
 
         wait_time = min(1.0, remaining)
