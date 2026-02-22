@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemProfile, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint, breadcrumb, suggest_command, cancel_hint
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, cmd_hint, breadcrumb, suggest_command, cancel_hint, parse_non_negative_float
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -351,12 +351,13 @@ def create_item(state: AutoClickerState) -> Optional[ItemProfile]:
                 found_point = get_point_by_id(state, point_id)
                 if found_point:
                     confirm_point = ClickPoint(found_point.x, found_point.y)
-                    try:
-                        delay_input = safe_input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
-                        if delay_input:
-                            confirm_delay = float(delay_input)
-                    except ValueError:
-                        pass
+                    delay_input = safe_input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
+                    if delay_input:
+                        delay_val, delay_err = parse_non_negative_float(delay_input, "Wartezeit")
+                        if delay_err:
+                            print(f"  -> {delay_err}, behalte {confirm_delay}s")
+                        else:
+                            confirm_delay = delay_val
                 else:
                     print(f"  -> Punkt #{point_id} existiert nicht")
         except ValueError:
@@ -446,12 +447,13 @@ def edit_item(state: AutoClickerState, item: ItemProfile) -> Optional[ItemProfil
                         found_point = get_point_by_id(state, point_id)
                         if found_point:
                             new_confirm = ClickPoint(found_point.x, found_point.y)
-                            try:
-                                delay_input = safe_input(f"  Wartezeit (Enter={new_confirm_delay}s): ").strip()
-                                if delay_input:
-                                    new_confirm_delay = float(delay_input)
-                            except ValueError:
-                                pass
+                            delay_input = safe_input(f"  Wartezeit (Enter={new_confirm_delay}s): ").strip()
+                            if delay_input:
+                                delay_val, delay_err = parse_non_negative_float(delay_input, "Wartezeit")
+                                if delay_err:
+                                    print(f"  -> {delay_err}, behalte {new_confirm_delay}s")
+                                else:
+                                    new_confirm_delay = delay_val
                             print(f"  -> Bestätigung gesetzt")
                         else:
                             print(f"  -> Punkt #{point_id} existiert nicht")
@@ -588,10 +590,11 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                         confirm_point = ClickPoint(found_point.x, found_point.y)
                         delay_input = safe_input(f"  Wartezeit vor Bestätigung (Enter = {confirm_delay}s): ").strip()
                         if delay_input:
-                            try:
-                                confirm_delay = float(delay_input)
-                            except ValueError:
-                                pass
+                            delay_val, delay_err = parse_non_negative_float(delay_input, "Wartezeit")
+                            if delay_err:
+                                print(f"  -> {delay_err}, behalte {confirm_delay}s")
+                            else:
+                                confirm_delay = delay_val
                 except ValueError:
                     pass
 
@@ -742,10 +745,11 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                 confirm_point = ClickPoint(found_point.x, found_point.y)
                 delay_input = safe_input(f"  Wartezeit vor Bestätigung in Sek (Enter = {confirm_delay}): ").strip()
                 if delay_input:
-                    try:
-                        confirm_delay = float(delay_input)
-                    except ValueError:
-                        pass
+                    delay_val, delay_err = parse_non_negative_float(delay_input, "Wartezeit")
+                    if delay_err:
+                        print(f"  -> {delay_err}, behalte {confirm_delay}s")
+                    else:
+                        confirm_delay = delay_val
             else:
                 print(f"  -> Punkt #{point_id} existiert nicht")
         except ValueError:

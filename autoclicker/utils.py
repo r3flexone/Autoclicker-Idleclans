@@ -817,6 +817,41 @@ def parse_time_input(time_str: str) -> tuple[float, str, float | None]:
         return (-1, f"Ungültige Zahl: {time_str}", None)
 
 
+def parse_non_negative_float(value: str, field_name: str = "Wert") -> tuple[float | None, str | None]:
+    """Parst einen nicht-negativen Float-Wert aus einem String.
+
+    Returns:
+        (wert, None) bei Erfolg, (None, fehlermeldung) bei Fehler.
+    """
+    try:
+        v = float(value)
+    except ValueError:
+        return None, f"'{value}' ist keine gültige Zahl"
+    if v < 0:
+        return None, f"{field_name} darf nicht negativ sein (Eingabe: {v:g})"
+    return v, None
+
+
+def parse_non_negative_range(value: str, field_name: str = "Bereich") -> tuple[tuple[float, float] | None, str | None]:
+    """Parst einen nicht-negativen Min-Max-Bereich aus einem String (Format: 'min-max').
+
+    Returns:
+        ((min, max), None) bei Erfolg, (None, fehlermeldung) bei Fehler.
+    """
+    parts = value.split("-", 1)
+    if len(parts) != 2:
+        return None, f"{field_name}: Format <Min>-<Max> erwartet (z.B. 1-5)"
+    min_val, min_err = parse_non_negative_float(parts[0], "Min")
+    if min_err:
+        return None, min_err
+    max_val, max_err = parse_non_negative_float(parts[1], "Max")
+    if max_err:
+        return None, max_err
+    if max_val < min_val:
+        return None, f"Max ({max_val:g}) muss >= Min ({min_val:g}) sein"
+    return (min_val, max_val), None
+
+
 def format_duration(seconds: float) -> str:
     """Formatiert Sekunden als hh:mm:ss oder mm:ss."""
     hours, remainder = divmod(int(seconds), 3600)

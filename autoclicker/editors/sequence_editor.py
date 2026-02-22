@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
-from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context, cancel_hint
+from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context, cancel_hint, parse_non_negative_float, parse_non_negative_range
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
     save_data, list_available_sequences, load_sequence_file,
@@ -738,11 +738,13 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     key_name = parts[1].lower()
                 else:
                     # key <Zeit> <Taste>
-                    try:
-                        delay = float(parts[1])
-                        key_name = parts[2].lower()
-                    except ValueError:
-                        key_name = parts[1].lower()
+                    delay_val, delay_err = parse_non_negative_float(parts[1], "Verzögerung")
+                    if delay_err:
+                        print(f"  -> {delay_err}")
+                        print("     Format: key <Taste> oder key <Zeit> <Taste>")
+                        continue
+                    delay = delay_val
+                    key_name = parts[2].lower()
 
                 if key_name not in VK_CODES:
                     print(f"  -> Unbekannte Taste: '{key_name}'")
@@ -794,21 +796,23 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 else:
                     # wait <Zeit> oder wait <Min>-<Max>
                     if "-" in arg:
-                        try:
-                            min_val, max_val = map(float, arg.split("-"))
-                            step.delay_before = min_val
-                            step.delay_max = max_val
-                            step.name = f"Wait:{min_val}-{max_val}s"
-                        except ValueError:
-                            print("  -> Format: wait <Min>-<Max>")
+                        range_val, range_err = parse_non_negative_range(arg, "Wartezeit")
+                        if range_err:
+                            print(f"  -> {range_err}")
+                            print("     Format: wait <Min>-<Max> (z.B. wait 1-5)")
                             continue
+                        min_val, max_val = range_val
+                        step.delay_before = min_val
+                        step.delay_max = max_val
+                        step.name = f"Wait:{min_val:g}-{max_val:g}s"
                     else:
-                        try:
-                            step.delay_before = float(arg)
-                            step.name = f"Wait:{arg}s"
-                        except ValueError:
-                            print("  -> Format: wait <Zeit>")
+                        delay_val, delay_err = parse_non_negative_float(arg, "Wartezeit")
+                        if delay_err:
+                            print(f"  -> {delay_err}")
+                            print("     Format: wait <Zeit> (z.B. wait 5)")
                             continue
+                        step.delay_before = delay_val
+                        step.name = f"Wait:{arg}s"
 
                 apply_else_to_step(step, else_parts, state)
                 add_step(step)
@@ -871,18 +875,20 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                                 wait_until_gone = True
                     elif "-" in arg:
                         # <Nr> <Min>-<Max>
-                        try:
-                            min_val, max_val = map(float, arg.split("-"))
-                            delay = min_val
-                            delay_max = max_val
-                        except ValueError:
-                            delay = 0
+                        range_val, range_err = parse_non_negative_range(arg, "Wartezeit")
+                        if range_err:
+                            print(f"  -> {range_err}")
+                            print("     Format: <Nr> <Min>-<Max> (z.B. 1 5-10)")
+                            continue
+                        delay, delay_max = range_val
                     else:
                         # <Nr> <Zeit>
-                        try:
-                            delay = float(arg)
-                        except ValueError:
-                            delay = 0
+                        delay_val, delay_err = parse_non_negative_float(arg, "Wartezeit")
+                        if delay_err:
+                            print(f"  -> {delay_err}")
+                            print("     Format: <Nr> <Zeit> (z.B. 1 5)")
+                            continue
+                        delay = delay_val
 
                         # Optional: <Nr> <Zeit> pixel/gone
                         if len(main_parts) > 2:

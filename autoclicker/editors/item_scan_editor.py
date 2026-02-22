@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..models import ClickPoint, ItemSlot, ItemProfile, ItemScanConfig, AutoClickerState
 from ..config import CONFIG, DEFAULT_MIN_CONFIDENCE
-from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, cancel_hint
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, hint, header, breadcrumb, suggest_command, cancel_hint, parse_non_negative_float
 from ..winapi import get_cursor_pos
 from ..imaging import (
     PILLOW_AVAILABLE, OPENCV_AVAILABLE, take_screenshot, get_pixel_color,
@@ -395,7 +395,11 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                                 confirm_point = ClickPoint(found_point.x, found_point.y)
                                 delay_input = safe_input("  Wartezeit vor Bestätigung (Enter=0.5s): ").strip()
                                 if delay_input:
-                                    confirm_delay = float(delay_input)
+                                    delay_val, delay_err = parse_non_negative_float(delay_input, "Wartezeit")
+                                    if delay_err:
+                                        print(f"  -> {delay_err}, behalte {confirm_delay}s")
+                                    else:
+                                        confirm_delay = delay_val
                             else:
                                 print(f"  -> Punkt #{point_id} existiert nicht")
                     except ValueError:
