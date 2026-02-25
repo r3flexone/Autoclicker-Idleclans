@@ -58,7 +58,7 @@ python main.py
 | `CTRL+ALT+L` | Gespeicherte Sequenz laden |
 | `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
 | `CTRL+ALT+T` | Farb-Analysator |
-| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen) |
+| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen, startet automatisch nach Laden) |
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
@@ -234,6 +234,8 @@ Eine Sequenz besteht aus drei Phasen:
 | `... else restart` | Bei Fehlschlag Sequenz neu starten |
 | `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
+| `ins <Nr>` | Nächsten Schritt an Position einfügen (statt am Ende) |
+| `ins 0` / `ins end` | Insert-Modus beenden |
 | `learn <Name>` | Neuen Punkt erstellen (direkt im Editor) |
 | `points` | Alle verfügbaren Punkte anzeigen |
 | `del <Nr>` | Schritt löschen |
@@ -269,6 +271,15 @@ Zyklen: 10                 # 10 Durchläufe
 [END: 1] > key enter       # Enter drücken
 [END: 2] > done
 ```
+
+## Sequenzen zwischen PCs teilen
+
+Sequenzen können auf einen anderen PC kopiert werden (`sequences/`-Ordner). Beim Laden werden die Koordinaten automatisch anhand der **Punkt-Namen** abgeglichen:
+
+- Stimmt ein Name mit einem lokalen Punkt überein → Koordinaten werden aktualisiert
+- Fehlt ein Name lokal → Warnung mit Hinweis, den Punkt erst aufzunehmen (CTRL+ALT+A)
+
+So muss man Sequenzen nicht neu erstellen, sondern nur die Punkte einmal lokal aufnehmen.
 
 ## Laufzeit-Steuerung
 
@@ -625,49 +636,35 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
-- **PyCharm/IDE-Support**: Pfeiltasten-Navigation funktioniert jetzt auch in IDE-Konsolen
-  - `GetAsyncKeyState`-Polling als Fallback wenn `msvcrt.getch()` nicht verfügbar
-  - PyCharm ANSI-Erkennung via `PYCHARM_HOSTED` Umgebungsvariable
-  - Gleiche Windows API wie die Hotkeys - funktioniert überall
-- **Verbesserte Benutzereingabe**: Robustes Input-Handling für alle Konsolen-Typen
-  - `interactive_select()` mit automatischer Erkennung der Konsolen-Fähigkeiten
-  - Sauberes Fallback-System: Pfeiltasten → Nummern-Eingabe
-- **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~6600 Zeilen)
-  - `main.py` als Einstiegspunkt
-  - `autoclicker/` Package mit spezialisierten Modulen
-  - `editors/` Subpackage für alle interaktiven Editoren
-- **Bug-Fixes**: Slot-Editor Hintergrundfarbe, Performance-Optimierungen
-- **Code-Qualität**: Duplizierung entfernt, toter Code bereinigt
+- **Sequenz-Remap**: Koordinaten werden beim Laden automatisch anhand der Punkt-Namen abgeglichen — ideal für PC-Wechsel
+- **Auto-Start nach Laden**: CTRL+ALT+S startet die Sequenz direkt nach dem Laden (kein zweiter Tastendruck nötig)
+- **Insert-Modus**: `ins <Nr>` im Sequenz-Editor fügt Schritte an beliebiger Position ein
+- **ESC-Abbruch**: ESC-Taste funktioniert als Abbruch in allen Editoren (auch in PyCharm)
+- **ANSI-Farben**: Farbige Tags in der Konsole ([FEHLER] rot, [INFO] cyan, [OK] grün)
+- **Einheitliche Delay-Validierung**: Wartezeiten werden in allen Editoren gleich geprüft
+- **Template Auto-Resize**: Templates werden bei Größenunterschied automatisch skaliert
+- **Bug-Fixes**: Buchstaben-Verdoppelung in PyCharm, Debug-Mode Inkonsistenzen, Wartezeit-Anzeige
 
 ### Vorherige Änderungen
 
-- **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
-- **Konfigurierbare Fail-Safe Zone**: `failsafe_x` und `failsafe_y` in config.json
-- **Konfigurierbare Delays**: `scan_slot_delay` und `item_click_delay` für feinere Kontrolle
-- **Screenshot-Optimierung**: BitBlt als primäre Methode (besser für DirectX-Spiele)
-- **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
-- **Slot-Tester**: Debug-Tool für Slot-Erkennung
-- **confirm_point als Koordinaten**: Robuster bei Punkt-Änderungen
-- **Scan-Modus "every"**: Alle Treffer ohne Filter klicken (für Spiele mit Duplikaten)
-- **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
-- **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
-- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
-- **Befehle vereinheitlicht**: `done`/`cancel` statt `fertig`/`abbruch` (beide funktionieren)
-- **CTRL+ALT+S Auto-Load**: Öffnet Lade-Menü wenn keine Sequenz geladen
-- **Step-Editor**: `learn` und `points` Befehle zum Punkte erstellen
-- **Item-Editor**: `rename` Befehl zum Umbenennen (inkl. Template-Datei)
-- **Scan-Modus**: Default ist jetzt `all` (bestes pro Kategorie), `best` für nur 1 Item
-- **Unicode-Support**: Templates mit Umlauten (ü, ä, ö) funktionieren jetzt
+- **PyCharm/IDE-Support**: Pfeiltasten-Navigation funktioniert jetzt auch in IDE-Konsolen
+- **Verbesserte Benutzereingabe**: Robustes Input-Handling für alle Konsolen-Typen
+- **Modulare Architektur**: Code in 15 Dateien aufgeteilt
+- **Code-Qualität**: Duplizierung entfernt, toter Code bereinigt
 
 ### Ältere Änderungen
 
-- **Preset-System**: Slots und Items werden als benannte Presets gespeichert
-- **Screenshots-Ordner**: Alle Screenshots landen jetzt in `Screenshots/`
-- **Konsistente Befehle**: `del all`, `del <Nr>-<Nr>` in allen Editoren
-- **Performance**: Early-Exit bei Marker-Erkennung
-- **Sicherheit**: Path-Traversal-Schutz für Dateinamen
-- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
-- **Konfigurierbar**: Neue Optionen für Slot-Erkennung
+- **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
+- **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
+- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
+- **Scan-Modi**: `all` (Standard), `best` (nur 1 Item), `every` (alle Treffer)
+- **ELSE-Aktionen**: `else skip`, `else restart`, `else key` bei Fehlschlag
+- **Preset-System**: Slots und Items als benannte Presets speichern
+- **Step-Editor**: `learn` und `points` Befehle direkt im Sequenz-Editor
+- **Konfigurierbare Delays**: `scan_slot_delay`, `item_click_delay`, Fail-Safe Zone
+- **Screenshot-Optimierung**: BitBlt für DirectX-Spiele
+- **Sicherheit**: Path-Traversal-Schutz, Bounds-Checking
+- **Unicode-Support**: Templates mit Umlauten (ü, ä, ö)
 
 ## Lizenz
 
