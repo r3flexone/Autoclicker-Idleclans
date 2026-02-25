@@ -10,7 +10,7 @@ from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerS
 from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context, cancel_hint, parse_non_negative_float, parse_non_negative_range
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
-    save_data, list_available_sequences, load_sequence_file,
+    save_data, save_sequence_file, list_available_sequences, load_sequence_file,
     get_next_point_id, get_point_by_id
 )
 from ..imaging import PILLOW_AVAILABLE, take_screenshot, get_pixel_color
@@ -85,11 +85,13 @@ def run_sequence_editor(state: AutoClickerState) -> None:
         edit_sequence(state, loaded_sequences[choice - 1])
 
 
-def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence) -> None:
+def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence,
+                                    filepath: 'Path') -> None:
     """Mappt Sequenz-Koordinaten auf lokale Punkte (nach Name).
 
     Nützlich wenn eine Sequenz von einem anderen PC kopiert wurde und die
     Koordinaten an den lokalen Bildschirm angepasst werden müssen.
+    Speichert direkt in die Originaldatei.
     """
     # Lokale Punkte nach Name indexieren
     with state.lock:
@@ -154,10 +156,9 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence)
             else:
                 step.else_x = new_x
                 step.else_y = new_y
-        # Sequenz-Datei mit aktualisierten Koordinaten speichern
-        with state.lock:
-            state.sequences[sequence.name] = sequence
-        save_data(state)
+        # Direkt in die Originaldatei speichern
+        save_sequence_file(sequence, filepath)
+        print(f"    {ok('Gespeichert in')} {filepath.name}")
 
 
 def run_sequence_loader(state: AutoClickerState) -> None:
@@ -170,12 +171,12 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         return
 
     # Sequenzen einmal laden und cachen
-    loaded_sequences = []
+    loaded_sequences = []  # (seq, filepath) Paare
     menu_options = []
     for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
-            loaded_sequences.append(seq)
+            loaded_sequences.append((seq, path))
             active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
             menu_options.append(f"{seq}{active_marker}")
 
@@ -184,10 +185,10 @@ def run_sequence_loader(state: AutoClickerState) -> None:
     if choice == -1 or choice >= len(loaded_sequences):
         return
 
-    seq = loaded_sequences[choice]
+    seq, seq_path = loaded_sequences[choice]
 
     # Koordinaten auf lokale Punkte anpassen (z.B. nach Kopie von anderem PC)
-    _remap_sequence_to_local_points(state, seq)
+    _remap_sequence_to_local_points(state, seq, seq_path)
 
     with state.lock:
         state.active_sequence = seq

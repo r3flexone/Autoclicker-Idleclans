@@ -88,6 +88,42 @@ def ensure_sequences_dir() -> Path:
     return path
 
 
+def _step_to_dict(s: SequenceStep) -> dict:
+    """Konvertiert einen SequenceStep in ein JSON-serialisierbares dict."""
+    return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
+            "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
+            "wait_until_gone": s.wait_until_gone,
+            "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
+            "wait_only": s.wait_only, "delay_max": s.delay_max,
+            "key_press": s.key_press, "else_action": s.else_action,
+            "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
+            "else_key": s.else_key, "else_name": s.else_name}
+
+
+def _sequence_to_dict(seq: Sequence) -> dict:
+    """Konvertiert eine Sequence in ein JSON-serialisierbares dict."""
+    return {
+        "name": seq.name,
+        "total_cycles": seq.total_cycles,
+        "start_steps": [_step_to_dict(s) for s in seq.start_steps],
+        "loop_phases": [
+            {
+                "name": lp.name,
+                "repeat": lp.repeat,
+                "steps": [_step_to_dict(s) for s in lp.steps]
+            }
+            for lp in seq.loop_phases
+        ],
+        "end_steps": [_step_to_dict(s) for s in seq.end_steps]
+    }
+
+
+def save_sequence_file(seq: Sequence, filepath: Path) -> None:
+    """Speichert eine einzelne Sequenz direkt in die angegebene Datei."""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(compact_json(_sequence_to_dict(seq)))
+
+
 def save_data(state: AutoClickerState) -> None:
     """Speichert Punkte und Sequenzen in JSON-Dateien."""
     ensure_sequences_dir()
@@ -97,35 +133,10 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         f.write(compact_json(points_data))
 
-    # Sequenzen speichern (mit Start + mehreren Loop-Phasen)
-    def step_to_dict(s: SequenceStep) -> dict:
-        return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-                "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
-                "wait_until_gone": s.wait_until_gone,
-                "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
-                "wait_only": s.wait_only, "delay_max": s.delay_max,
-                "key_press": s.key_press, "else_action": s.else_action,
-                "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
-                "else_key": s.else_key, "else_name": s.else_name}
-
+    # Sequenzen speichern
     for name, seq in state.sequences.items():
-        seq_data = {
-            "name": seq.name,
-            "total_cycles": seq.total_cycles,
-            "start_steps": [step_to_dict(s) for s in seq.start_steps],
-            "loop_phases": [
-                {
-                    "name": lp.name,
-                    "repeat": lp.repeat,
-                    "steps": [step_to_dict(s) for s in lp.steps]
-                }
-                for lp in seq.loop_phases
-            ],
-            "end_steps": [step_to_dict(s) for s in seq.end_steps]
-        }
         filename = f"{sanitize_filename(name)}.json"
-        with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
-            f.write(compact_json(seq_data))
+        save_sequence_file(seq, Path(SEQUENCES_DIR) / filename)
 
     print(save_tag(f"Daten gespeichert in '{SEQUENCES_DIR}/'"))
 
