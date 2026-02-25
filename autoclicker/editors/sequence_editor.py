@@ -85,6 +85,84 @@ def run_sequence_editor(state: AutoClickerState) -> None:
         edit_sequence(state, loaded_sequences[choice - 1])
 
 
+def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence) -> None:
+    """Mappt Sequenz-Koordinaten auf lokale Punkte (nach Name).
+
+    Nützlich wenn eine Sequenz von einem anderen PC kopiert wurde und die
+    Koordinaten an den lokalen Bildschirm angepasst werden müssen.
+    """
+    # Lokale Punkte nach Name indexieren
+    with state.lock:
+        local_by_name = {p.name: p for p in state.points if p.name}
+
+    if not local_by_name:
+        return
+
+    all_steps = (
+        sequence.start_steps +
+        [s for lp in sequence.loop_phases for s in lp.steps] +
+        sequence.end_steps
+    )
+
+    # Erst analysieren: was würde sich ändern, was fehlt?
+    updates = []  # (step, attr_prefix, old_x, old_y, new_x, new_y, name)
+    missing = set()
+
+    for step in all_steps:
+        # Haupt-Klick-Punkt
+        if not step.wait_only and not step.key_press and not step.item_scan:
+            if step.name and (step.x != 0 or step.y != 0):
+                if step.name in local_by_name:
+                    lp = local_by_name[step.name]
+                    if step.x != lp.x or step.y != lp.y:
+                        updates.append((step, "main", step.x, step.y, lp.x, lp.y, step.name))
+                else:
+                    missing.add(step.name)
+
+        # Else-Klick-Punkt
+        if step.else_action == "click" and step.else_name:
+            if step.else_name in local_by_name:
+                lp = local_by_name[step.else_name]
+                if step.else_x != lp.x or step.else_y != lp.y:
+                    updates.append((step, "else", step.else_x, step.else_y, lp.x, lp.y, step.else_name))
+            elif step.else_x != 0 or step.else_y != 0:
+                missing.add(step.else_name)
+
+    if not updates and not missing:
+        return
+
+    # Fehlende Punkte melden
+    if missing:
+        print(f"\n{warn(f'{len(missing)} Punkt(e) fehlen lokal (bitte erst aufnehmen):')}")
+        for name in sorted(missing):
+            print(f"    - '{name}'")
+
+    # Updates anbieten
+    if updates:
+        # Nur eindeutige Punkt-Namen zählen
+        unique_names = {u[6] for u in updates}
+        print(f"\n{info(f'{len(unique_names)} Punkt(e) haben andere Koordinaten als lokal:')}")
+        shown = set()
+        for _, _, old_x, old_y, new_x, new_y, name in updates:
+            if name not in shown:
+                shown.add(name)
+                print(f"    '{name}': ({old_x},{old_y}) -> ({new_x},{new_y})")
+
+        if confirm(f"  Sequenz auf lokale Koordinaten aktualisieren?"):
+            for step, prefix, _, _, new_x, new_y, _ in updates:
+                if prefix == "main":
+                    step.x = new_x
+                    step.y = new_y
+                else:
+                    step.else_x = new_x
+                    step.else_y = new_y
+            # Sequenz-Datei mit aktualisierten Koordinaten speichern
+            with state.lock:
+                state.sequences[sequence.name] = sequence
+            save_data(state)
+            print(ok(f"{len(updates)} Schritt(e) aktualisiert!"))
+
+
 def run_sequence_loader(state: AutoClickerState) -> None:
     """Lädt eine gespeicherte Sequenz."""
     sequences = list_available_sequences()
@@ -110,6 +188,10 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         return
 
     seq = loaded_sequences[choice]
+
+    # Koordinaten auf lokale Punkte anpassen (z.B. nach Kopie von anderem PC)
+    _remap_sequence_to_local_points(state, seq)
+
     with state.lock:
         state.active_sequence = seq
     print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq.name}' geladen!")
