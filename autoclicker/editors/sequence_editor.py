@@ -562,7 +562,7 @@ def _print_phase_help(full: bool = False) -> None:
     """
     if not full:
         print("\n" + "-" * 60)
-        print("  Kurzübersicht (? = vollständige Hilfe):")
+        print("  Kurzübersicht (?? = vollständige Hilfe):")
         print(cmd_hint("<Nr> <Zeit>", "Warte Xs, klicke Punkt    (z.B. '1 30')"))
         print(cmd_hint("scan <Name>", "Item-Scan ausführen"))
         print(cmd_hint("key <Taste>", "Taste drücken              (z.B. 'key enter')"))
@@ -601,7 +601,7 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("del <Nr>-<Nr>", "Bereich löschen (z.B. del 1-5)"))
     print(cmd_hint("del all", "ALLE Schritte löschen"))
     print(cmd_hint("ins <Nr>", "Nächsten Schritt an Position einfügen"))
-    print(cmd_hint(f"help | show | done | cancel | {cancel_hint()}", ""))
+    print(cmd_hint(f"help | ? / ?? | show | done | cancel | {cancel_hint()}", ""))
     print("-" * 60)
 
 
@@ -648,10 +648,10 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 return None
             elif user_input.lower() == "":
                 continue
-            elif user_input.lower() in ("help", "?"):
+            elif user_input.lower() == "help":
                 _print_phase_help()
                 continue
-            elif user_input.lower() in ("help full", "??"):
+            elif user_input.lower() in ("?", "help full", "??"):
                 _print_phase_help(full=True)
                 continue
             elif user_input.lower() in ("show", "s"):

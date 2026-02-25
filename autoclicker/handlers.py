@@ -178,6 +178,7 @@ def handle_show(state: AutoClickerState) -> None:
     print("  <Nr>        - Punkt testen (Maus hinbewegen ohne Klick)")
     print("  <Nr> <Name> - Punkt umbenennen")
     print("  del <Nr>    - Punkt löschen")
+    print("  done / d    - Zurück")
     print("  Enter       - Zurück")
     print("-" * 50)
 
@@ -185,6 +186,8 @@ def handle_show(state: AutoClickerState) -> None:
         try:
             user_input = safe_input("> ").strip()
             if not user_input:
+                return
+            if user_input.lower() in ("done", "d"):
                 return
 
             # Löschen-Befehl (per ID)

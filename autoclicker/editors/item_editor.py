@@ -61,10 +61,11 @@ def run_global_item_editor(state: AutoClickerState) -> None:
 
     def _print_item_help(full=False):
         if not full:
-            print("\n  Kurzübersicht (? = vollständige Hilfe):")
+            print("\n  Kurzübersicht (?? = vollständige Hilfe):")
             print("    learn <Nr>       Item aus Slot lernen")
             print("    add              Neues Item manuell")
             print("    edit <Nr>        Item bearbeiten")
+            print("    del <Nr>         Item löschen")
             print("    show             Alle Items anzeigen")
             print(f"    done | cancel | {cancel_hint()}  Fertig / Abbrechen")
         else:
@@ -84,8 +85,8 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             print(cmd_hint("save <Name>", "Als Preset speichern"))
             print(cmd_hint("load <Name>", "Preset laden"))
             print(cmd_hint("preset del <N>", "Preset löschen"))
-            print(cmd_hint("help / ?", "Kurzübersicht"))
-            print(cmd_hint("help full / ??", "Vollständige Hilfe"))
+            print(cmd_hint("help", "Kurzübersicht"))
+            print(cmd_hint("? / help full / ??", "Vollständige Hilfe"))
             print(cmd_hint("done / d", "Fertig"))
             print(cmd_hint(f"cancel / {cancel_hint()}", "Abbrechen"))
             print("-" * 60)
@@ -108,10 +109,10 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 return
             elif cmd == "":
                 continue
-            elif cmd in ("help", "?"):
+            elif cmd == "help":
                 _print_item_help()
                 continue
-            elif cmd in ("help full", "??"):
+            elif cmd in ("?", "help full", "??"):
                 _print_item_help(full=True)
                 continue
             elif cmd in ("show", "s"):
