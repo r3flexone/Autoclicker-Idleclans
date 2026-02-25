@@ -191,8 +191,7 @@ def run_sequence_loader(state: AutoClickerState) -> None:
 
     with state.lock:
         state.active_sequence = seq
-    print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq.name}' geladen!")
-    print(f"         Drücke {col('CTRL+ALT+S', 'yellow')} zum Starten.\n")
+    print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq.name}' geladen!\n")
 
 
 def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None:
@@ -341,7 +340,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         print(f"         Gesamt: {total_cycles}x wiederholen")
     if pixel_triggers > 0:
         print(f"         Farb-Trigger: {pixel_triggers} Schritt(e)")
-    print(f"         Drücke {col('CTRL+ALT+S', 'yellow')} zum Starten.\n")
+    print()
 
 
 def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> Optional[list[LoopPhase]]:
