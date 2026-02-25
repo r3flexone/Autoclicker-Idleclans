@@ -137,30 +137,27 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence)
         for name in sorted(missing):
             print(f"    - '{name}'")
 
-    # Updates anbieten
+    # Automatisch auf lokale Koordinaten aktualisieren
     if updates:
-        # Nur eindeutige Punkt-Namen zählen
         unique_names = {u[6] for u in updates}
-        print(f"\n{info(f'{len(unique_names)} Punkt(e) haben andere Koordinaten als lokal:')}")
+        print(f"\n{info(f'{len(unique_names)} Punkt(e) auf lokale Koordinaten aktualisiert:')}")
         shown = set()
         for _, _, old_x, old_y, new_x, new_y, name in updates:
             if name not in shown:
                 shown.add(name)
                 print(f"    '{name}': ({old_x},{old_y}) -> ({new_x},{new_y})")
 
-        if confirm(f"  Sequenz auf lokale Koordinaten aktualisieren?"):
-            for step, prefix, _, _, new_x, new_y, _ in updates:
-                if prefix == "main":
-                    step.x = new_x
-                    step.y = new_y
-                else:
-                    step.else_x = new_x
-                    step.else_y = new_y
-            # Sequenz-Datei mit aktualisierten Koordinaten speichern
-            with state.lock:
-                state.sequences[sequence.name] = sequence
-            save_data(state)
-            print(ok(f"{len(updates)} Schritt(e) aktualisiert!"))
+        for step, prefix, _, _, new_x, new_y, _ in updates:
+            if prefix == "main":
+                step.x = new_x
+                step.y = new_y
+            else:
+                step.else_x = new_x
+                step.else_y = new_y
+        # Sequenz-Datei mit aktualisierten Koordinaten speichern
+        with state.lock:
+            state.sequences[sequence.name] = sequence
+        save_data(state)
 
 
 def run_sequence_loader(state: AutoClickerState) -> None:
