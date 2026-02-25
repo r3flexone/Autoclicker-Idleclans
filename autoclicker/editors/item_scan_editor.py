@@ -188,11 +188,11 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
         selected = "X" if name in selected_slot_names else " "
         print(f"  [{selected}] {i+1}. {available_slots[name]}")
 
-    print(f"\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'done', 'cancel/{cancel_hint()}")
+    print(f"\nBefehle: '<Nr>', '<Von>-<Bis>' (z.B. 1-5), 'all', 'clear', 'show / s', 'done / d', 'cancel / {cancel_hint()}")
     while True:
         try:
             inp = safe_input("[Slots] > ").strip().lower()
-            if inp == "done":
+            if inp in ("done", "d"):
                 break
             elif is_cancel(inp):
                 return
@@ -202,7 +202,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             elif inp == "clear":
                 selected_slot_names = []
                 print("  + Auswahl gelöscht")
-            elif inp == "show":
+            elif inp in ("show", "s"):
                 print(f"\nAusgewählt: {', '.join(selected_slot_names) if selected_slot_names else '(keine)'}")
             elif "-" in inp:
                 # Bereich: 1-5
@@ -276,7 +276,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
     print("  <Von>-<Bis>       - Bereich auswählen (z.B. 1-5)")
     print("  all | clear       - Alle auswählen / Auswahl löschen")
     print("  new <Slot-Nr>     - Neues Item per Template von Slot erstellen")
-    print(f"  done | cancel | {cancel_hint()}")
+    print(f"  show / s | done / d | cancel / {cancel_hint()}")
     print("-" * 40)
 
     while True:
@@ -284,7 +284,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             inp = safe_input("[Items] > ").strip()
             inp_lower = inp.lower()
 
-            if inp_lower == "done":
+            if inp_lower in ("done", "d"):
                 break
             elif is_cancel(inp_lower):
                 return
@@ -294,7 +294,7 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
             elif inp_lower == "clear":
                 selected_item_names = []
                 print("  + Auswahl gelöscht")
-            elif inp_lower == "show":
+            elif inp_lower in ("show", "s"):
                 print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
 
             elif inp_lower.startswith("new"):

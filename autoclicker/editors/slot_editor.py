@@ -58,11 +58,11 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         print("  edit <Nr>      - Slot bearbeiten")
         print("  del <Nr>       - Slot löschen")
         print("  del all        - ALLE Slots löschen")
-        print("  show           - Alle Slots anzeigen")
+        print("  show / s       - Alle Slots anzeigen")
         print("  save <Name>    - Als Preset speichern")
         print("  load <Name>    - Preset laden")
         print("  preset del <N> - Preset löschen")
-        print(f"  help | done | cancel | {cancel_hint()}")
+        print(f"  help / ? | done / d | cancel / {cancel_hint()}")
         print("-" * 60)
 
     _print_slot_help()
@@ -75,7 +75,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             user_input = safe_input(f"{prompt} > ").strip()
             cmd = user_input.lower()
 
-            if cmd == "done" or cmd == "d":
+            if cmd in ("done", "d"):
                 print(ok("Slot-Editor beendet."))
                 return
             elif is_cancel(cmd):
@@ -83,10 +83,10 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 return
             elif cmd == "":
                 continue
-            elif cmd == "help" or cmd == "?":
+            elif cmd in ("help", "?"):
                 _print_slot_help()
                 continue
-            elif cmd == "show" or cmd == "s":
+            elif cmd in ("show", "s"):
                 with state.lock:
                     if state.global_slots:
                         print(f"\nSlots ({len(state.global_slots)}):")

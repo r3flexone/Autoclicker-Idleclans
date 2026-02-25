@@ -61,13 +61,13 @@ def run_global_item_editor(state: AutoClickerState) -> None:
 
     def _print_item_help(full=False):
         if not full:
-            print("\n  Kurzübersicht (?? = vollständige Hilfe):")
+            print("\n  Kurzübersicht (? / ?? = vollständige Hilfe):")
             print("    learn <Nr>       Item aus Slot lernen")
             print("    add              Neues Item manuell")
             print("    edit <Nr>        Item bearbeiten")
             print("    del <Nr>         Item löschen")
-            print("    show             Alle Items anzeigen")
-            print(f"    done | cancel | {cancel_hint()}  Fertig / Abbrechen")
+            print("    show / s         Alle Items anzeigen")
+            print(f"    done / d | cancel / {cancel_hint()}  Fertig / Abbrechen")
         else:
             print("\n" + "-" * 60)
             print("Befehle:")
