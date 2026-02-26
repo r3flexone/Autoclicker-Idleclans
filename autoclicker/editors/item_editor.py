@@ -3,6 +3,7 @@ Item-Editor für den Autoclicker.
 Ermöglicht das Erstellen und Bearbeiten von Item-Definitionen für Item-Scans.
 """
 
+import copy
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +33,10 @@ def run_global_item_editor(state: AutoClickerState) -> None:
         print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
+
+    # Backup für cancel
+    with state.lock:
+        _items_backup = copy.deepcopy(state.global_items)
 
     # Aktuelle Items anzeigen
     with state.lock:
@@ -102,10 +107,13 @@ def run_global_item_editor(state: AutoClickerState) -> None:
             cmd = user_input.lower()
 
             if cmd in ("done", "d"):
+                save_global_items(state)
                 print(ok("Item-Editor beendet."))
                 return
             elif is_cancel(cmd):
-                print(col("[ABBRUCH]", "yellow") + " Item-Editor beendet.")
+                with state.lock:
+                    state.global_items = _items_backup
+                print(col("[ABBRUCH]", "yellow") + " Änderungen verworfen.")
                 return
             elif cmd == "":
                 continue
@@ -135,7 +143,6 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 if item:
                     with state.lock:
                         state.global_items[item.name] = item
-                    save_global_items(state)
                     print(f"  + Item '{item.name}' hinzugefügt")
                 continue
 
@@ -152,7 +159,6 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                                 if new_item.name != name:
                                     del state.global_items[name]
                                 state.global_items[new_item.name] = new_item
-                                save_global_items(state)
                                 print(f"  + Item '{new_item.name}' aktualisiert")
                         else:
                             print(f"  -> Ungültig! Verfügbar: 1-{len(item_list)}")
@@ -169,7 +175,6 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 if confirm(f"  {count} Item(s) wirklich löschen?"):
                     with state.lock:
                         state.global_items.clear()
-                    save_global_items(state)
                     print(f"  + {count} Item(s) gelöscht!")
                 else:
                     print("  -> Abgebrochen")
@@ -183,7 +188,6 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                         if 1 <= del_num <= len(item_list):
                             name = item_list[del_num - 1]
                             del state.global_items[name]
-                            save_global_items(state)
                             print(f"  + Item '{name}' gelöscht")
                         else:
                             print(f"  -> Ungültig! Verfügbar: 1-{len(item_list)}")
@@ -233,7 +237,9 @@ def run_global_item_editor(state: AutoClickerState) -> None:
                 print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
-            print("\n" + col("[ABBRUCH]", "yellow") + " Item-Editor beendet.")
+            with state.lock:
+                state.global_items = _items_backup
+            print("\n" + col("[ABBRUCH]", "yellow") + " Änderungen verworfen.")
             return
 
 
@@ -642,7 +648,6 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                 template_str = f" + {item.template}" if item.template else ""
                 print(f"    + {item_name} (P{priority}){template_str}")
 
-            save_global_items(state)
             print(f"\n  === {created_count} Items erstellt! ===")
             return True
 
@@ -786,8 +791,6 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     with state.lock:
         state.global_items[item_name] = item
 
-    save_global_items(state)
-
     confirm_str = f" -> ({confirm_point.x},{confirm_point.y}) nach {confirm_delay}s" if confirm_point else ""
     template_str = f" + Template" if item.template else ""
     print(f"  + Item '{item_name}' gelernt mit {len(marker_colors)} Marker-Farben!{confirm_str}{template_str}")
@@ -868,8 +871,6 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
             del state.global_items[old_name]
             state.global_items[new_name] = item
 
-        save_global_items(state)
-
         # Auch in allen Scan-Konfigurationen aktualisieren
         updated_scans = update_item_in_scans(old_name, new_name, item.template)
         if updated_scans > 0:
@@ -934,7 +935,6 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
 
                 if template_input.lower() == "remove":
                     item.template = None
-                    save_global_items(state)
                     print("  + Template entfernt!")
                 elif template_input.lower() == "capture":
                     # Screenshot-Region abfragen
@@ -979,7 +979,6 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                                 except ValueError:
                                     pass
 
-                            save_global_items(state)
                             print(f"  + Template gespeichert: {template_file}")
                         else:
                             print("  -> Screenshot fehlgeschlagen!")
@@ -1006,7 +1005,6 @@ def handle_template_command(state: AutoClickerState, cmd: str) -> None:
                         except ValueError:
                             pass
 
-                    save_global_items(state)
                     print(f"  + Template gesetzt: {item.template} (>={item.min_confidence:.0%})")
             else:
                 print(f"  -> Ungültiges Item!")
