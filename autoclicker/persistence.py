@@ -108,7 +108,6 @@ def _sequence_to_dict(seq: Sequence) -> dict:
         "name": seq.name,
         "total_cycles": seq.total_cycles,
         "init_steps": [_step_to_dict(s) for s in seq.init_steps],
-        "start_steps": [_step_to_dict(s) for s in seq.start_steps],
         "loop_phases": [
             {
                 "name": lp.name,
@@ -228,12 +227,16 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                 return steps
 
             init_steps = parse_steps(data.get("init_steps", []))
-            start_steps = parse_steps(data.get("start_steps", []))
             end_steps = parse_steps(data.get("end_steps", []))
+
+            # Rückwärtskompatibilität: alte start_steps → erste LoopPhase mit repeat=1
+            old_start_steps = parse_steps(data.get("start_steps", []))
 
             # Neues Format mit loop_phases (mehrere Loop-Phasen)
             if "loop_phases" in data:
                 loop_phases = []
+                if old_start_steps:
+                    loop_phases.append(LoopPhase("Start", old_start_steps, 1))
                 for lp_data in data["loop_phases"]:
                     lp = LoopPhase(
                         name=lp_data.get("name", "Loop"),
@@ -242,29 +245,28 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     )
                     loop_phases.append(lp)
                 total_cycles = data.get("total_cycles", 1)
-                return Sequence(data["name"], init_steps, start_steps, loop_phases, end_steps, total_cycles)
+                return Sequence(data["name"], init_steps, loop_phases, end_steps, total_cycles)
 
             # Altes Format mit loop_steps (eine Loop-Phase) - konvertieren
             elif "loop_steps" in data:
                 loop_steps = parse_steps(data.get("loop_steps", []))
                 max_loops = data.get("max_loops", 0)
-                # Konvertiere zu neuem Format: eine LoopPhase
+                loop_phases = []
+                if old_start_steps:
+                    loop_phases.append(LoopPhase("Start", old_start_steps, 1))
                 if loop_steps:
-                    loop_phases = [LoopPhase("Loop 1", loop_steps, max_loops if max_loops > 0 else 1)]
-                    total_cycles = 0 if max_loops == 0 else 1  # 0 = unendlich
-                else:
-                    loop_phases = []
-                    total_cycles = 1
-                return Sequence(data["name"], [], start_steps, loop_phases, end_steps, total_cycles)
+                    loop_phases.append(LoopPhase("Loop 1", loop_steps, max_loops if max_loops > 0 else 1))
+                total_cycles = 0 if max_loops == 0 else 1
+                return Sequence(data["name"], init_steps, loop_phases, end_steps, total_cycles)
 
             # Uraltes Format (nur steps) - konvertieren
             elif "steps" in data:
                 loop_steps = parse_steps(data["steps"])
                 loop_phases = [LoopPhase("Loop 1", loop_steps, 1)] if loop_steps else []
-                return Sequence(data["name"], [], [], loop_phases, [], 0)
+                return Sequence(data["name"], [], loop_phases, [], 0)
 
             else:
-                return Sequence(data["name"], [], [], [], [], 1)
+                return Sequence(data["name"], [], [], [], 1)
 
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Konnte {filepath} nicht laden: {e}")

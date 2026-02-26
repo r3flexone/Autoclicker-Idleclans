@@ -591,7 +591,7 @@ def print_status(state: AutoClickerState) -> None:
             if state.active_sequence:
                 _seq = state.active_sequence
                 init_part = f"Init: {len(_seq.init_steps)}, " if _seq.init_steps else ""
-                seq_info = f"{init_part}Start: {len(_seq.start_steps)}, Loops: {len(_seq.loop_phases)}"
+                seq_info = f"{init_part}Loops: {len(_seq.loop_phases)}"
                 print(f"{status_tag} {points_str} | Sequenz: {col(seq_name, 'cyan')} ({seq_info})", flush=True)
             else:
                 print(f"{status_tag} {points_str} | Sequenz: {seq_name}", flush=True)
@@ -609,12 +609,11 @@ def sequence_worker(state: AutoClickerState) -> None:
             return
 
         has_init = len(sequence.init_steps) > 0
-        has_start = len(sequence.start_steps) > 0
         has_loops = len(sequence.loop_phases) > 0
         has_end = len(sequence.end_steps) > 0
         total_cycles = sequence.total_cycles
 
-        if not has_init and not has_start and not has_loops:
+        if not has_init and not has_loops:
             print(err("Sequenz ist leer!"))
             state.is_running = False
             return
@@ -624,8 +623,6 @@ def sequence_worker(state: AutoClickerState) -> None:
             print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
             for i, step in enumerate(sequence.init_steps):
                 print(f"  INIT[{i+1}]: {step.name or 'unnamed'}")
-            for i, step in enumerate(sequence.start_steps):
-                print(f"  START[{i+1}]: {step.name or 'unnamed'}")
             for lp in sequence.loop_phases:
                 print(f"  --- {lp.name} (x{lp.repeat}) ---")
                 for i, step in enumerate(lp.steps):
@@ -676,24 +673,6 @@ def sequence_worker(state: AutoClickerState) -> None:
             break
 
         cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
-
-        # START-Phase
-        if has_start and not state.stop_event.is_set():
-            print(col(f"\n[START] Führe Start-Sequenz aus... ({cycle_str})", "blue"))
-            total_start = len(sequence.start_steps)
-
-            for i, step in enumerate(sequence.start_steps):
-                if state.stop_event.is_set() or state.quit_event.is_set():
-                    break
-                if not execute_step(state, step, i + 1, total_start, "START"):
-                    break
-
-            if state.skip_cycle_event.is_set():
-                continue
-            if state.restart_event.is_set():
-                continue
-            if state.stop_event.is_set():
-                break
 
         # LOOP-Phasen
         if has_loops and not state.stop_event.is_set():
