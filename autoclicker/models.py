@@ -55,9 +55,17 @@ class SequenceStep:
     else_delay: float = 0                # Delay vor Fallback
     else_key: Optional[str] = None       # Taste für Fallback
     else_name: str = ""                  # Name des Fallback-Punkts
+    # Optional: Screenshot machen (kein Klick, kein Scan)
+    screenshot_only: bool = False        # True = nur Screenshot, kein Klick
+    screenshot_region: Optional[tuple] = None  # (x1,y1,x2,y2) oder None = Vollbild
 
     def __str__(self) -> str:
         else_str = self._else_str()
+        if self.screenshot_only:
+            region = self.screenshot_region
+            if region:
+                return f"SCREENSHOT ({region[0]},{region[1]})→({region[2]},{region[3]})"
+            return "SCREENSHOT (Vollbild)"
         if self.key_press:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"

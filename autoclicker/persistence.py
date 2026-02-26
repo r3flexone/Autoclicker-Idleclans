@@ -97,7 +97,9 @@ def _step_to_dict(s: SequenceStep) -> dict:
             "wait_only": s.wait_only, "delay_max": s.delay_max,
             "key_press": s.key_press, "else_action": s.else_action,
             "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
-            "else_key": s.else_key, "else_name": s.else_name}
+            "else_key": s.else_key, "else_name": s.else_name,
+            "screenshot_only": s.screenshot_only,
+            "screenshot_region": list(s.screenshot_region) if s.screenshot_region else None}
 
 
 def _sequence_to_dict(seq: Sequence) -> dict:
@@ -217,7 +219,9 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         else_y=s.get("else_y", 0),
                         else_delay=s.get("else_delay", 0),
                         else_key=s.get("else_key"),
-                        else_name=s.get("else_name", "")
+                        else_name=s.get("else_name", ""),
+                        screenshot_only=s.get("screenshot_only", False),
+                        screenshot_region=tuple(int(v) for v in s["screenshot_region"]) if s.get("screenshot_region") else None,
                     )
                     steps.append(step)
                 return steps

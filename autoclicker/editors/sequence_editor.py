@@ -14,7 +14,7 @@ from ..persistence import (
     save_data, save_sequence_file, list_available_sequences, load_sequence_file,
     get_next_point_id, get_point_by_id, SCREENSHOTS_DIR
 )
-from ..imaging import PILLOW_AVAILABLE, take_screenshot, get_pixel_color, select_region
+from ..imaging import PILLOW_AVAILABLE, get_pixel_color, select_region
 
 
 
@@ -569,7 +569,7 @@ def _print_phase_help(full: bool = False) -> None:
         print(cmd_hint("key <Taste>", "Taste drücken              (z.B. 'key enter')"))
         print(cmd_hint("wait <Zeit>", "Nur warten, kein Klick"))
         print(cmd_hint("del <Nr>", "Schritt löschen"))
-        print(cmd_hint("screenshot / ss", "Loot-Screenshot (Bereich einmalig definieren)"))
+        print(cmd_hint("screenshot / ss", "Screenshot-Schritt (Bereich wählen)"))
         print(cmd_hint(f"done / d | cancel / {cancel_hint()}", "Fertig / Abbrechen"))
         print("-" * 60)
         return
@@ -604,10 +604,10 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("del <Nr>-<Nr>", "Bereich löschen (z.B. del 1-5)"))
     print(cmd_hint("del all", "ALLE Schritte löschen"))
     print(cmd_hint("ins <Nr>", "Nächsten Schritt an Position einfügen"))
-    print("Screenshots:")
-    print(cmd_hint("screenshot / ss", "Loot-Screenshot (gespeicherten Bereich verwenden)"))
-    print(cmd_hint("screenshot set", "Loot-Bereich (neu) definieren (kein Screenshot)"))
-    print(cmd_hint("screenshot full", "Vollbild-Screenshot"))
+    print("Screenshot-Schritt (wird bei Ausführung automatisch gemacht):")
+    print(cmd_hint("screenshot / ss", "Bereich interaktiv wählen → Schritt erstellen"))
+    print(cmd_hint("screenshot full", "Vollbild-Screenshot-Schritt erstellen"))
+    print(cmd_hint("screenshot x1 y1 x2 y2", "Direkte Koordinaten (z.B. 'screenshot 0 0 800 600')"))
     print(cmd_hint(f"help | ? / ?? | show | done | cancel | {cancel_hint()}", ""))
     print("-" * 60)
 
@@ -627,7 +627,6 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
     _print_phase_help()
 
     insert_position = None     # None = am Ende anfügen, Zahl = an Position einfügen
-    screenshot_region = None   # Gespeicherter Loot-Bereich für Screenshots
 
     def add_step(step):
         """Fügt Schritt hinzu - entweder an insert_position oder am Ende."""
@@ -905,48 +904,38 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 add_step(step)
                 continue
 
-            # === SCREENSHOT-BEFEHL ===
+            # === SCREENSHOT-SCHRITT ===
             elif user_input.lower().startswith(("screenshot", "ss")):
-                if not PILLOW_AVAILABLE:
-                    print(f"  -> {err('Pillow nicht installiert!')} pip install pillow")
-                    continue
+                parts_ss = user_input.split()
+                # parts_ss[0] = "screenshot" oder "ss"
+                rest = parts_ss[1:]  # alles nach dem Befehl
 
-                nonlocal_parts = user_input.lower().split(maxsplit=1)
-                subcmd = nonlocal_parts[1].strip() if len(nonlocal_parts) > 1 else ""
-
-                if subcmd == "set":
-                    # Nur Bereich (neu) definieren, kein Screenshot
-                    print("  Loot-Bereich definieren:")
-                    screenshot_region = select_region()
-                    if screenshot_region:
-                        print(ok(f"Bereich gespeichert: {screenshot_region[0]},{screenshot_region[1]} → {screenshot_region[2]},{screenshot_region[3]}"))
-                    continue
-
-                # Bei "full" kein Bereich verwenden
-                if subcmd == "full":
+                if rest and rest[0].lower() == "full":
                     region = None
+                    step = SequenceStep(screenshot_only=True, screenshot_region=None,
+                                       name="Screenshot (Vollbild)")
+                    add_step(step)
+                    print(ok("Screenshot-Schritt (Vollbild) hinzugefügt"))
+                elif len(rest) == 4 and all(r.lstrip("-").isdigit() for r in rest):
+                    x1, y1, x2, y2 = (int(v) for v in rest)
+                    region = (x1, y1, x2, y2)
+                    step = SequenceStep(screenshot_only=True, screenshot_region=region,
+                                       name=f"Screenshot ({x1},{y1})→({x2},{y2})")
+                    add_step(step)
+                    print(ok(f"Screenshot-Schritt ({x1},{y1})→({x2},{y2}) hinzugefügt"))
                 else:
-                    # Bereich verwenden – bei erster Nutzung fragen
-                    if screenshot_region is None:
-                        print("  Loot-Bereich definieren (einmalig, wird gespeichert):")
-                        screenshot_region = select_region()
-                        if screenshot_region is None:
-                            continue
-                    region = screenshot_region
-
-                img = take_screenshot(region)
-                if img:
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    screenshots_dir = Path(SCREENSHOTS_DIR)
-                    screenshots_dir.mkdir(parents=True, exist_ok=True)
-                    path = screenshots_dir / f"loot_{timestamp}.png"
-                    img.save(str(path))
-                    w, h = img.size
-                    region_info = f"({region[0]},{region[1]})→({region[2]},{region[3]})" if region else "Vollbild"
-                    print(ok(f"Screenshot gespeichert: {path}"))
-                    print(f"  Größe: {w}x{h}px | Bereich: {region_info}")
-                else:
-                    print(err("Screenshot fehlgeschlagen!"))
+                    # Interaktiv Bereich wählen
+                    if not PILLOW_AVAILABLE:
+                        print(f"  -> {err('Pillow nicht installiert!')} pip install pillow")
+                        continue
+                    print("  Bereich für Screenshot-Schritt wählen:")
+                    region = select_region()
+                    if region is None:
+                        continue
+                    step = SequenceStep(screenshot_only=True, screenshot_region=region,
+                                       name=f"Screenshot ({region[0]},{region[1]})→({region[2]},{region[3]})")
+                    add_step(step)
+                    print(ok(f"Screenshot-Schritt ({region[0]},{region[1]})→({region[2]},{region[3]}) hinzugefügt"))
                 continue
 
             # === PUNKT-BEFEHL (Standard) ===

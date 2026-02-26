@@ -4,6 +4,8 @@ Enthält die Worker-Funktion und Step-Ausführungslogik.
 """
 
 import time
+from datetime import datetime
+from pathlib import Path
 
 from .config import CONFIG
 from .models import AutoClickerState, SequenceStep
@@ -15,6 +17,7 @@ from .imaging import (
     PILLOW_AVAILABLE, take_screenshot, color_distance, get_color_name,
     find_color_in_image, match_template_in_image
 )
+from .persistence import SCREENSHOTS_DIR
 
 
 def _phase_color(phase: str) -> str:
@@ -476,6 +479,31 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
     return True
 
 
+def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
+                              step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen Screenshot-Schritt aus: macht ein Bild und speichert es."""
+    if not PILLOW_AVAILABLE:
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT übersprungen (Pillow fehlt)", "yellow"))
+        return True
+
+    region = step.screenshot_region  # (x1,y1,x2,y2) oder None
+    img = take_screenshot(region)
+    if img is None:
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT fehlgeschlagen", "red"))
+        return True  # Nicht als Fehler werten, Sequenz läuft weiter
+
+    screenshots_dir = Path(SCREENSHOTS_DIR)
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    filename = f"seq_{timestamp}.png"
+    path = screenshots_dir / filename
+    img.save(str(path))
+
+    region_str = f"({region[0]},{region[1]})→({region[2]},{region[3]})" if region else "Vollbild"
+    print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT {region_str} → {filename}", _phase_color(phase)))
+    return True
+
+
 def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
                  total_steps: int, phase: str) -> bool:
     """Führt einen einzelnen Schritt aus: Erst warten/prüfen, DANN klicken."""
@@ -486,6 +514,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 
     if state.config.get("debug_mode", False):
         print(f"[DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}")
+
+    if step.screenshot_only:
+        return _execute_screenshot_step(state, step, step_num, total_steps, phase)
 
     if step.item_scan:
         return _execute_item_scan_step(state, step, step_num, total_steps, phase)
