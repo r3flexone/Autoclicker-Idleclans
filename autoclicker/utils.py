@@ -9,6 +9,7 @@ import logging
 import msvcrt
 import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -309,9 +310,16 @@ def safe_input(prompt: str = "") -> str:
                 chars.append(ch)
                 print(ch, end='', flush=True)
     else:
-        # PyCharm/IDE: normaler input() (ESC nicht nutzbar, 'q'/'cancel' tippen)
+        # Non-Windows/IDE: Prompt manuell ausgeben, dann stdin lesen
+        # (vermeidet doppelte Ausgabe durch Windows Console API + Python stdout)
         try:
-            return input(prompt)
+            if prompt:
+                sys.stdout.write(prompt)
+                sys.stdout.flush()
+            line = sys.stdin.readline()
+            if not line:  # EOF
+                return ""
+            return line.rstrip('\n\r')
         except (EOFError, KeyboardInterrupt):
             return ""
 
