@@ -434,8 +434,10 @@ def load_global_slots(state: AutoClickerState) -> None:
 
 
 def save_global_items(state: AutoClickerState) -> None:
-    """Speichert alle globalen Items."""
-    data = {name: _item_to_dict(item) for name, item in state.global_items.items()}
+    """Speichert alle globalen Items, sortiert nach Kategorie und Name."""
+    sorted_items = sorted(state.global_items.items(),
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[0]))
+    data = {name: _item_to_dict(item) for name, item in sorted_items}
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
     print(save_tag(f"{len(state.global_items)} Item(s) gespeichert"))
@@ -569,7 +571,9 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         print(err("Keine Items vorhanden zum Speichern!"))
         return False
 
-    data = {name: _item_to_dict(item) for name, item in state.global_items.items()}
+    sorted_items = sorted(state.global_items.items(),
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[0]))
+    data = {name: _item_to_dict(item) for name, item in sorted_items}
 
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
