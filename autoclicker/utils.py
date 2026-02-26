@@ -256,16 +256,26 @@ def cancel_hint() -> str:
 def flush_input_buffer() -> None:
     """Leert den Tastatur-Input-Buffer (entfernt gepufferte Tastendrücke).
 
-    Funktioniert nur in echter Windows-Konsole. In PyCharm/IDE wird
-    der Aufruf übersprungen (msvcrt.kbhit/getch funktionieren dort nicht).
+    Echte Windows-Konsole: msvcrt.kbhit/getch.
+    PyCharm/IDE (Pipe-stdin): PeekNamedPipe + sys.stdin.read.
     """
-    if not _REAL_CONSOLE:
-        return
-    try:
-        while msvcrt.kbhit():
-            msvcrt.getch()
-    except Exception:
-        pass
+    if _REAL_CONSOLE:
+        try:
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except Exception:
+            pass
+    else:
+        # Pipe-stdin (PyCharm): leftover Enter vom interactive_select leeren
+        try:
+            handle = ctypes.windll.kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+            bytes_avail = ctypes.c_ulong(0)
+            ok_pipe = ctypes.windll.kernel32.PeekNamedPipe(
+                handle, None, 0, None, ctypes.byref(bytes_avail), None)
+            if ok_pipe and bytes_avail.value > 0:
+                sys.stdin.read(bytes_avail.value)
+        except Exception:
+            pass
 
 
 def safe_input(prompt: str = "") -> str:

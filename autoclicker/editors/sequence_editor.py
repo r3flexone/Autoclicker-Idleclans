@@ -936,15 +936,16 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                 rest = parts_ss[1:]  # alles nach dem Befehl
 
                 if rest and rest[0].lower() == "full":
-                    region = None
-                    step = SequenceStep(screenshot_only=True, screenshot_region=None,
+                    step = SequenceStep(x=0, y=0, delay_before=0.0,
+                                       screenshot_only=True, screenshot_region=None,
                                        name="Screenshot (Vollbild)")
                     add_step(step)
                     print(ok("Screenshot-Schritt (Vollbild) hinzugefügt"))
                 elif len(rest) == 4 and all(r.lstrip("-").isdigit() for r in rest):
                     x1, y1, x2, y2 = (int(v) for v in rest)
                     region = (x1, y1, x2, y2)
-                    step = SequenceStep(screenshot_only=True, screenshot_region=region,
+                    step = SequenceStep(x=0, y=0, delay_before=0.0,
+                                       screenshot_only=True, screenshot_region=region,
                                        name=f"Screenshot ({x1},{y1})→({x2},{y2})")
                     add_step(step)
                     print(ok(f"Screenshot-Schritt ({x1},{y1})→({x2},{y2}) hinzugefügt"))
@@ -957,7 +958,8 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     region = select_region()
                     if region is None:
                         continue
-                    step = SequenceStep(screenshot_only=True, screenshot_region=region,
+                    step = SequenceStep(x=0, y=0, delay_before=0.0,
+                                       screenshot_only=True, screenshot_region=region,
                                        name=f"Screenshot ({region[0]},{region[1]})→({region[2]},{region[3]})")
                     add_step(step)
                     print(ok(f"Screenshot-Schritt ({region[0]},{region[1]})→({region[2]},{region[3]}) hinzugefügt"))
