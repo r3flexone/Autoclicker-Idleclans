@@ -136,14 +136,16 @@ class LoopPhase:
 
 @dataclass
 class Sequence:
-    """Eine Klick-Sequenz mit Start-Phase, Loop-Phasen und End-Phase."""
+    """Eine Klick-Sequenz mit Init-, Start-, Loop- und End-Phase."""
     name: str
-    start_steps: list[SequenceStep] = field(default_factory=list)  # Einmalig am Anfang
+    init_steps: list[SequenceStep] = field(default_factory=list)   # Einmalig vor allen Zyklen
+    start_steps: list[SequenceStep] = field(default_factory=list)  # Einmal pro Zyklus
     loop_phases: list[LoopPhase] = field(default_factory=list)     # Mehrere Loop-Phasen
-    end_steps: list[SequenceStep] = field(default_factory=list)    # Einmalig am Ende
+    end_steps: list[SequenceStep] = field(default_factory=list)    # Einmalig nach allen Zyklen
     total_cycles: int = 1  # 0 = unendlich, >0 = wie oft alle Loops durchlaufen werden
 
     def __str__(self) -> str:
+        init_count = len(self.init_steps)
         start_count = len(self.start_steps)
         end_count = len(self.end_steps)
         loop_info = f"{len(self.loop_phases)} Loop(s)"
@@ -153,15 +155,15 @@ class Sequence:
             loop_info += " (1x)"
         else:
             loop_info += f" (x{self.total_cycles})"
-        # Zähle alle Schritte mit Farb-Trigger
-        all_steps = self.start_steps + [s for lp in self.loop_phases for s in lp.steps] + self.end_steps
+        all_steps = self.init_steps + self.start_steps + [s for lp in self.loop_phases for s in lp.steps] + self.end_steps
         pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
         trigger_str = f" [Farb-Trigger: {pixel_triggers}]" if pixel_triggers > 0 else ""
+        init_str = f"Init: {init_count}, " if init_count > 0 else ""
         end_str = f", End: {end_count}" if end_count > 0 else ""
-        return f"{self.name} (Start: {start_count}, {loop_info}{end_str}){trigger_str}"
+        return f"{self.name} ({init_str}Start: {start_count}, {loop_info}{end_str}){trigger_str}"
 
     def total_steps(self) -> int:
-        return len(self.start_steps) + sum(len(lp.steps) for lp in self.loop_phases) + len(self.end_steps)
+        return len(self.init_steps) + len(self.start_steps) + sum(len(lp.steps) for lp in self.loop_phases) + len(self.end_steps)
 
 
 # =============================================================================

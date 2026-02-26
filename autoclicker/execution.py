@@ -23,6 +23,8 @@ from .persistence import SCREENSHOTS_DIR
 def _phase_color(phase: str) -> str:
     """Gibt die Farbe für eine Phase zurück."""
     p = phase.upper()
+    if p.startswith("INIT"):
+        return "green"
     if p.startswith("START"):
         return "blue"
     if p.startswith("END"):
@@ -601,12 +603,13 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
+        has_init = len(sequence.init_steps) > 0
         has_start = len(sequence.start_steps) > 0
         has_loops = len(sequence.loop_phases) > 0
         has_end = len(sequence.end_steps) > 0
         total_cycles = sequence.total_cycles
 
-        if not has_start and not has_loops:
+        if not has_init and not has_start and not has_loops:
             print(err("Sequenz ist leer!"))
             state.is_running = False
             return
@@ -614,6 +617,8 @@ def sequence_worker(state: AutoClickerState) -> None:
         if state.config.get("debug_mode", False):
             print("\n" + "=" * 60)
             print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
+            for i, step in enumerate(sequence.init_steps):
+                print(f"  INIT[{i+1}]: {step.name or 'unnamed'}")
             for i, step in enumerate(sequence.start_steps):
                 print(f"  START[{i+1}]: {step.name or 'unnamed'}")
             for lp in sequence.loop_phases:
@@ -630,6 +635,18 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.items_found = 0
         state.key_presses = 0
         state.start_time = time.time()
+
+    # INIT-Phase (einmalig vor allen Zyklen)
+    if has_init and not state.stop_event.is_set():
+        print(col("\n[INIT] Führe Initialisierung aus (einmalig)...", "green"))
+        total_init = len(sequence.init_steps)
+        for i, step in enumerate(sequence.init_steps):
+            if state.stop_event.is_set() or state.quit_event.is_set():
+                break
+            if not execute_step(state, step, i + 1, total_init, "INIT"):
+                break
+        if not state.stop_event.is_set() and not state.quit_event.is_set():
+            print(col("\n[INIT] Initialisierung abgeschlossen.", "green"))
 
     cycle_count = 0
 

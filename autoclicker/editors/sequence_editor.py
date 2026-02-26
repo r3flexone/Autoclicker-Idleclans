@@ -102,6 +102,7 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence,
         return
 
     all_steps = (
+        sequence.init_steps +
         sequence.start_steps +
         [s for lp in sequence.loop_phases for s in lp.steps] +
         sequence.end_steps
@@ -202,6 +203,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     if existing:
         print(f"\n--- Bearbeite Sequenz: {existing.name} ---")
         seq_name = existing.name
+        init_steps = list(existing.init_steps)
         start_steps = list(existing.start_steps)
         loop_phases = [LoopPhase(lp.name, list(lp.steps), lp.repeat) for lp in existing.loop_phases]
         end_steps = list(existing.end_steps)
@@ -211,6 +213,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         seq_name = safe_input("Name der Sequenz: ").strip()
         if not seq_name:
             seq_name = f"Sequenz_{int(time.time())}"
+        init_steps = []
         start_steps = []
         loop_phases = []
         end_steps = []
@@ -222,7 +225,16 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         for p in state.points:
             print(f"  {p}")
 
-    # Erst START-Phase bearbeiten
+    # INIT-Phase bearbeiten (einmalig vor allen Zyklen)
+    print(header("PHASE 0: INIT-SEQUENZ (wird einmalig vor allen Zyklen ausgeführt)"))
+    print("  (Optional: Login, Vorbereitung, etc. – läuft nur beim allerersten Start)")
+    result = edit_phase(state, init_steps, "INIT")
+    if result is None:
+        print(f"{col('[ABBRUCH]', 'yellow')} Sequenz nicht gespeichert.")
+        return
+    init_steps = result
+
+    # Dann START-Phase bearbeiten
     print(header("PHASE 1: START-SEQUENZ (wird einmal pro Zyklus ausgeführt)"))
     result = edit_phase(state, start_steps, "START")
     if result is None:
@@ -240,7 +252,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     # Gesamt-Zyklen abfragen
     if loop_phases:
         print(header("GESAMT-WIEDERHOLUNGEN"))
-        print("\nAblauf: START -> Loop1 -> Loop2 -> ... -> (wieder von vorne?)")
+        print("\nAblauf: INIT (1x) -> START -> Loop1 -> Loop2 -> ... -> (wieder von vorne?) -> END (1x)")
         print("\nWie oft soll der GESAMTE Ablauf wiederholt werden?")
         print("  0 = Unendlich (manuell stoppen)")
         print("  1 = Einmal durchlaufen und stoppen")
@@ -269,6 +281,10 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print(f"\n{col('Zusammenfassung:', 'bold')}")
     if existing:
         changes = []
+        old_i, new_i = len(existing.init_steps), len(init_steps)
+        if old_i != new_i:
+            changes.append(f"  Init: {old_i} → {new_i} Schritte")
+
         old_s, new_s = len(existing.start_steps), len(start_steps)
         if old_s != new_s:
             changes.append(f"  Start: {old_s} → {new_s} Schritte")
@@ -301,6 +317,8 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
             print(f"  {hint('Keine Änderungen')}")
     else:
         print(f"  {col('Neue Sequenz:', 'green')} '{seq_name}'")
+        if init_steps:
+            print(f"    Init: {len(init_steps)} Schritte (einmalig)")
         print(f"    Start: {len(start_steps)} Schritte")
         for lp in loop_phases:
             print(f"    {lp.name}: {len(lp.steps)} Schritte x{lp.repeat}")
@@ -312,6 +330,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     # Sequenz erstellen und speichern
     new_sequence = Sequence(
         name=seq_name,
+        init_steps=init_steps,
         start_steps=start_steps,
         loop_phases=loop_phases,
         end_steps=end_steps,

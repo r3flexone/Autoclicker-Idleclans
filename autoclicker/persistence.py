@@ -107,6 +107,7 @@ def _sequence_to_dict(seq: Sequence) -> dict:
     return {
         "name": seq.name,
         "total_cycles": seq.total_cycles,
+        "init_steps": [_step_to_dict(s) for s in seq.init_steps],
         "start_steps": [_step_to_dict(s) for s in seq.start_steps],
         "loop_phases": [
             {
@@ -226,6 +227,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     steps.append(step)
                 return steps
 
+            init_steps = parse_steps(data.get("init_steps", []))
             start_steps = parse_steps(data.get("start_steps", []))
             end_steps = parse_steps(data.get("end_steps", []))
 
@@ -240,7 +242,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     )
                     loop_phases.append(lp)
                 total_cycles = data.get("total_cycles", 1)
-                return Sequence(data["name"], start_steps, loop_phases, end_steps, total_cycles)
+                return Sequence(data["name"], init_steps, start_steps, loop_phases, end_steps, total_cycles)
 
             # Altes Format mit loop_steps (eine Loop-Phase) - konvertieren
             elif "loop_steps" in data:
@@ -253,16 +255,16 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                 else:
                     loop_phases = []
                     total_cycles = 1
-                return Sequence(data["name"], start_steps, loop_phases, end_steps, total_cycles)
+                return Sequence(data["name"], [], start_steps, loop_phases, end_steps, total_cycles)
 
             # Uraltes Format (nur steps) - konvertieren
             elif "steps" in data:
                 loop_steps = parse_steps(data["steps"])
                 loop_phases = [LoopPhase("Loop 1", loop_steps, 1)] if loop_steps else []
-                return Sequence(data["name"], [], loop_phases, [], 0)
+                return Sequence(data["name"], [], [], loop_phases, [], 0)
 
             else:
-                return Sequence(data["name"], [], [], [], 1)
+                return Sequence(data["name"], [], [], [], [], 1)
 
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Konnte {filepath} nicht laden: {e}")
