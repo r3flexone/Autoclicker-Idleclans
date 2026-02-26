@@ -49,6 +49,7 @@ VK_G = 0x47  # Pause/Resume (G statt R wegen Konflikten)
 VK_K = 0x4B  # Skip current wait
 VK_W = 0x57  # Quick-Switch (Wechseln)
 VK_Z = 0x5A  # Schedule (Zeitplan)
+VK_F = 0x46  # Finish (Zyklus abschließen)
 
 # Hotkey IDs
 HOTKEY_RECORD = 1
@@ -66,6 +67,7 @@ HOTKEY_PAUSE = 12
 HOTKEY_SKIP = 13
 HOTKEY_SWITCH = 14
 HOTKEY_SCHEDULE = 15
+HOTKEY_FINISH = 16
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -270,6 +272,7 @@ def register_hotkeys() -> bool:
         (HOTKEY_SKIP, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_K, "CTRL+ALT+K (Skip)"),
         (HOTKEY_SWITCH, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_W, "CTRL+ALT+W (Wechseln)"),
         (HOTKEY_SCHEDULE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_Z, "CTRL+ALT+Z (Zeitplan)"),
+        (HOTKEY_FINISH, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F, "CTRL+ALT+F (Sanft beenden)"),
     ]
 
     for hotkey_id, modifiers, vk, name in hotkeys:
@@ -282,5 +285,5 @@ def register_hotkeys() -> bool:
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle globalen Hotkeys."""
-    for hotkey_id in range(1, HOTKEY_SCHEDULE + 1):
+    for hotkey_id in range(1, HOTKEY_FINISH + 1):
         user32.UnregisterHotKey(None, hotkey_id)

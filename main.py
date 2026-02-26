@@ -18,7 +18,7 @@ from autoclicker.winapi import (
     HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
     HOTKEY_EDITOR, HOTKEY_ITEM_SCAN, HOTKEY_LOAD, HOTKEY_SHOW,
     HOTKEY_TOGGLE, HOTKEY_PAUSE, HOTKEY_SKIP, HOTKEY_SWITCH,
-    HOTKEY_SCHEDULE, HOTKEY_ANALYZE, HOTKEY_QUIT,
+    HOTKEY_SCHEDULE, HOTKEY_ANALYZE, HOTKEY_QUIT, HOTKEY_FINISH,
     register_hotkeys, unregister_hotkeys
 )
 from autoclicker.persistence import (
@@ -31,7 +31,7 @@ from autoclicker.handlers import (
     handle_record, handle_undo, handle_clear, handle_reset,
     handle_editor, handle_item_scan_editor, handle_load, handle_show,
     handle_toggle, handle_pause, handle_skip, handle_switch,
-    handle_schedule, handle_analyze, handle_quit
+    handle_schedule, handle_analyze, handle_quit, handle_finish
 )
 
 
@@ -62,6 +62,7 @@ def print_help() -> None:
     # Ausführung (magenta)
     print(col("Ausführung:", 'magenta'))
     print(f"  {col('CTRL+ALT+S', 'yellow')}  Start/Stop der aktiven Sequenz")
+    print(f"  {col('CTRL+ALT+F', 'yellow')}  Sanft beenden {hint('(Zyklus abschließen, dann END + Stop)')}")
     print(f"  {col('CTRL+ALT+G', 'yellow')}  Pause/Resume")
     print(f"  {col('CTRL+ALT+K', 'yellow')}  Skip {hint('(aktuelle Wartezeit überspringen)')}")
     print(f"  {col('CTRL+ALT+W', 'yellow')}  Quick-Switch {hint('(schnell Sequenz wechseln)')}")
@@ -133,6 +134,7 @@ def main() -> int:
         HOTKEY_SWITCH: handle_switch,
         HOTKEY_SCHEDULE: handle_schedule,
         HOTKEY_ANALYZE: handle_analyze,
+        HOTKEY_FINISH: handle_finish,
     }
 
     try:

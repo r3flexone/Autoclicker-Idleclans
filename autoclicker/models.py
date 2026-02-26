@@ -262,6 +262,7 @@ class AutoClickerState:
     skip_event: threading.Event = field(default_factory=threading.Event)
     restart_event: threading.Event = field(default_factory=threading.Event)
     skip_cycle_event: threading.Event = field(default_factory=threading.Event)
+    finish_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Flag für geplanten Start (überspringt Debug-Enter-Prompt)

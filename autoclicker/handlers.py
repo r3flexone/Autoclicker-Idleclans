@@ -248,6 +248,19 @@ def handle_show(state: AutoClickerState) -> None:
             return
 
 
+def handle_finish(state: AutoClickerState) -> None:
+    """Sanfter Abbruch: aktuellen Zyklus zu Ende führen, dann END-Phase und Stop."""
+    with state.lock:
+        if not state.is_running:
+            print(f"\n{info('Kein Zyklus läuft.')}")
+            return
+        if state.finish_event.is_set():
+            print(f"\n{col('[FINISH]', 'yellow')} Sanfter Abbruch bereits aktiv...")
+            return
+    state.finish_event.set()
+    print(f"\n{col('[FINISH]', 'yellow')} Zyklus wird abgeschlossen, dann END-Phase und Stop.")
+
+
 def handle_toggle(state: AutoClickerState) -> None:
     """Startet oder stoppt die Sequenz."""
     # Prüfe ob Countdown aktiv → nur abbrechen, nicht starten

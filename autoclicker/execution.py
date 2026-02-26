@@ -638,6 +638,7 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.key_presses = 0
         state.start_time = time.time()
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
+        state.finish_event.clear()
 
     # INIT-Phase (einmalig vor allen Zyklen)
     if has_init and not state.stop_event.is_set():
@@ -724,6 +725,10 @@ def sequence_worker(state: AutoClickerState) -> None:
 
         if not has_loops or total_cycles == 1:
             print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
+            break
+
+        if state.finish_event.is_set():
+            print(f"\n{ok('Sanfter Abbruch: Zyklus abgeschlossen.')}")
             break
 
     # END-Phase
