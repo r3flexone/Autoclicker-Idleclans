@@ -498,6 +498,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
 
     Formate:
     - else skip          -> überspringen
+    - else skip_cycle    -> aktuellen Zyklus abbrechen, nächster startet
     - else restart       -> Sequenz neu starten
     - else <Nr> [delay]  -> Punkt klicken (optional mit Verzögerung)
     - else key <Taste>   -> Taste drücken
@@ -512,6 +513,10 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
     # else skip
     if first == "skip":
         return {"else_action": "skip"}
+
+    # else skip_cycle
+    if first == "skip_cycle":
+        return {"else_action": "skip_cycle"}
 
     # else restart
     if first == "restart":
@@ -551,7 +556,7 @@ def parse_else_condition(else_parts: list[str], state: AutoClickerState) -> dict
         pass
 
     print(f"  -> Unbekanntes ELSE-Format: {' '.join(else_parts)}")
-    print("     Formate: else skip | else restart | else <Nr> [delay] | else key <Taste>")
+    print("     Formate: else skip | else skip_cycle | else restart | else <Nr> [delay] | else key <Taste>")
     return {}
 
 
@@ -593,7 +598,8 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("scan <Name> best", "Item-Scan: nur 1 Item total"))
     print(cmd_hint("scan <Name> every", "Item-Scan: alle Treffer (für Duplikate)"))
     print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
-    print(cmd_hint("... else skip", "Überspringen (z.B. 'scan items else skip')"))
+    print(cmd_hint("... else skip", "Schritt überspringen, weiter (z.B. 'scan items else skip')"))
+    print(cmd_hint("... else skip_cycle", "Zyklus abbrechen, nächster startet (z.B. 'scan items else skip_cycle')"))
     print(cmd_hint("... else restart", "Sequenz neu starten (z.B. 'scan items else restart')"))
     print(cmd_hint("... else <Nr> [s]", "Punkt klicken (z.B. 'scan items else 2 5')"))
     print(cmd_hint("... else key <T>", "Taste drücken (z.B. '1 pixel else key enter')"))

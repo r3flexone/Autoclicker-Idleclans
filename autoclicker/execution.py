@@ -140,6 +140,15 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         state.restart_event.set()
         return False
 
+    elif step.else_action == "skip_cycle":
+        if debug:
+            print(f"[DEBUG] ELSE: Zyklus überspringen!")
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Zyklus überspringen!", _c), end="", flush=True)
+        state.skip_cycle_event.set()
+        return False
+
     return True
 
 
@@ -428,12 +437,21 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
         elapsed = time.time() - start_time
         if elapsed >= timeout:
+            clear_line()
+            print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
             if step.else_action:
-                clear_line()
-                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | TIMEOUT", _phase_color(phase)), end="", flush=True)
                 return execute_else_action(state, step, phase, step_num, total_steps)
-            print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"))
-            state.stop_event.set()
+            # Kein else definiert → globale Config-Option auswerten
+            timeout_action = state.config.get("pixel_timeout_action", "stop")
+            if timeout_action == "skip_cycle":
+                print(col(f" → Zyklus wird übersprungen", "yellow"))
+                state.skip_cycle_event.set()
+            elif timeout_action == "restart":
+                print(col(f" → Sequenz wird neu gestartet", "yellow"))
+                state.restart_event.set()
+            else:
+                print(col(f" → Stoppe.", "red"))
+                state.stop_event.set()
             return False
 
         check_interval = state.config.get("pixel_check_interval", 1)
@@ -616,6 +634,10 @@ def sequence_worker(state: AutoClickerState) -> None:
     cycle_count = 0
 
     while not state.stop_event.is_set() and not state.quit_event.is_set():
+        if state.skip_cycle_event.is_set():
+            state.skip_cycle_event.clear()
+            print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
+
         if state.restart_event.is_set():
             state.restart_event.clear()
             cycle_count = 0
@@ -643,6 +665,8 @@ def sequence_worker(state: AutoClickerState) -> None:
                 if not execute_step(state, step, i + 1, total_start, "START"):
                     break
 
+            if state.skip_cycle_event.is_set():
+                continue
             if state.restart_event.is_set():
                 continue
             if state.stop_event.is_set():
@@ -675,20 +699,24 @@ def sequence_worker(state: AutoClickerState) -> None:
                         if not execute_step(state, step, i + 1, total_steps, phase_label):
                             break
 
-                    if state.restart_event.is_set():
+                    if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                         break
 
-                if state.restart_event.is_set():
+                if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                     break
 
-                if not state.stop_event.is_set():
+                if not state.stop_event.is_set() and not state.skip_cycle_event.is_set():
                     print(col(f"\n[{loop_phase.name}] Abgeschlossen.", "magenta"))
 
+            if state.skip_cycle_event.is_set():
+                continue
             if state.restart_event.is_set():
                 continue
             if state.stop_event.is_set():
                 break
 
+        if state.skip_cycle_event.is_set():
+            continue
         if state.restart_event.is_set():
             continue
 

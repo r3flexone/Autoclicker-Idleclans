@@ -96,6 +96,8 @@ class SequenceStep:
             return ""
         if self.else_action == "skip":
             return " | ELSE: skip"
+        elif self.else_action == "skip_cycle":
+            return " | ELSE: skip_cycle"
         elif self.else_action == "restart":
             return " | ELSE: restart"
         elif self.else_action == "click":
@@ -259,6 +261,7 @@ class AutoClickerState:
     pause_event: threading.Event = field(default_factory=threading.Event)
     skip_event: threading.Event = field(default_factory=threading.Event)
     restart_event: threading.Event = field(default_factory=threading.Event)
+    skip_cycle_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Flag für geplanten Start (überspringt Debug-Enter-Prompt)
