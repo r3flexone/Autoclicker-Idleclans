@@ -7,9 +7,9 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Punkte aufnehmen**: Mausposition speichern mit automatischer Benennung
 - **Sequenzen erstellen**: Punkte mit Wartezeiten oder Farb-Triggern verknüpfen
 - **Dreiphasen-System**:
-  - **START**: Wird zu Beginn jedes Zyklus ausgeführt
+  - **INIT**: Einmalig vor allen Zyklen (Initialisierung)
   - **LOOP-Phasen**: Mehrere Loops möglich, jeweils mit eigenen Wiederholungen
-  - **END**: Wird nach allen Zyklen ausgeführt (z.B. für Logout)
+  - **END**: Einmalig nach allen Zyklen (z.B. für Logout)
 - **Farb-Trigger**: Warte bis eine bestimmte Farbe erscheint ODER verschwindet
 - **Zufällige Verzögerung**: `1 30-45` = warte 30-45 Sekunden zufällig
 - **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
@@ -61,6 +61,7 @@ python main.py
 | `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen, startet automatisch nach Laden) |
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
+| `CTRL+ALT+F` | Sanfter Abbruch (aktuellen Zyklus abschließen, dann END + Stop) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
 | `CTRL+ALT+Z` | Zeitplan (Sequenz zu bestimmter Zeit starten) |
 | `CTRL+ALT+Q` | Programm beenden |
@@ -205,9 +206,9 @@ Template-Matching ist genauer als Marker-Farben, besonders bei ähnlichen Items.
 
 Eine Sequenz besteht aus drei Phasen:
 
-1. **START**: Wird zu Beginn jedes Zyklus ausgeführt
-2. **LOOP**: Wird wiederholt (konfigurierbare Anzahl)
-3. **END**: Wird nach allen Zyklen ausgeführt
+1. **INIT**: Einmalig vor allen Zyklen (Initialisierung, optional)
+2. **LOOP**: Wird wiederholt (konfigurierbare Anzahl, mehrere Loops möglich)
+3. **END**: Einmalig nach allen Zyklen (optional)
 
 ### Editor-Befehle
 
@@ -254,10 +255,10 @@ Eine Sequenz besteht aus drei Phasen:
 ### Beispiel-Sequenz
 
 ```
-[START: 0] > 1 5           # Punkt 1 klicken, 5s warten
-[START: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
-[START: 2] > key enter     # Enter-Taste drücken
-[START: 3] > done
+[INIT: 0] > 1 5           # Punkt 1 klicken, 5s warten
+[INIT: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
+[INIT: 2] > key enter     # Enter-Taste drücken
+[INIT: 3] > done
 
 [Loop 1: 0] > 3 30-45      # Punkt 3 klicken, 30-45s zufällig warten
 [Loop 1: 1] > scan items   # Item-Scan ausführen (bestes pro Kategorie)
@@ -532,6 +533,8 @@ Autoclicker-Idleclans/
 │   └── presets/            # Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
+├── screenshots/            # Sequenz-Screenshots (nach Session gruppiert)
+│   └── YYYY-MM-DD_HH-MM-SS/  # Pro Sequenz-Session ein Unterordner
 └── tools/                  # Hilfswerkzeuge
     ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
     └── slot_tester.py      # Slot-Erkennung testen
@@ -576,7 +579,7 @@ main.py                      Einstiegspunkt, Event-Loop
 │   Main Thread    │     │       Worker Thread              │
 │                  │     │                                  │
 │  Event-Loop:     │     │  sequence_worker():              │
-│  - Hotkey-Check  │────►│  - START-Phase ausführen         │
+│  - Hotkey-Check  │────►│  - INIT-Phase ausführen (1x)     │
 │  - Handler rufen │     │  - LOOP-Phasen wiederholen       │
 │                  │◄────│  - END-Phase ausführen           │
 │  Events:         │     │                                  │
@@ -635,6 +638,15 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **INIT-Phase**: Einmalige Initialisierung vor allen Zyklen (ersetzt START-Phase)
+- **Sanfter Abbruch** (`CTRL+ALT+F`): Aktuellen Zyklus abschließen, dann END-Phase ausführen und stoppen
+- **Item-Sortierung**: Items werden nach Priorität (aufsteigend) innerhalb jeder Kategorie sortiert
+- **Save-on-Done**: Item-Editor speichert nur bei `done`, verwirft Änderungen bei `cancel`/Abbruch
+- **Separate Screenshot-Ordner**: Slot-Screenshots in `slots/Screenshots/`, Sequenz-Screenshots in `screenshots/<Session>/`
+- **Bug-Fix**: `IndexError` wenn alle Items durch Kategorie-Filter herausgefiltert wurden
+
+### Vorherige Änderungen
 
 - **Sequenz-Remap**: Koordinaten werden beim Laden automatisch anhand der Punkt-Namen abgeglichen — ideal für PC-Wechsel
 - **Auto-Start nach Laden**: CTRL+ALT+S startet die Sequenz direkt nach dem Laden (kein zweiter Tastendruck nötig)

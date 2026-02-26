@@ -74,14 +74,6 @@ autoclicker/
 - `save_global_items()` / `load_global_items()` - Items
 - Preset-Funktionen für Slots und Items
 
-## Migration
-
-Die Editor-Module (editors/) enthalten momentan Stub-Funktionen,
-die auf das Hauptskript `autoclicker.py` verweisen.
-
-Um die vollständige Migration abzuschließen, müssen die entsprechenden
-Funktionen aus `autoclicker.py` in die Editor-Module verschoben werden.
-
 ## Verwendung
 
 ```python
