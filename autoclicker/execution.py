@@ -297,7 +297,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         print(f"[DEBUG] Starte Scan '{step.item_scan}' ({mode_str})...")
     else:
         clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), end="", flush=True)
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), flush=True)
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
 
