@@ -512,7 +512,10 @@ def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
         print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT fehlgeschlagen", "red"))
         return True  # Nicht als Fehler werten, Sequenz läuft weiter
 
-    screenshots_dir = Path(state.session_screenshots_dir) if state.session_screenshots_dir else Path(SCREENSHOTS_DIR)
+    if not state.session_screenshots_dir:
+        session_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        state.session_screenshots_dir = str(Path(SCREENSHOTS_DIR) / session_ts)
+    screenshots_dir = Path(state.session_screenshots_dir)
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     filename = f"seq_{timestamp}.png"
@@ -637,12 +640,7 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.items_found = 0
         state.key_presses = 0
         state.start_time = time.time()
-
-        # Timestamped Screenshot-Ordner für diese Session anlegen
-        session_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        session_dir = Path(SCREENSHOTS_DIR) / session_ts
-        session_dir.mkdir(parents=True, exist_ok=True)
-        state.session_screenshots_dir = str(session_dir)
+        state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
 
     # INIT-Phase (einmalig vor allen Zyklen)
     if has_init and not state.stop_event.is_set():
