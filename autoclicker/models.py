@@ -272,5 +272,8 @@ class AutoClickerState:
     # Flag für aktiven Countdown (verhindert Sequenz-Start durch CTRL+ALT+S)
     countdown_active: bool = False
 
+    # Screenshot-Ordner für die aktuelle Sequenz-Session (z.B. "slots/Screenshots/2025-01-15_14-30-00")
+    session_screenshots_dir: Optional[str] = None
+
     # Konfiguration (thread-safe über lock)
     config: dict = field(default_factory=dict)
