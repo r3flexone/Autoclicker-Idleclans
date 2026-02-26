@@ -434,9 +434,9 @@ def load_global_slots(state: AutoClickerState) -> None:
 
 
 def save_global_items(state: AutoClickerState) -> None:
-    """Speichert alle globalen Items, sortiert nach Kategorie und Name."""
+    """Speichert alle globalen Items, sortiert nach Kategorie und Priorität."""
     sorted_items = sorted(state.global_items.items(),
-                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[0]))
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[1].priority))
     data = {name: _item_to_dict(item) for name, item in sorted_items}
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
@@ -572,7 +572,7 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         return False
 
     sorted_items = sorted(state.global_items.items(),
-                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[0]))
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[1].priority))
     data = {name: _item_to_dict(item) for name, item in sorted_items}
 
     safe_name = sanitize_filename(preset_name)
