@@ -17,7 +17,7 @@ from .imaging import (
     PILLOW_AVAILABLE, take_screenshot, color_distance, get_color_name,
     find_color_in_image, match_template_in_image
 )
-from .persistence import SCREENSHOTS_DIR
+from .persistence import SEQUENCE_SCREENSHOTS_DIR as SCREENSHOTS_DIR
 
 
 def _phase_color(phase: str) -> str:
