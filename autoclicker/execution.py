@@ -280,6 +280,8 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         print(col(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!", "cyan"))
         return [(slot.click_pos, item, priority) for slot, item, priority in filtered_items]
     else:
+        if not filtered_items:
+            return []
         filtered_items.sort(key=lambda x: x[2])
         best_slot, best_item, best_priority = filtered_items[0]
         print(col(f"[SCAN] Bestes Item: {best_item.name} (P{best_priority})", "cyan"))
