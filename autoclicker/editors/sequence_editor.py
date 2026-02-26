@@ -25,6 +25,9 @@ def apply_else_to_step(step: SequenceStep, else_parts: list, state: AutoClickerS
     """
     if not else_parts:
         return
+    if not step.wait_pixel and not step.item_scan:
+        print(warn("  -> 'else' hat keine Wirkung ohne 'pixel'/'gone' oder 'scan'-Bedingung!"))
+        return
     else_result = parse_else_condition(else_parts, state)
     step.else_action = else_result.get("else_action")
     step.else_x = else_result.get("else_x", 0)
@@ -593,6 +596,7 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("wait gone", "Warten bis Farbe WEG ist, KEIN Klick"))
     print(cmd_hint("key <Taste>", "Taste sofort drücken (z.B. 'key enter')"))
     print(cmd_hint("key <Zeit> <Taste>", "Warten, dann Taste (z.B. 'key 5 space')"))
+    print(cmd_hint("key <Min>-<Max> <Taste>", "Zufällig warten, dann Taste (z.B. 'key 5-10 space')"))
     print(cmd_hint("scan <Name>", "Item-Scan: bestes pro Kategorie (Standard)"))
     print(cmd_hint("scan <Name> best", "Item-Scan: nur 1 Item total"))
     print(cmd_hint("scan <Name> every", "Item-Scan: alle Treffer (für Duplikate)"))
@@ -817,24 +821,33 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
             elif user_input.lower().startswith("key "):
                 parts = user_input.split()
                 if len(parts) < 2:
-                    print("  -> Format: key <Taste> oder key <Zeit> <Taste>")
+                    print("  -> Format: key <Taste> oder key <Zeit> <Taste> oder key <Min>-<Max> <Taste>")
                     continue
 
-                # key <Taste> oder key <Zeit> <Taste>
+                # key <Taste> oder key <Zeit> <Taste> oder key <Min>-<Max> <Taste>
                 delay = 0
+                delay_max = None
                 key_name = None
 
                 if len(parts) == 2:
                     # key <Taste>
                     key_name = parts[1].lower()
                 else:
-                    # key <Zeit> <Taste>
-                    delay_val, delay_err = parse_non_negative_float(parts[1], "Verzögerung")
-                    if delay_err:
-                        print(f"  -> {delay_err}")
-                        print("     Format: key <Taste> oder key <Zeit> <Taste>")
-                        continue
-                    delay = delay_val
+                    # key <Zeit> <Taste> oder key <Min>-<Max> <Taste>
+                    if "-" in parts[1]:
+                        range_val, range_err = parse_non_negative_range(parts[1], "Verzögerung")
+                        if range_err:
+                            print(f"  -> {range_err}")
+                            print("     Format: key <Min>-<Max> <Taste> (z.B. key 5-10 enter)")
+                            continue
+                        delay, delay_max = range_val
+                    else:
+                        delay_val, delay_err = parse_non_negative_float(parts[1], "Verzögerung")
+                        if delay_err:
+                            print(f"  -> {delay_err}")
+                            print("     Format: key <Taste> oder key <Zeit> <Taste>")
+                            continue
+                        delay = delay_val
                     key_name = parts[2].lower()
 
                 if key_name not in VK_CODES:
@@ -843,7 +856,7 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     continue
 
                 step = SequenceStep(
-                    x=0, y=0, delay_before=delay,
+                    x=0, y=0, delay_before=delay, delay_max=delay_max,
                     name=f"Key:{key_name}",
                     key_press=key_name
                 )
