@@ -46,6 +46,7 @@ slots/
 items/
 item_scans/
 Screenshots/
+slots/Screenshots/
 
 # Tools debug output (keep .gitkeep)
 tools/debug/*

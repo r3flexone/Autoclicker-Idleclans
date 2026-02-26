@@ -3,15 +3,17 @@ Slot-Editor für den Autoclicker.
 Ermöglicht das Erstellen und Bearbeiten von Slot-Definitionen für Item-Scans.
 """
 
+import time
 from pathlib import Path
 from typing import Optional
 
 from ..models import ItemSlot, AutoClickerState
 from ..config import CONFIG
-from ..utils import safe_input, sanitize_filename
+from ..utils import safe_input, sanitize_filename, is_cancel, confirm, interactive_select, col, ok, err, info, warn, hint, header, breadcrumb, suggest_command, coord_context, cancel_hint
 from ..winapi import get_cursor_pos
 from ..imaging import (
-    PILLOW_AVAILABLE, take_screenshot, get_pixel_color, select_region, get_color_name
+    PILLOW_AVAILABLE, OPENCV_AVAILABLE, NUMPY_AVAILABLE,
+    take_screenshot, get_pixel_color, select_region, get_color_name
 )
 from ..persistence import (
     save_global_slots, list_slot_presets, save_slot_preset,
@@ -22,12 +24,11 @@ from ..persistence import (
 
 def run_global_slot_editor(state: AutoClickerState) -> None:
     """Interaktiver Editor für globale Slot-Definitionen."""
-    print("\n" + "=" * 60)
-    print("  SLOT-EDITOR (Globale Slot-Definitionen)")
-    print("=" * 60)
+    print(header("SLOT-EDITOR (Globale Slot-Definitionen)"))
+    print(f"  {breadcrumb('Hauptmenü', 'Item-Scan', 'Slots')}")
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
@@ -49,18 +50,22 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
         for name, path, count in presets:
             print(f"  - {name} ({count} Slots)")
 
-    print("\n" + "-" * 60)
-    print("Befehle:")
-    print("  add            - Neuen Slot hinzufügen")
-    print("  edit <Nr>      - Slot bearbeiten")
-    print("  del <Nr>       - Slot löschen")
-    print("  del all        - ALLE Slots löschen")
-    print("  show           - Alle Slots anzeigen")
-    print("  save <Name>    - Als Preset speichern")
-    print("  load <Name>    - Preset laden")
-    print("  preset del <N> - Preset löschen")
-    print("  done | cancel")
-    print("-" * 60)
+    def _print_slot_help():
+        print("\n" + "-" * 60)
+        print("Befehle:")
+        print("  auto           - AUTOMATISCHE Slot-Erkennung (empfohlen)")
+        print("  add            - Neuen Slot hinzufügen")
+        print("  edit <Nr>      - Slot bearbeiten")
+        print("  del <Nr>       - Slot löschen")
+        print("  del all        - ALLE Slots löschen")
+        print("  show / s       - Alle Slots anzeigen")
+        print("  save <Name>    - Als Preset speichern")
+        print("  load <Name>    - Preset laden")
+        print("  preset del <N> - Preset löschen")
+        print(f"  help / ? | done / d | cancel / {cancel_hint()}")
+        print("-" * 60)
+
+    _print_slot_help()
 
     while True:
         try:
@@ -70,15 +75,18 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
             user_input = safe_input(f"{prompt} > ").strip()
             cmd = user_input.lower()
 
-            if cmd == "done":
-                print("[OK] Slot-Editor beendet.")
+            if cmd in ("done", "d"):
+                print(ok("Slot-Editor beendet."))
                 return
-            elif cmd == "cancel":
-                print("[ABBRUCH] Slot-Editor beendet.")
+            elif is_cancel(cmd):
+                print(col("[ABBRUCH]", "yellow") + " Slot-Editor beendet.")
                 return
             elif cmd == "":
                 continue
-            elif cmd == "show":
+            elif cmd in ("help", "?"):
+                _print_slot_help()
+                continue
+            elif cmd in ("show", "s"):
                 with state.lock:
                     if state.global_slots:
                         print(f"\nSlots ({len(state.global_slots)}):")
@@ -86,6 +94,11 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                             print(f"  {i+1}. {slot}")
                     else:
                         print("  (Keine Slots)")
+                continue
+
+            elif cmd == "auto":
+                if slot_auto_detect(state):
+                    save_global_slots(state)
                 continue
 
             elif cmd == "add":
@@ -124,8 +137,7 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                         print("  -> Keine Slots vorhanden!")
                         continue
                     count = len(state.global_slots)
-                confirm = safe_input(f"  {count} Slot(s) wirklich löschen? (j/n): ").strip().lower()
-                if confirm == "j":
+                if confirm(f"  {count} Slot(s) wirklich löschen?"):
                     with state.lock:
                         state.global_slots.clear()
                     save_global_slots(state)
@@ -175,10 +187,12 @@ def run_global_slot_editor(state: AutoClickerState) -> None:
                 continue
 
             else:
-                print("  -> Unbekannter Befehl")
+                _known = ["auto", "add", "edit", "del", "show", "save", "load", "preset", "help", "done", "cancel"]
+                suggestion = suggest_command(cmd, _known)
+                print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 
         except (KeyboardInterrupt, EOFError):
-            print("\n[ABBRUCH] Slot-Editor beendet.")
+            print("\n" + col("[ABBRUCH]", "yellow") + " Slot-Editor beendet.")
             return
 
 
@@ -188,7 +202,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
         slot_num = len(state.global_slots) + 1
 
     slot_name = safe_input(f"  Slot-Name (Enter = 'Slot {slot_num}', 'cancel'): ").strip()
-    if slot_name.lower() in ("cancel", "abbruch"):
+    if is_cancel(slot_name):
         print("  -> Slot-Erstellung abgebrochen")
         return None
     if not slot_name:
@@ -227,7 +241,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
     print("  (Diese Farbe wird bei Item-Erkennung ignoriert)")
     print("  Bewege Maus auf den Slot-Hintergrund, Enter (oder 'skip')...")
     bg_input = safe_input().strip().lower()
-    if bg_input in ("cancel", "abbruch"):
+    if is_cancel(bg_input):
         print("  -> Slot-Erstellung abgebrochen")
         return None
     elif bg_input != "skip":
@@ -252,7 +266,7 @@ def create_slot(state: AutoClickerState) -> Optional[ItemSlot]:
     else:
         click_x, click_y = get_cursor_pos()
 
-    print(f"  -> Klickposition: ({click_x}, {click_y})")
+    print(f"  -> Klickposition: {coord_context(click_x, click_y)}")
 
     # Optional: Screenshot speichern
     if img:
@@ -282,40 +296,34 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
     if slot.slot_color:
         print(f"    Hintergrund: RGB{slot.slot_color}")
 
-    print("\n  Was ändern?")
-    print("    1. Name")
-    print("    2. Scan-Region")
-    print("    3. Klickposition")
-    print("    4. Hintergrundfarbe")
-    print("    0. Fertig (nichts ändern)")
-
     new_name = slot.name
     new_region = slot.scan_region
     new_click = slot.click_pos
     new_color = slot.slot_color
 
     while True:
-        choice = safe_input("  Option: ").strip()
+        edit_options = ["Name", "Scan-Region", "Klickposition", "Hintergrundfarbe", "Fertig"]
+        choice = interactive_select(edit_options, title="\n  Was ändern?", allow_cancel=False)
 
-        if choice == "0" or choice.lower() == "done":
+        if choice == 4:  # Fertig
             break
-        elif choice == "1":
+        elif choice == 0:  # Name
             name_input = safe_input(f"  Neuer Name (Enter = '{new_name}'): ").strip()
             if name_input:
                 new_name = name_input
                 print(f"  -> Name geändert zu '{new_name}'")
-        elif choice == "2":
+        elif choice == 1:  # Scan-Region
             print("\n  Neue Scan-Region definieren...")
             region = select_region()
             if region:
                 new_region = region
                 print(f"  -> Region geändert zu {new_region}")
-        elif choice == "3":
+        elif choice == 2:  # Klickposition
             print("  Bewege Maus zur neuen Klickposition, Enter...")
             safe_input()
             new_click = get_cursor_pos()
             print(f"  -> Klickposition geändert zu {new_click}")
-        elif choice == "4":
+        elif choice == 3:  # Hintergrundfarbe
             print("  Bewege Maus zum Slot-Hintergrund, Enter...")
             safe_input()
             x, y = get_cursor_pos()
@@ -323,9 +331,6 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
             if color:
                 new_color = color
                 print(f"  -> Hintergrundfarbe geändert zu RGB{new_color}")
-        else:
-            print("  -> Ungültige Option")
-            continue
 
     return ItemSlot(
         name=new_name,
@@ -333,3 +338,189 @@ def edit_slot(state: AutoClickerState, slot: ItemSlot) -> Optional[ItemSlot]:
         click_pos=new_click,
         slot_color=new_color
     )
+
+
+def slot_auto_detect(state: AutoClickerState) -> bool:
+    """Automatische Slot-Erkennung mit OpenCV. Gibt True zurück wenn erfolgreich."""
+    if not OPENCV_AVAILABLE:
+        print(f"  {err('OpenCV nicht installiert!')} pip install opencv-python")
+        return False
+    if not NUMPY_AVAILABLE:
+        print(f"  {err('NumPy nicht installiert!')} pip install numpy")
+        return False
+
+    import numpy as np
+    import cv2
+
+    print(header("AUTOMATISCHE SLOT-ERKENNUNG", width=50))
+    print("\nMarkiere den Bereich mit den Slots:")
+    print("  1. Maus auf OBEN-LINKS, ENTER")
+    print("  2. Maus auf UNTEN-RECHTS, ENTER")
+
+    region = select_region()
+    if not region:
+        print("  -> Keine Region ausgewählt")
+        return False
+
+    offset_x, offset_y = region[0], region[1]
+    print(f"\n  Region: {region}")
+    print("  Mache Screenshot in 2 Sekunden...")
+    time.sleep(2)
+
+    img = take_screenshot(region)
+    if img is None:
+        print(f"  {err('Screenshot fehlgeschlagen!')}")
+        return False
+
+    print(f"  Screenshot: {img.size[0]}x{img.size[1]}")
+
+    # Farbe für Slot-Erkennung scannen
+    print("\n  Bewege Maus auf den SLOT-HINTERGRUND...")
+    safe_input("  ENTER wenn bereit...")
+    mx, my = get_cursor_pos()
+
+    slot_color_rgb = get_pixel_color(mx, my)
+    if not slot_color_rgb:
+        print(f"  {err('Konnte Farbe nicht lesen!')}")
+        return False
+
+    r, g, b = slot_color_rgb
+    print(f"  Farbe: RGB({r}, {g}, {b})")
+
+    # RGB zu HSV
+    r_n, g_n, b_n = r / 255, g / 255, b / 255
+    max_c, min_c = max(r_n, g_n, b_n), min(r_n, g_n, b_n)
+    diff = max_c - min_c
+
+    if diff == 0:
+        h = 0
+    elif max_c == r_n:
+        h = (60 * ((g_n - b_n) / diff) + 360) % 360
+    elif max_c == g_n:
+        h = (60 * ((b_n - r_n) / diff) + 120) % 360
+    else:
+        h = (60 * ((r_n - g_n) / diff) + 240) % 360
+
+    s = 0 if max_c == 0 else (diff / max_c) * 255
+    v = max_c * 255
+    h = h / 2  # OpenCV Hue: 0-180
+
+    print(f"  HSV: ({int(h)}, {int(s)}, {int(v)})")
+
+    # Slots im Bild suchen
+    img_array = np.array(img)
+    img_bgr = img_array[:, :, ::-1].copy()
+
+    hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    tol = state.config.get("slot_hsv_tolerance", CONFIG.get("slot_hsv_tolerance", 25))
+    lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
+    upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
+
+    mask = cv2.inRange(hsv_img, lower, upper)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Slots filtern
+    detected_slots = []
+    for contour in contours:
+        x, y, w, h_box = cv2.boundingRect(contour)
+        if w >= 40 and h_box >= 40:
+            aspect = w / h_box
+            if 0.5 < aspect < 2.0:
+                detected_slots.append((x, y, w, h_box))
+
+    detected_slots.sort(key=lambda s: (s[1] // 50, s[0]))
+
+    if not detected_slots:
+        print(f"\n  {err('Keine Slots erkannt!')}")
+        print("  Versuche es mit einer anderen Farbe.")
+        return False
+
+    # Groessen normalisieren
+    if len(detected_slots) >= 2:
+        widths = [s[2] for s in detected_slots]
+        heights = [s[3] for s in detected_slots]
+        median_w = sorted(widths)[len(widths) // 2]
+        median_h = sorted(heights)[len(heights) // 2]
+
+        normalized = []
+        for x, y, w, h_box in detected_slots:
+            if 0.7 * median_w <= w <= 1.3 * median_w:
+                new_x = x + (w - median_w) // 2
+                new_y = y + (h_box - median_h) // 2
+                normalized.append((new_x, new_y, median_w, median_h))
+        detected_slots = normalized
+
+    print(f"\n  {len(detected_slots)} Slots erkannt!")
+
+    slot_color = (r, g, b)
+
+    # Slots hinzufügen
+    inset = state.config.get("slot_inset", CONFIG.get("slot_inset", 10))
+    added = 0
+    start_num = len(state.global_slots) + 1
+
+    for i, (x, y, w, h_box) in enumerate(detected_slots):
+        slot_name = f"Slot {start_num + i}"
+
+        abs_x = x + offset_x + inset
+        abs_y = y + offset_y + inset
+        abs_w = w - (2 * inset)
+        abs_h = h_box - (2 * inset)
+
+        scan_region = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
+        click_pos = (abs_x + abs_w // 2, abs_y + abs_h // 2)
+
+        new_slot = ItemSlot(
+            name=slot_name,
+            scan_region=scan_region,
+            click_pos=click_pos,
+            slot_color=slot_color
+        )
+
+        with state.lock:
+            state.global_slots[slot_name] = new_slot
+        added += 1
+        print(f"    + {slot_name}: {scan_region}")
+
+    print(f"\n  {ok(f'{added} Slots hinzugefügt!')}")
+
+    # Screenshots speichern
+    try:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        screenshots_dir = Path(SCREENSHOTS_DIR)
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        screenshot_path = screenshots_dir / f"screenshot_{timestamp}.png"
+        img.save(str(screenshot_path))
+        print(f"  Screenshot: {screenshot_path}")
+
+        # Vorschau mit Markierungen
+        preview_path = screenshots_dir / f"preview_{timestamp}.png"
+        preview = img_bgr.copy()
+        for i, (dx, dy, dw, dh) in enumerate(detected_slots):
+            cv2.rectangle(preview, (dx, dy), (dx + dw, dy + dh), (0, 255, 0), 2)
+            cv2.rectangle(preview, (dx + inset, dy + inset),
+                          (dx + dw - inset, dy + dh - inset), (0, 255, 255), 1)
+
+            click_x = dx + dw // 2
+            click_y = dy + dh // 2
+            cross_size = 8
+            cv2.line(preview, (click_x - cross_size, click_y), (click_x + cross_size, click_y), (0, 0, 255), 2)
+            cv2.line(preview, (click_x, click_y - cross_size), (click_x, click_y + cross_size), (0, 0, 255), 2)
+
+            slot_num_text = str(start_num + i)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            text_x = dx + 5
+            text_y = dy + 20
+            (text_w, text_h), _ = cv2.getTextSize(slot_num_text, font, font_scale, thickness)
+            cv2.rectangle(preview, (text_x - 2, text_y - text_h - 2),
+                          (text_x + text_w + 2, text_y + 2), (0, 0, 0), -1)
+            cv2.putText(preview, slot_num_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+        cv2.imwrite(str(preview_path), preview)
+        print(f"  Vorschau: {preview_path}")
+    except (OSError, IOError, ValueError) as e:
+        print(f"  {warn(f'Screenshots speichern: {e}')}")
+
+    return True

@@ -7,9 +7,9 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Punkte aufnehmen**: Mausposition speichern mit automatischer Benennung
 - **Sequenzen erstellen**: Punkte mit Wartezeiten oder Farb-Triggern verknüpfen
 - **Dreiphasen-System**:
-  - **START**: Wird zu Beginn jedes Zyklus ausgeführt
+  - **INIT**: Einmalig vor allen Zyklen (Initialisierung)
   - **LOOP-Phasen**: Mehrere Loops möglich, jeweils mit eigenen Wiederholungen
-  - **END**: Wird nach allen Zyklen ausgeführt (z.B. für Logout)
+  - **END**: Einmalig nach allen Zyklen (z.B. für Logout)
 - **Farb-Trigger**: Warte bis eine bestimmte Farbe erscheint ODER verschwindet
 - **Zufällige Verzögerung**: `1 30-45` = warte 30-45 Sekunden zufällig
 - **Tastatureingaben**: Automatische Tastendrücke (Enter, Space, F1-F12, etc.)
@@ -27,6 +27,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Factory Reset**: Kompletter Reset wie frisch von GitHub
 - **Konfigurierbar**: Toleranzen und Einstellungen via `config.json`
 - **Fail-Safe**: Maus in obere linke Ecke bewegen stoppt den Klicker
+- **IDE-Kompatibel**: Volle Pfeiltasten-Navigation auch in PyCharm/IDE-Konsolen
 
 ## Voraussetzungen
 
@@ -57,9 +58,10 @@ python main.py
 | `CTRL+ALT+L` | Gespeicherte Sequenz laden |
 | `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
 | `CTRL+ALT+T` | Farb-Analysator |
-| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen) |
+| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen, startet automatisch nach Laden) |
 | `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
+| `CTRL+ALT+F` | Sanfter Abbruch (aktuellen Zyklus abschließen, dann END + Stop) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
 | `CTRL+ALT+Z` | Zeitplan (Sequenz zu bestimmter Zeit starten) |
 | `CTRL+ALT+Q` | Programm beenden |
@@ -204,9 +206,9 @@ Template-Matching ist genauer als Marker-Farben, besonders bei ähnlichen Items.
 
 Eine Sequenz besteht aus drei Phasen:
 
-1. **START**: Wird zu Beginn jedes Zyklus ausgeführt
-2. **LOOP**: Wird wiederholt (konfigurierbare Anzahl)
-3. **END**: Wird nach allen Zyklen ausgeführt
+1. **INIT**: Einmalig vor allen Zyklen (Initialisierung, optional)
+2. **LOOP**: Wird wiederholt (konfigurierbare Anzahl, mehrere Loops möglich)
+3. **END**: Einmalig nach allen Zyklen (optional)
 
 ### Editor-Befehle
 
@@ -233,6 +235,8 @@ Eine Sequenz besteht aus drei Phasen:
 | `... else restart` | Bei Fehlschlag Sequenz neu starten |
 | `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
+| `ins <Nr>` | Nächsten Schritt an Position einfügen (statt am Ende) |
+| `ins 0` / `ins end` | Insert-Modus beenden |
 | `learn <Name>` | Neuen Punkt erstellen (direkt im Editor) |
 | `points` | Alle verfügbaren Punkte anzeigen |
 | `del <Nr>` | Schritt löschen |
@@ -251,10 +255,10 @@ Eine Sequenz besteht aus drei Phasen:
 ### Beispiel-Sequenz
 
 ```
-[START: 0] > 1 5           # Punkt 1 klicken, 5s warten
-[START: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
-[START: 2] > key enter     # Enter-Taste drücken
-[START: 3] > done
+[INIT: 0] > 1 5           # Punkt 1 klicken, 5s warten
+[INIT: 1] > 2 pixel       # Warten bis Farbe erscheint, dann Punkt 2 klicken
+[INIT: 2] > key enter     # Enter-Taste drücken
+[INIT: 3] > done
 
 [Loop 1: 0] > 3 30-45      # Punkt 3 klicken, 30-45s zufällig warten
 [Loop 1: 1] > scan items   # Item-Scan ausführen (bestes pro Kategorie)
@@ -268,6 +272,15 @@ Zyklen: 10                 # 10 Durchläufe
 [END: 1] > key enter       # Enter drücken
 [END: 2] > done
 ```
+
+## Sequenzen zwischen PCs teilen
+
+Sequenzen können auf einen anderen PC kopiert werden (`sequences/`-Ordner). Beim Laden werden die Koordinaten automatisch anhand der **Punkt-Namen** abgeglichen:
+
+- Stimmt ein Name mit einem lokalen Punkt überein → Koordinaten werden aktualisiert
+- Fehlt ein Name lokal → Warnung mit Hinweis, den Punkt erst aufzunehmen (CTRL+ALT+A)
+
+So muss man Sequenzen nicht neu erstellen, sondern nur die Punkte einmal lokal aufnehmen.
 
 ## Laufzeit-Steuerung
 
@@ -373,6 +386,19 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 
 Ohne `else` stoppt die Sequenz bei Fehlschlag.
 
+## IDE-Kompatibilität (PyCharm, VS Code, etc.)
+
+Das Programm erkennt automatisch die Konsolen-Umgebung und passt sich an:
+
+| Umgebung | Menü-Navigation | Hotkeys | Eingabe |
+|----------|----------------|---------|---------|
+| **cmd / PowerShell** | Pfeiltasten via `msvcrt.getch()` | Funktionieren | `input()` |
+| **PyCharm Run-Konsole** | Pfeiltasten via `GetAsyncKeyState` | Funktionieren | `input()` |
+| **Andere IDEs** | Nummern-Eingabe (Fallback) | Funktionieren | `input()` |
+
+Die Hotkeys (`CTRL+ALT+...`) funktionieren **immer**, da sie über `RegisterHotKey` (Windows Messages) laufen.
+Die Pfeiltasten-Navigation nutzt in PyCharm `GetAsyncKeyState` aus `user32.dll` - die gleiche Windows API.
+
 ## Konfiguration (`config.json`)
 
 Wird beim ersten Start automatisch erstellt:
@@ -475,7 +501,7 @@ Wird beim ersten Start automatisch erstellt:
 ```
 Autoclicker-Idleclans/
 ├── main.py                 # Einstiegspunkt
-├── autoclicker/            # Hauptmodul (~5800 Zeilen)
+├── autoclicker/            # Hauptmodul (~6600 Zeilen)
 │   ├── __init__.py
 │   ├── config.py           # Konfiguration (Hotkeys, Defaults)
 │   ├── models.py           # Datenmodelle (ClickPoint, Sequence, etc.)
@@ -507,6 +533,8 @@ Autoclicker-Idleclans/
 │   └── presets/            # Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
+├── screenshots/            # Sequenz-Screenshots (nach Session gruppiert)
+│   └── YYYY-MM-DD_HH-MM-SS/  # Pro Sequenz-Session ein Unterordner
 └── tools/                  # Hilfswerkzeuge
     ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
     └── slot_tester.py      # Slot-Erkennung testen
@@ -516,7 +544,7 @@ Autoclicker-Idleclans/
 
 ### Architektur
 
-Das Programm ist modular aufgebaut (~5800 Zeilen in 15 Dateien):
+Das Programm ist modular aufgebaut (~6600 Zeilen in 15 Dateien):
 
 ```
 main.py                      Einstiegspunkt, Event-Loop
@@ -551,7 +579,7 @@ main.py                      Einstiegspunkt, Event-Loop
 │   Main Thread    │     │       Worker Thread              │
 │                  │     │                                  │
 │  Event-Loop:     │     │  sequence_worker():              │
-│  - Hotkey-Check  │────►│  - START-Phase ausführen         │
+│  - Hotkey-Check  │────►│  - INIT-Phase ausführen (1x)     │
 │  - Handler rufen │     │  - LOOP-Phasen wiederholen       │
 │                  │◄────│  - END-Phase ausführen           │
 │  Events:         │     │                                  │
@@ -583,6 +611,7 @@ main.py                      Einstiegspunkt, Event-Loop
 - JSON-Persistenz für alle Daten
 - Multi-Monitor Unterstützung (DPI-aware)
 - Sichere Dateinamen (Path-Traversal-Schutz)
+- IDE-Kompatibel: `GetAsyncKeyState`-Polling als Fallback für Pfeiltasten in PyCharm/IDE-Konsolen
 
 ## Tools
 
@@ -610,42 +639,44 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
-- **Modulare Architektur**: Code in 15 Dateien aufgeteilt (~5800 Zeilen)
-  - `main.py` als Einstiegspunkt
-  - `autoclicker/` Package mit spezialisierten Modulen
-  - `editors/` Subpackage für alle interaktiven Editoren
-- **Bug-Fixes**: Slot-Editor Hintergrundfarbe, Performance-Optimierungen
-- **Code-Qualität**: Duplizierung entfernt, toter Code bereinigt
+- **INIT-Phase**: Einmalige Initialisierung vor allen Zyklen (ersetzt START-Phase)
+- **Sanfter Abbruch** (`CTRL+ALT+F`): Aktuellen Zyklus abschließen, dann END-Phase ausführen und stoppen
+- **Item-Sortierung**: Items werden nach Priorität (aufsteigend) innerhalb jeder Kategorie sortiert
+- **Save-on-Done**: Item-Editor speichert nur bei `done`, verwirft Änderungen bei `cancel`/Abbruch
+- **Separate Screenshot-Ordner**: Slot-Screenshots in `slots/Screenshots/`, Sequenz-Screenshots in `screenshots/<Session>/`
+- **Bug-Fix**: `IndexError` wenn alle Items durch Kategorie-Filter herausgefiltert wurden
 
 ### Vorherige Änderungen
 
-- **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
-- **Konfigurierbare Fail-Safe Zone**: `failsafe_x` und `failsafe_y` in config.json
-- **Konfigurierbare Delays**: `scan_slot_delay` und `item_click_delay` für feinere Kontrolle
-- **Screenshot-Optimierung**: BitBlt als primäre Methode (besser für DirectX-Spiele)
-- **Sync-Tool**: JSON-Dateien automatisch aktualisieren und reparieren
-- **Slot-Tester**: Debug-Tool für Slot-Erkennung
-- **confirm_point als Koordinaten**: Robuster bei Punkt-Änderungen
-- **Scan-Modus "every"**: Alle Treffer ohne Filter klicken (für Spiele mit Duplikaten)
-- **ELSE Restart**: `else restart` Option zum Neustart der Sequenz bei Fehlschlag
-- **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
-- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
-- **Befehle vereinheitlicht**: `done`/`cancel` statt `fertig`/`abbruch` (beide funktionieren)
-- **CTRL+ALT+S Auto-Load**: Öffnet Lade-Menü wenn keine Sequenz geladen
-- **Step-Editor**: `learn` und `points` Befehle zum Punkte erstellen
-- **Item-Editor**: `rename` Befehl zum Umbenennen (inkl. Template-Datei)
-- **Scan-Modus**: Default ist jetzt `all` (bestes pro Kategorie), `best` für nur 1 Item
-- **Unicode-Support**: Templates mit Umlauten (ü, ä, ö) funktionieren jetzt
+- **Sequenz-Remap**: Koordinaten werden beim Laden automatisch anhand der Punkt-Namen abgeglichen — ideal für PC-Wechsel
+- **Auto-Start nach Laden**: CTRL+ALT+S startet die Sequenz direkt nach dem Laden (kein zweiter Tastendruck nötig)
+- **Insert-Modus**: `ins <Nr>` im Sequenz-Editor fügt Schritte an beliebiger Position ein
+- **ESC-Abbruch**: ESC-Taste funktioniert als Abbruch in allen Editoren (auch in PyCharm)
+- **ANSI-Farben**: Farbige Tags in der Konsole ([FEHLER] rot, [INFO] cyan, [OK] grün)
+- **Einheitliche Delay-Validierung**: Wartezeiten werden in allen Editoren gleich geprüft
+- **Template Auto-Resize**: Templates werden bei Größenunterschied automatisch skaliert
+- **Bug-Fixes**: Buchstaben-Verdoppelung in PyCharm, Debug-Mode Inkonsistenzen, Wartezeit-Anzeige
+
+### Vorherige Änderungen
+
+- **PyCharm/IDE-Support**: Pfeiltasten-Navigation funktioniert jetzt auch in IDE-Konsolen
+- **Verbesserte Benutzereingabe**: Robustes Input-Handling für alle Konsolen-Typen
+- **Modulare Architektur**: Code in 15 Dateien aufgeteilt
+- **Code-Qualität**: Duplizierung entfernt, toter Code bereinigt
 
 ### Ältere Änderungen
 
-- **Preset-System**: Slots und Items werden als benannte Presets gespeichert
-- **Screenshots-Ordner**: Alle Screenshots landen jetzt in `Screenshots/`
-- **Konsistente Befehle**: `del all`, `del <Nr>-<Nr>` in allen Editoren
-- **Performance**: Early-Exit bei Marker-Erkennung
-- **Sicherheit**: Path-Traversal-Schutz für Dateinamen
-- **Bounds-Checking**: Warnung bei Regionen außerhalb des Bildschirms
-- **Konfigurierbar**: Neue Optionen für Slot-Erkennung
+- **Bulk-Learn**: `learn 1-5` lernt mehrere Items auf einmal mit gemeinsamen Einstellungen
+- **Kategorie-System**: Items gruppieren (Hosen, Jacken, Juwelen) - nur bestes pro Kategorie klicken
+- **Template-Matching**: Items per Screenshot erkennen (OpenCV)
+- **Scan-Modi**: `all` (Standard), `best` (nur 1 Item), `every` (alle Treffer)
+- **ELSE-Aktionen**: `else skip`, `else restart`, `else key` bei Fehlschlag
+- **Preset-System**: Slots und Items als benannte Presets speichern
+- **Step-Editor**: `learn` und `points` Befehle direkt im Sequenz-Editor
+- **Konfigurierbare Delays**: `scan_slot_delay`, `item_click_delay`, Fail-Safe Zone
+- **Screenshot-Optimierung**: BitBlt für DirectX-Spiele
+- **Sicherheit**: Path-Traversal-Schutz, Bounds-Checking
+- **Unicode-Support**: Templates mit Umlauten (ü, ä, ö)
 
 ## Lizenz
 

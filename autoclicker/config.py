@@ -6,7 +6,6 @@ Lädt und speichert config.json mit Standard-Werten.
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 # Logger
 logger = logging.getLogger("autoclicker")
@@ -16,7 +15,6 @@ logger = logging.getLogger("autoclicker")
 # =============================================================================
 CONFIG_FILE = "config.json"
 SEQUENCES_DIR: str = "sequences"       # Ordner für gespeicherte Sequenzen
-CONFIGS_DIR: str = "configs"           # Ordner für Config-Presets
 
 # Standard-Konfiguration (wird von config.json überschrieben)
 # Die Reihenfolge hier bestimmt die Reihenfolge in der gespeicherten config.json
@@ -36,6 +34,7 @@ DEFAULT_CONFIG = {
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
     "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
     "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
+    "pixel_timeout_action": "stop",     # Aktion bei Timeout ohne 'else': "stop", "skip_cycle", "restart"
     "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
     "scan_pixel_step": 2,               # Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller)
     "show_pixel_delay": 0.3,            # Wie lange Pixel-Position angezeigt wird (Sekunden)
@@ -117,8 +116,7 @@ def save_config(config: dict) -> None:
 # Konfiguration laden (wird beim Import ausgeführt)
 CONFIG = load_config()
 
-# Konfig-Werte als Variablen (für einfacheren Zugriff)
-CLICKS_PER_POINT: int = CONFIG["clicks_per_point"]
-MAX_TOTAL_CLICKS: Optional[int] = CONFIG["max_total_clicks"]
-FAILSAFE_ENABLED: bool = CONFIG["failsafe_enabled"]
+# Konfig-Werte als Variablen (nur Werte die sich zur Laufzeit nicht ändern)
+# ACHTUNG: Werte die sich durch Factory Reset ändern können, immer über
+# state.config.get() abrufen statt über Modul-Variablen!
 DEFAULT_MIN_CONFIDENCE: float = CONFIG["default_min_confidence"]

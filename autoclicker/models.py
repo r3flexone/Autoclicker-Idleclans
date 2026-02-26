@@ -55,9 +55,17 @@ class SequenceStep:
     else_delay: float = 0                # Delay vor Fallback
     else_key: Optional[str] = None       # Taste für Fallback
     else_name: str = ""                  # Name des Fallback-Punkts
+    # Optional: Screenshot machen (kein Klick, kein Scan)
+    screenshot_only: bool = False        # True = nur Screenshot, kein Klick
+    screenshot_region: Optional[tuple] = None  # (x1,y1,x2,y2) oder None = Vollbild
 
     def __str__(self) -> str:
         else_str = self._else_str()
+        if self.screenshot_only:
+            region = self.screenshot_region
+            if region:
+                return f"SCREENSHOT ({region[0]},{region[1]})→({region[2]},{region[3]})"
+            return "SCREENSHOT (Vollbild)"
         if self.key_press:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
@@ -88,6 +96,8 @@ class SequenceStep:
             return ""
         if self.else_action == "skip":
             return " | ELSE: skip"
+        elif self.else_action == "skip_cycle":
+            return " | ELSE: skip_cycle"
         elif self.else_action == "restart":
             return " | ELSE: restart"
         elif self.else_action == "click":
@@ -126,15 +136,15 @@ class LoopPhase:
 
 @dataclass
 class Sequence:
-    """Eine Klick-Sequenz mit Start-Phase, Loop-Phasen und End-Phase."""
+    """Eine Klick-Sequenz mit Init-, Loop- und End-Phase."""
     name: str
-    start_steps: list[SequenceStep] = field(default_factory=list)  # Einmalig am Anfang
+    init_steps: list[SequenceStep] = field(default_factory=list)   # Einmalig vor allen Zyklen
     loop_phases: list[LoopPhase] = field(default_factory=list)     # Mehrere Loop-Phasen
-    end_steps: list[SequenceStep] = field(default_factory=list)    # Einmalig am Ende
+    end_steps: list[SequenceStep] = field(default_factory=list)    # Einmalig nach allen Zyklen
     total_cycles: int = 1  # 0 = unendlich, >0 = wie oft alle Loops durchlaufen werden
 
     def __str__(self) -> str:
-        start_count = len(self.start_steps)
+        init_count = len(self.init_steps)
         end_count = len(self.end_steps)
         loop_info = f"{len(self.loop_phases)} Loop(s)"
         if self.total_cycles == 0:
@@ -143,15 +153,15 @@ class Sequence:
             loop_info += " (1x)"
         else:
             loop_info += f" (x{self.total_cycles})"
-        # Zähle alle Schritte mit Farb-Trigger
-        all_steps = self.start_steps + [s for lp in self.loop_phases for s in lp.steps] + self.end_steps
+        all_steps = self.init_steps + [s for lp in self.loop_phases for s in lp.steps] + self.end_steps
         pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
         trigger_str = f" [Farb-Trigger: {pixel_triggers}]" if pixel_triggers > 0 else ""
+        init_str = f"Init: {init_count}, " if init_count > 0 else ""
         end_str = f", End: {end_count}" if end_count > 0 else ""
-        return f"{self.name} (Start: {start_count}, {loop_info}{end_str}){trigger_str}"
+        return f"{self.name} ({init_str}{loop_info}{end_str}){trigger_str}"
 
     def total_steps(self) -> int:
-        return len(self.start_steps) + sum(len(lp.steps) for lp in self.loop_phases) + len(self.end_steps)
+        return len(self.init_steps) + sum(len(lp.steps) for lp in self.loop_phases) + len(self.end_steps)
 
 
 # =============================================================================
@@ -251,6 +261,8 @@ class AutoClickerState:
     pause_event: threading.Event = field(default_factory=threading.Event)
     skip_event: threading.Event = field(default_factory=threading.Event)
     restart_event: threading.Event = field(default_factory=threading.Event)
+    skip_cycle_event: threading.Event = field(default_factory=threading.Event)
+    finish_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Flag für geplanten Start (überspringt Debug-Enter-Prompt)
@@ -258,6 +270,9 @@ class AutoClickerState:
 
     # Flag für aktiven Countdown (verhindert Sequenz-Start durch CTRL+ALT+S)
     countdown_active: bool = False
+
+    # Screenshot-Ordner für die aktuelle Sequenz-Session (z.B. "slots/Screenshots/2025-01-15_14-30-00")
+    session_screenshots_dir: Optional[str] = None
 
     # Konfiguration (thread-safe über lock)
     config: dict = field(default_factory=dict)

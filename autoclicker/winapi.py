@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import AutoClickerState
 
-from .config import CONFIG, FAILSAFE_ENABLED
+from .config import CONFIG
+from .utils import err, warn
 
 # =============================================================================
 # DPI-AWARENESS (muss früh gesetzt werden)
@@ -48,6 +49,7 @@ VK_G = 0x47  # Pause/Resume (G statt R wegen Konflikten)
 VK_K = 0x4B  # Skip current wait
 VK_W = 0x57  # Quick-Switch (Wechseln)
 VK_Z = 0x5A  # Schedule (Zeitplan)
+VK_F = 0x46  # Finish (Zyklus abschließen)
 
 # Hotkey IDs
 HOTKEY_RECORD = 1
@@ -65,6 +67,7 @@ HOTKEY_PAUSE = 12
 HOTKEY_SKIP = 13
 HOTKEY_SWITCH = 14
 HOTKEY_SCHEDULE = 15
+HOTKEY_FINISH = 16
 
 # Window Messages
 WM_HOTKEY = 0x0312
@@ -216,7 +219,7 @@ def send_key(key_name: str) -> bool:
     """Führt einen Tastendruck aus. Gibt True zurück wenn erfolgreich."""
     key_lower = key_name.lower()
     if key_lower not in VK_CODES:
-        print(f"[FEHLER] Unbekannte Taste: '{key_name}'")
+        print(err(f"Unbekannte Taste: '{key_name}'"))
         print(f"         Verfügbar: {', '.join(sorted(VK_CODES.keys()))}")
         return False
 
@@ -238,11 +241,10 @@ def send_key(key_name: str) -> bool:
 
 def check_failsafe(state: 'AutoClickerState' = None) -> bool:
     """Prüft, ob die Maus in der Fail-Safe-Ecke ist."""
-    if not FAILSAFE_ENABLED:
+    cfg = state.config if state else CONFIG
+    if not cfg.get("failsafe_enabled", True):
         return False
     x, y = get_cursor_pos()
-    # Nutze state.config wenn vorhanden, sonst globale CONFIG
-    cfg = state.config if state else CONFIG
     failsafe_x = cfg.get("failsafe_x", 5)
     failsafe_y = cfg.get("failsafe_y", 5)
     return x <= failsafe_x and y <= failsafe_y
@@ -270,11 +272,12 @@ def register_hotkeys() -> bool:
         (HOTKEY_SKIP, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_K, "CTRL+ALT+K (Skip)"),
         (HOTKEY_SWITCH, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_W, "CTRL+ALT+W (Wechseln)"),
         (HOTKEY_SCHEDULE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_Z, "CTRL+ALT+Z (Zeitplan)"),
+        (HOTKEY_FINISH, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_F, "CTRL+ALT+F (Sanft beenden)"),
     ]
 
     for hotkey_id, modifiers, vk, name in hotkeys:
         if not user32.RegisterHotKey(None, hotkey_id, modifiers, vk):
-            print(f"[WARNUNG] Konnte Hotkey nicht registrieren: {name}")
+            print(warn(f"Konnte Hotkey nicht registrieren: {name}"))
             success = False
 
     return success
@@ -282,5 +285,5 @@ def register_hotkeys() -> bool:
 
 def unregister_hotkeys() -> None:
     """Deregistriert alle globalen Hotkeys."""
-    for hotkey_id in range(1, HOTKEY_SCHEDULE + 1):
+    for hotkey_id in range(1, HOTKEY_FINISH + 1):
         user32.UnregisterHotKey(None, hotkey_id)

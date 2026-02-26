@@ -18,7 +18,7 @@ from autoclicker.winapi import (
     HOTKEY_RECORD, HOTKEY_UNDO, HOTKEY_CLEAR, HOTKEY_RESET,
     HOTKEY_EDITOR, HOTKEY_ITEM_SCAN, HOTKEY_LOAD, HOTKEY_SHOW,
     HOTKEY_TOGGLE, HOTKEY_PAUSE, HOTKEY_SKIP, HOTKEY_SWITCH,
-    HOTKEY_SCHEDULE, HOTKEY_ANALYZE, HOTKEY_QUIT,
+    HOTKEY_SCHEDULE, HOTKEY_ANALYZE, HOTKEY_QUIT, HOTKEY_FINISH,
     register_hotkeys, unregister_hotkeys
 )
 from autoclicker.persistence import (
@@ -26,52 +26,63 @@ from autoclicker.persistence import (
     load_points, load_global_slots, load_global_items, load_all_item_scans
 )
 from autoclicker.execution import print_status
+from autoclicker.utils import col, info, warn, hint
 from autoclicker.handlers import (
     handle_record, handle_undo, handle_clear, handle_reset,
     handle_editor, handle_item_scan_editor, handle_load, handle_show,
     handle_toggle, handle_pause, handle_skip, handle_switch,
-    handle_schedule, handle_analyze, handle_quit
+    handle_schedule, handle_analyze, handle_quit, handle_finish
 )
 
 
 def print_help() -> None:
-    """Zeigt die Hilfe an."""
-    print("=" * 65)
-    print("  WINDOWS AUTOCLICKER MIT SEQUENZ-UNTERSTÜTZUNG")
-    print("=" * 65)
+    """Zeigt die Hilfe mit farbigen Kategorien an."""
+    line = col("=" * 65, 'cyan')
+    print(line)
+    print(f"  {col('WINDOWS AUTOCLICKER MIT SEQUENZ-UNTERSTÜTZUNG', 'bold')}")
+    print(line)
     print()
-    print("Hotkeys:")
-    print("  CTRL+ALT+A  - Mausposition als Punkt speichern")
-    print("  CTRL+ALT+U  - Letzten Punkt entfernen")
-    print("  CTRL+ALT+C  - Alle Punkte löschen")
-    print("  CTRL+ALT+X  - FACTORY RESET (Punkte + Sequenzen)")
-    print("  CTRL+ALT+E  - Sequenz-Editor (Punkte + Zeiten verknüpfen)")
-    print("  CTRL+ALT+N  - Item-Scan Editor (Items erkennen + vergleichen)")
-    print("  CTRL+ALT+L  - Gespeicherte Sequenz laden")
-    print("  CTRL+ALT+P  - Punkte testen/anzeigen/umbenennen")
-    print("  CTRL+ALT+T  - Farb-Analysator (für Bilderkennung)")
-    print("  CTRL+ALT+S  - Start/Stop der aktiven Sequenz")
-    print("  CTRL+ALT+G  - Pause/Resume (während Sequenz läuft)")
-    print("  CTRL+ALT+K  - Skip (aktuelle Wartezeit überspringen)")
-    print("  CTRL+ALT+W  - Quick-Switch (schnell Sequenz wechseln)")
-    print("  CTRL+ALT+Z  - Zeitplan (Start zu bestimmter Zeit)")
-    print("  CTRL+ALT+Q  - Programm beenden")
+
+    # Aufnahme (grün)
+    print(col("Aufnahme:", 'green'))
+    print(f"  {col('CTRL+ALT+A', 'yellow')}  Mausposition als Punkt speichern")
+    print(f"  {col('CTRL+ALT+U', 'yellow')}  Letzten Punkt entfernen")
+    print(f"  {col('CTRL+ALT+C', 'yellow')}  Alle Punkte löschen")
     print()
-    print("So funktioniert's:")
-    print("  1. Punkte aufnehmen (CTRL+ALT+A an verschiedenen Positionen)")
-    print("  2. Sequenz erstellen (CTRL+ALT+E)")
-    print("     - START-Phase: wird EINMAL ausgeführt")
-    print("     - LOOP-Phase:  wird WIEDERHOLT")
-    print("     - Trigger: Optional auf Screen warten (Bilderkennung)")
-    print("  3. Sequenz starten (CTRL+ALT+S)")
+
+    # Editoren (blau)
+    print(col("Editoren:", 'blue'))
+    print(f"  {col('CTRL+ALT+E', 'yellow')}  Sequenz-Editor {hint('(Punkte + Zeiten verknüpfen)')}")
+    print(f"  {col('CTRL+ALT+N', 'yellow')}  Item-Scan Editor {hint('(Items erkennen + vergleichen)')}")
+    print(f"  {col('CTRL+ALT+L', 'yellow')}  Gespeicherte Sequenz laden")
+    print(f"  {col('CTRL+ALT+P', 'yellow')}  Punkte testen/anzeigen/umbenennen")
+    print(f"  {col('CTRL+ALT+T', 'yellow')}  Farb-Analysator {hint('(für Bilderkennung)')}")
     print()
-    print("Bilderkennung:")
-    print("  - Nutze CTRL+ALT+T um Farben zu analysieren")
-    print("  - Item-Scan mit CTRL+ALT+N erstellen")
-    print("  - Erfordert Pillow: pip install pillow")
+
+    # Ausführung (magenta)
+    print(col("Ausführung:", 'magenta'))
+    print(f"  {col('CTRL+ALT+S', 'yellow')}  Start/Stop der aktiven Sequenz")
+    print(f"  {col('CTRL+ALT+F', 'yellow')}  Sanft beenden {hint('(Zyklus abschließen, dann END + Stop)')}")
+    print(f"  {col('CTRL+ALT+G', 'yellow')}  Pause/Resume")
+    print(f"  {col('CTRL+ALT+K', 'yellow')}  Skip {hint('(aktuelle Wartezeit überspringen)')}")
+    print(f"  {col('CTRL+ALT+W', 'yellow')}  Quick-Switch {hint('(schnell Sequenz wechseln)')}")
+    print(f"  {col('CTRL+ALT+Z', 'yellow')}  Zeitplan {hint('(Start zu bestimmter Zeit)')}")
     print()
-    print(f"Daten: '{SEQUENCES_DIR}/' | Einstellungen: '{CONFIG_FILE}'")
-    print("=" * 65)
+
+    # System (rot)
+    print(col("System:", 'red'))
+    print(f"  {col('CTRL+ALT+X', 'yellow')}  Factory Reset {hint('(Punkte + Sequenzen)')}")
+    print(f"  {col('CTRL+ALT+Q', 'yellow')}  Programm beenden")
+    print()
+
+    # Kurzanleitung
+    print(col("Schnellstart:", 'bold'))
+    print(f"  {col('1.', 'cyan')} Punkte aufnehmen {hint('(CTRL+ALT+A an verschiedenen Positionen)')}")
+    print(f"  {col('2.', 'cyan')} Sequenz erstellen {hint('(CTRL+ALT+E)')}")
+    print(f"  {col('3.', 'cyan')} Sequenz starten   {hint('(CTRL+ALT+S)')}")
+    print()
+    print(hint(f"Daten: '{SEQUENCES_DIR}/' | Einstellungen: '{CONFIG_FILE}'"))
+    print(line)
     print()
 
 
@@ -97,10 +108,10 @@ def main() -> int:
 
     # Hotkeys registrieren
     if not register_hotkeys():
-        print("[WARNUNG] Nicht alle Hotkeys konnten registriert werden.")
+        print(warn("Nicht alle Hotkeys konnten registriert werden."))
         print()
 
-    print("Bereit! Starte mit CTRL+ALT+A um Punkte aufzunehmen.")
+    print(col("Bereit!", 'green') + f" Starte mit {col('CTRL+ALT+A', 'yellow')} um Punkte aufzunehmen.")
     print_status(state)
     print()
 
@@ -123,6 +134,7 @@ def main() -> int:
         HOTKEY_SWITCH: handle_switch,
         HOTKEY_SCHEDULE: handle_schedule,
         HOTKEY_ANALYZE: handle_analyze,
+        HOTKEY_FINISH: handle_finish,
     }
 
     try:
@@ -141,15 +153,15 @@ def main() -> int:
                 time.sleep(0.01)
 
     except KeyboardInterrupt:
-        print("\n[ABBRUCH] Programm wird beendet...")
+        print(f"\n{col('[ABBRUCH]', 'red')} Programm wird beendet...")
         state.stop_event.set()
         state.quit_event.set()
 
     finally:
         unregister_hotkeys()
-        print("\n[INFO] Hotkeys deregistriert.")
+        print(f"\n{info('Hotkeys deregistriert.')}")
         time.sleep(0.2)
-        print("[INFO] Programm beendet.")
+        print(info("Programm beendet."))
 
     return 0
 

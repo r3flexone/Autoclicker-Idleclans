@@ -9,6 +9,7 @@ import os
 from typing import Optional, TYPE_CHECKING
 
 from .config import CONFIG, DEFAULT_MIN_CONFIDENCE
+from .utils import safe_input, interactive_select, err
 from .winapi import get_cursor_pos
 
 if TYPE_CHECKING:
@@ -17,9 +18,8 @@ if TYPE_CHECKING:
 # Logger
 logger = logging.getLogger("autoclicker")
 
-# Verzeichnisse
-ITEMS_DIR: str = "items"
-TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")
+# Verzeichnisse (importiert aus persistence um Duplizierung zu vermeiden)
+from .persistence import ITEMS_DIR, TEMPLATES_DIR
 
 # Optionale Imports
 try:
@@ -44,21 +44,6 @@ except ImportError:
     logger.warning("OpenCV nicht installiert. Template Matching deaktiviert.")
     logger.warning("Installieren mit: pip install opencv-python")
 
-
-# Toleranzen aus Config
-COLOR_TOLERANCE = CONFIG["color_tolerance"]
-PIXEL_WAIT_TOLERANCE = CONFIG["pixel_wait_tolerance"]
-PIXEL_WAIT_TIMEOUT = CONFIG["pixel_wait_timeout"]
-PIXEL_CHECK_INTERVAL = CONFIG["pixel_check_interval"]
-
-
-def require_pillow(func_name: str) -> bool:
-    """Prüft ob Pillow verfügbar ist und gibt Fehlermeldung aus."""
-    if not PILLOW_AVAILABLE:
-        print(f"[FEHLER] {func_name}: Pillow nicht installiert!")
-        print("         Installieren mit: pip install pillow")
-        return False
-    return True
 
 
 def get_pixel_color(x: int, y: int) -> tuple[int, int, int] | None:
@@ -153,6 +138,18 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             logger.error(f"Konnte Template nicht laden: {template_path}")
             return (False, 0.0, None)
 
+        # Größenvergleich: Template muss zum Scan-Bild passen
+        th, tw = template_cv.shape[:2]
+        ih, iw = img_cv.shape[:2]
+
+        if tw != iw or th != ih:
+            # Größen-Diskrepanz! Template an Scan-Bildgröße anpassen
+            # Passiert wenn Slot-Regionen nach Template-Erstellung geändert wurden
+            # (z.B. neue Auto-Erkennung, Monitor-Wechsel, DPI-Änderung)
+            if tw > 0 and th > 0:
+                logger.debug(f"Template '{template_name}' Größe {tw}x{th} != Scan {iw}x{ih} - resize")
+                template_cv = cv2.resize(template_cv, (iw, ih), interpolation=cv2.INTER_AREA)
+
         # Debug: Scan-Bild und Template speichern zum Vergleich
         if CONFIG.get("debug_save_templates", False):
             debug_dir = os.path.join(ITEMS_DIR, "debug")
@@ -175,6 +172,13 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
             # Position ist obere linke Ecke des Matches
             return (True, max_val, max_loc)
         else:
+            # Bei sehr niedrigen Werten: Größen-Mismatch als mögliche Ursache loggen
+            if max_val < 0.3 and (tw != iw or th != ih):
+                logger.debug(
+                    f"Template '{template_name}': {max_val:.1%} - "
+                    f"Größen-Mismatch (Template {tw}x{th}, Scan {iw}x{ih}) könnte Ursache sein. "
+                    f"Templates neu erstellen empfohlen."
+                )
             return (False, max_val, None)
 
     except (ValueError, TypeError, AttributeError) as e:
@@ -379,13 +383,13 @@ def select_region() -> Optional[tuple]:
     print("\n  Bewege die Maus zur OBEREN LINKEN Ecke des Bereichs")
     print("  und drücke Enter...")
     try:
-        input()
+        safe_input()
         x1, y1 = get_cursor_pos()
         print(f"  → Obere linke Ecke: ({x1}, {y1})")
 
         print("\n  Bewege die Maus zur UNTEREN RECHTEN Ecke des Bereichs")
         print("  und drücke Enter...")
-        input()
+        safe_input()
         x2, y2 = get_cursor_pos()
         print(f"  → Untere rechte Ecke: ({x2}, {y2})")
 
@@ -414,49 +418,40 @@ def run_color_analyzer() -> None:
     print("=" * 60)
 
     if not PILLOW_AVAILABLE:
-        print("\n[FEHLER] Pillow nicht installiert!")
+        print(f"\n{err('Pillow nicht installiert!')}")
         print("         Installieren mit: pip install pillow")
         return
 
-    print("\nWas möchtest du analysieren?")
-    print("  [1] Farbe unter Mauszeiger")
-    print("  [2] Region (Bereich auswählen)")
-    print("  [3] Vollbild")
-    print("\nAuswahl (oder 'cancel'):")
+    menu_options = ["Farbe unter Mauszeiger", "Region (Bereich auswählen)", "Vollbild"]
+    choice = interactive_select(menu_options, title="\nWas möchtest du analysieren?")
 
-    try:
-        choice = input("> ").strip()
+    if choice == -1:
+        return
 
-        if choice.lower() in ("cancel", "abbruch"):
-            return
+    if choice == 0:
+        # Farbe unter Mauszeiger
+        print("\nBewege die Maus zur gewünschten Position und drücke Enter...")
+        safe_input()
+        x, y = get_cursor_pos()
 
-        if choice == "1":
-            # Farbe unter Mauszeiger
-            print("\nBewege die Maus zur gewünschten Position und drücke Enter...")
-            input()
-            x, y = get_cursor_pos()
+        img = take_screenshot((x, y, x+1, y+1))
+        if img:
+            pixel = img.getpixel((0, 0))[:3]
+            color_name = get_color_name(pixel)
+            print(f"\n[FARBE] Position ({x}, {y})")
+            print(f"        RGB: {pixel}")
+            print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
+            print(f"        Name: {color_name}")
 
-            img = take_screenshot((x, y, x+1, y+1))
-            if img:
-                pixel = img.getpixel((0, 0))[:3]
-                color_name = get_color_name(pixel)
-                print(f"\n[FARBE] Position ({x}, {y})")
-                print(f"        RGB: {pixel}")
-                print(f"        Hex: #{pixel[0]:02x}{pixel[1]:02x}{pixel[2]:02x}")
-                print(f"        Name: {color_name}")
+    elif choice == 1:
+        # Region analysieren
+        region = select_region()
+        if region:
+            analyze_and_print_colors(region)
 
-        elif choice == "2":
-            # Region analysieren
-            region = select_region()
-            if region:
-                analyze_and_print_colors(region)
-
-        elif choice == "3":
-            # Vollbild analysieren
-            analyze_and_print_colors(None)
-
-    except (KeyboardInterrupt, EOFError):
-        print("\n[ABBRUCH]")
+    elif choice == 2:
+        # Vollbild analysieren
+        analyze_and_print_colors(None)
 
 
 def analyze_and_print_colors(region: tuple = None) -> None:
@@ -465,7 +460,7 @@ def analyze_and_print_colors(region: tuple = None) -> None:
 
     color_counts = analyze_screen_colors(region)
     if not color_counts:
-        print("[FEHLER] Keine Farben gefunden!")
+        print(err("Keine Farben gefunden!"))
         return
 
     # Top 20 häufigste Farben

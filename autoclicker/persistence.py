@@ -7,17 +7,14 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE
 from .models import (
     ClickPoint, SequenceStep, LoopPhase, Sequence,
     ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
 )
-from .utils import compact_json, sanitize_filename
-
-if TYPE_CHECKING:
-    pass
+from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag, err, info, warn
 
 # Logger
 logger = logging.getLogger("autoclicker")
@@ -27,6 +24,7 @@ ITEM_SCANS_DIR: str = "item_scans"
 SLOTS_DIR: str = "slots"
 ITEMS_DIR: str = "items"
 SCREENSHOTS_DIR: str = os.path.join(SLOTS_DIR, "Screenshots")
+SEQUENCE_SCREENSHOTS_DIR: str = "screenshots"
 TEMPLATES_DIR: str = os.path.join(ITEMS_DIR, "templates")
 SLOTS_FILE: str = os.path.join(SLOTS_DIR, "slots.json")
 ITEMS_FILE: str = os.path.join(ITEMS_DIR, "items.json")
@@ -36,9 +34,49 @@ ITEM_PRESETS_DIR: str = os.path.join(ITEMS_DIR, "presets")
 
 def init_directories() -> None:
     """Erstellt alle benötigten Verzeichnisse."""
-    for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR,
+    for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR, SEQUENCE_SCREENSHOTS_DIR,
                    TEMPLATES_DIR, SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
         os.makedirs(folder, exist_ok=True)
+
+
+# =============================================================================
+# ITEM SERIALISIERUNG (gemeinsame Helfer)
+# =============================================================================
+
+def _item_to_dict(item: ItemProfile) -> dict:
+    """Serialisiert ein ItemProfile zu einem Dict."""
+    return {
+        "name": item.name,
+        "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
+        "category": item.category,
+        "priority": item.priority,
+        "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
+        "confirm_delay": item.confirm_delay,
+        "template": item.template,
+        "min_confidence": item.min_confidence
+    }
+
+
+def _item_from_dict(data: dict) -> ItemProfile:
+    """Deserialisiert ein ItemProfile aus einem Dict."""
+    # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
+    cp_data = data.get("confirm_point")
+    cp = None
+    if cp_data:
+        if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
+            cp = ClickPoint(cp_data["x"], cp_data["y"])
+        elif isinstance(cp_data, list) and len(cp_data) == 2:
+            cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
+    return ItemProfile(
+        name=data["name"],
+        marker_colors=[tuple(c) for c in data.get("marker_colors", [])],
+        category=data.get("category"),
+        priority=data.get("priority", 1),
+        confirm_point=cp,
+        confirm_delay=data.get("confirm_delay", 0.5),
+        template=data.get("template"),
+        min_confidence=data.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
+    )
 
 
 # =============================================================================
@@ -51,6 +89,44 @@ def ensure_sequences_dir() -> Path:
     return path
 
 
+def _step_to_dict(s: SequenceStep) -> dict:
+    """Konvertiert einen SequenceStep in ein JSON-serialisierbares dict."""
+    return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
+            "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
+            "wait_until_gone": s.wait_until_gone,
+            "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
+            "wait_only": s.wait_only, "delay_max": s.delay_max,
+            "key_press": s.key_press, "else_action": s.else_action,
+            "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
+            "else_key": s.else_key, "else_name": s.else_name,
+            "screenshot_only": s.screenshot_only,
+            "screenshot_region": list(s.screenshot_region) if s.screenshot_region else None}
+
+
+def _sequence_to_dict(seq: Sequence) -> dict:
+    """Konvertiert eine Sequence in ein JSON-serialisierbares dict."""
+    return {
+        "name": seq.name,
+        "total_cycles": seq.total_cycles,
+        "init_steps": [_step_to_dict(s) for s in seq.init_steps],
+        "loop_phases": [
+            {
+                "name": lp.name,
+                "repeat": lp.repeat,
+                "steps": [_step_to_dict(s) for s in lp.steps]
+            }
+            for lp in seq.loop_phases
+        ],
+        "end_steps": [_step_to_dict(s) for s in seq.end_steps]
+    }
+
+
+def save_sequence_file(seq: Sequence, filepath: Path) -> None:
+    """Speichert eine einzelne Sequenz direkt in die angegebene Datei."""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(compact_json(_sequence_to_dict(seq)))
+
+
 def save_data(state: AutoClickerState) -> None:
     """Speichert Punkte und Sequenzen in JSON-Dateien."""
     ensure_sequences_dir()
@@ -60,37 +136,12 @@ def save_data(state: AutoClickerState) -> None:
     with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
         f.write(compact_json(points_data))
 
-    # Sequenzen speichern (mit Start + mehreren Loop-Phasen)
-    def step_to_dict(s: SequenceStep) -> dict:
-        return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-                "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
-                "wait_until_gone": s.wait_until_gone,
-                "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
-                "wait_only": s.wait_only, "delay_max": s.delay_max,
-                "key_press": s.key_press, "else_action": s.else_action,
-                "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
-                "else_key": s.else_key, "else_name": s.else_name}
-
+    # Sequenzen speichern
     for name, seq in state.sequences.items():
-        seq_data = {
-            "name": seq.name,
-            "total_cycles": seq.total_cycles,
-            "start_steps": [step_to_dict(s) for s in seq.start_steps],
-            "loop_phases": [
-                {
-                    "name": lp.name,
-                    "repeat": lp.repeat,
-                    "steps": [step_to_dict(s) for s in lp.steps]
-                }
-                for lp in seq.loop_phases
-            ],
-            "end_steps": [step_to_dict(s) for s in seq.end_steps]
-        }
         filename = f"{sanitize_filename(name)}.json"
-        with open(Path(SEQUENCES_DIR) / filename, "w", encoding="utf-8") as f:
-            f.write(compact_json(seq_data))
+        save_sequence_file(seq, Path(SEQUENCES_DIR) / filename)
 
-    print(f"[SAVE] Daten gespeichert in '{SEQUENCES_DIR}/'")
+    print(save_tag(f"Daten gespeichert in '{SEQUENCES_DIR}/'"))
 
 
 def load_points(state: AutoClickerState) -> None:
@@ -105,13 +156,13 @@ def load_points(state: AutoClickerState) -> None:
                 for i, p in enumerate(data):
                     point_id = p.get("id", i + 1)  # Fallback: Index + 1 für alte Dateien
                     state.points.append(ClickPoint(p["x"], p["y"], p.get("name", ""), point_id))
-            print(f"[LOAD] {len(state.points)} Punkt(e) geladen")
+            print(load_tag(f"{len(state.points)} Punkt(e) geladen"))
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            print(f"[WARNUNG] points.json konnte nicht geladen werden: {e}")
-            print("[INFO] Starte mit leerer Punktliste.")
+            print(warn(f"points.json konnte nicht geladen werden: {e}"))
+            print(info("Starte mit leerer Punktliste."))
             state.points = []
     else:
-        print("[INFO] Keine gespeicherten Punkte gefunden.")
+        print(info("Keine gespeicherten Punkte gefunden."))
 
 
 def get_next_point_id(state: AutoClickerState) -> int:
@@ -169,17 +220,24 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         else_y=s.get("else_y", 0),
                         else_delay=s.get("else_delay", 0),
                         else_key=s.get("else_key"),
-                        else_name=s.get("else_name", "")
+                        else_name=s.get("else_name", ""),
+                        screenshot_only=s.get("screenshot_only", False),
+                        screenshot_region=tuple(int(v) for v in s["screenshot_region"]) if s.get("screenshot_region") else None,
                     )
                     steps.append(step)
                 return steps
 
-            start_steps = parse_steps(data.get("start_steps", []))
+            init_steps = parse_steps(data.get("init_steps", []))
             end_steps = parse_steps(data.get("end_steps", []))
+
+            # Rückwärtskompatibilität: alte start_steps → erste LoopPhase mit repeat=1
+            old_start_steps = parse_steps(data.get("start_steps", []))
 
             # Neues Format mit loop_phases (mehrere Loop-Phasen)
             if "loop_phases" in data:
                 loop_phases = []
+                if old_start_steps:
+                    loop_phases.append(LoopPhase("Start", old_start_steps, 1))
                 for lp_data in data["loop_phases"]:
                     lp = LoopPhase(
                         name=lp_data.get("name", "Loop"),
@@ -188,20 +246,19 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     )
                     loop_phases.append(lp)
                 total_cycles = data.get("total_cycles", 1)
-                return Sequence(data["name"], start_steps, loop_phases, end_steps, total_cycles)
+                return Sequence(data["name"], init_steps, loop_phases, end_steps, total_cycles)
 
             # Altes Format mit loop_steps (eine Loop-Phase) - konvertieren
             elif "loop_steps" in data:
                 loop_steps = parse_steps(data.get("loop_steps", []))
                 max_loops = data.get("max_loops", 0)
-                # Konvertiere zu neuem Format: eine LoopPhase
+                loop_phases = []
+                if old_start_steps:
+                    loop_phases.append(LoopPhase("Start", old_start_steps, 1))
                 if loop_steps:
-                    loop_phases = [LoopPhase("Loop 1", loop_steps, max_loops if max_loops > 0 else 1)]
-                    total_cycles = 0 if max_loops == 0 else 1  # 0 = unendlich
-                else:
-                    loop_phases = []
-                    total_cycles = 1
-                return Sequence(data["name"], start_steps, loop_phases, end_steps, total_cycles)
+                    loop_phases.append(LoopPhase("Loop 1", loop_steps, max_loops if max_loops > 0 else 1))
+                total_cycles = 0 if max_loops == 0 else 1
+                return Sequence(data["name"], init_steps, loop_phases, end_steps, total_cycles)
 
             # Uraltes Format (nur steps) - konvertieren
             elif "steps" in data:
@@ -262,26 +319,14 @@ def save_item_scan(config: ItemScanConfig) -> None:
             }
             for slot in config.slots
         ],
-        "items": [
-            {
-                "name": item.name,
-                "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-                "category": item.category,
-                "priority": item.priority,
-                "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-                "confirm_delay": item.confirm_delay,
-                "template": item.template,
-                "min_confidence": item.min_confidence
-            }
-            for item in config.items
-        ]
+        "items": [_item_to_dict(item) for item in config.items]
     }
 
     filename = f"{sanitize_filename(config.name)}.json"
     with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
 
-    print(f"[SAVE] Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'")
+    print(save_tag(f"Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'"))
 
 
 def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
@@ -305,24 +350,7 @@ def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
 
             items = []
             for i in data.get("items", []):
-                # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
-                cp_data = i.get("confirm_point")
-                cp = None
-                if cp_data:
-                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                        cp = ClickPoint(cp_data["x"], cp_data["y"])
-                    elif isinstance(cp_data, list) and len(cp_data) == 2:
-                        cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
-                item = ItemProfile(
-                    name=i["name"],
-                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    category=i.get("category"),
-                    priority=i.get("priority", 1),
-                    confirm_point=cp,
-                    confirm_delay=i.get("confirm_delay", 0.5),
-                    template=i.get("template"),
-                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-                )
+                item = _item_from_dict(i)
                 items.append(item)
 
             return ItemScanConfig(
@@ -362,7 +390,7 @@ def load_all_item_scans(state: AutoClickerState) -> None:
         if config:
             state.item_scans[config.name] = config
     if state.item_scans:
-        print(f"[LOAD] {len(state.item_scans)} Item-Scan(s) geladen")
+        print(load_tag(f"{len(state.item_scans)} Item-Scan(s) geladen"))
 
 
 # =============================================================================
@@ -381,7 +409,7 @@ def save_global_slots(state: AutoClickerState) -> None:
     }
     with open(SLOTS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_slots)} Slot(s) gespeichert")
+    print(save_tag(f"{len(state.global_slots)} Slot(s) gespeichert"))
 
 
 def load_global_slots(state: AutoClickerState) -> None:
@@ -400,29 +428,19 @@ def load_global_slots(state: AutoClickerState) -> None:
                 slot_color=slot_color
             )
         if state.global_slots:
-            print(f"[LOAD] {len(state.global_slots)} Slot(s) geladen")
+            print(load_tag(f"{len(state.global_slots)} Slot(s) geladen"))
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Slots laden fehlgeschlagen: {e}")
 
 
 def save_global_items(state: AutoClickerState) -> None:
-    """Speichert alle globalen Items."""
-    data = {
-        name: {
-            "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-            "category": item.category,
-            "priority": item.priority,
-            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-            "confirm_delay": item.confirm_delay,
-            "template": item.template,
-            "min_confidence": item.min_confidence
-        }
-        for name, item in state.global_items.items()
-    }
+    """Speichert alle globalen Items, sortiert nach Kategorie und Priorität."""
+    sorted_items = sorted(state.global_items.items(),
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[1].priority))
+    data = {name: _item_to_dict(item) for name, item in sorted_items}
     with open(ITEMS_FILE, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] {len(state.global_items)} Item(s) gespeichert")
+    print(save_tag(f"{len(state.global_items)} Item(s) gespeichert"))
 
 
 def load_global_items(state: AutoClickerState) -> None:
@@ -433,26 +451,9 @@ def load_global_items(state: AutoClickerState) -> None:
         with open(ITEMS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         for name, i in data.items():
-            # confirm_point: kann {x, y} Dict, [x,y] Liste (alt) oder None sein
-            cp_data = i.get("confirm_point")
-            cp = None
-            if cp_data:
-                if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                    cp = ClickPoint(cp_data["x"], cp_data["y"])
-                elif isinstance(cp_data, list) and len(cp_data) == 2:
-                    cp = ClickPoint(cp_data[0], cp_data[1])  # Alte Format-Unterstützung
-            state.global_items[name] = ItemProfile(
-                name=i["name"],
-                marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                category=i.get("category"),
-                priority=i.get("priority", 1),
-                confirm_point=cp,
-                confirm_delay=i.get("confirm_delay", 0.5),
-                template=i.get("template"),
-                min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-            )
+            state.global_items[name] = _item_from_dict(i)
         if state.global_items:
-            print(f"[LOAD] {len(state.global_items)} Item(s) geladen")
+            print(load_tag(f"{len(state.global_items)} Item(s) geladen"))
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
         logger.error(f"Items laden fehlgeschlagen: {e}")
 
@@ -481,7 +482,7 @@ def list_slot_presets() -> list[tuple[str, Path, int]]:
 def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Speichert aktuelle Slots als Preset."""
     if not state.global_slots:
-        print("[FEHLER] Keine Slots vorhanden zum Speichern!")
+        print(err("Keine Slots vorhanden zum Speichern!"))
         return False
 
     data = {
@@ -498,7 +499,7 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)")
+    print(save_tag(f"Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)"))
     return True
 
 
@@ -507,7 +508,7 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
 
     try:
@@ -527,10 +528,10 @@ def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
 
         # Auch in aktive Datei speichern
         save_global_slots(state)
-        print(f"[LOAD] Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)")
+        print(load_tag(f"Slot-Preset '{preset_name}' geladen ({len(state.global_slots)} Slots)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        print(err(f"Preset laden fehlgeschlagen: {e}"))
         return False
 
 
@@ -539,10 +540,10 @@ def delete_slot_preset(preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
     filepath.unlink()
-    print(f"[DELETE] Slot-Preset '{preset_name}' gelöscht")
+    print(delete_tag(f"Slot-Preset '{preset_name}' gelöscht"))
     return True
 
 
@@ -567,28 +568,18 @@ def list_item_presets() -> list[tuple[str, Path, int]]:
 def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     """Speichert aktuelle Items als Preset."""
     if not state.global_items:
-        print("[FEHLER] Keine Items vorhanden zum Speichern!")
+        print(err("Keine Items vorhanden zum Speichern!"))
         return False
 
-    data = {
-        name: {
-            "name": item.name,
-            "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-            "category": item.category,
-            "priority": item.priority,
-            "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-            "confirm_delay": item.confirm_delay,
-            "template": item.template,
-            "min_confidence": item.min_confidence
-        }
-        for name, item in state.global_items.items()
-    }
+    sorted_items = sorted(state.global_items.items(),
+                          key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[1].priority))
+    data = {name: _item_to_dict(item) for name, item in sorted_items}
 
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(compact_json(data))
-    print(f"[SAVE] Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)")
+    print(save_tag(f"Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)"))
     return True
 
 
@@ -597,7 +588,7 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
 
     try:
@@ -607,30 +598,14 @@ def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
         with state.lock:
             state.global_items.clear()
             for name, i in data.items():
-                cp_data = i.get("confirm_point")
-                cp = None
-                if cp_data:
-                    if isinstance(cp_data, dict) and "x" in cp_data and "y" in cp_data:
-                        cp = ClickPoint(cp_data["x"], cp_data["y"])
-                    elif isinstance(cp_data, list) and len(cp_data) == 2:
-                        cp = ClickPoint(cp_data[0], cp_data[1])
-                state.global_items[name] = ItemProfile(
-                    name=i["name"],
-                    marker_colors=[tuple(c) for c in i.get("marker_colors", [])],
-                    category=i.get("category"),
-                    priority=i.get("priority", 1),
-                    confirm_point=cp,
-                    confirm_delay=i.get("confirm_delay", 0.5),
-                    template=i.get("template"),
-                    min_confidence=i.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
-                )
+                state.global_items[name] = _item_from_dict(i)
 
         # Auch in aktive Datei speichern
         save_global_items(state)
-        print(f"[LOAD] Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)")
+        print(load_tag(f"Item-Preset '{preset_name}' geladen ({len(state.global_items)} Items)"))
         return True
     except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
-        print(f"[FEHLER] Preset laden fehlgeschlagen: {e}")
+        print(err(f"Preset laden fehlgeschlagen: {e}"))
         return False
 
 
@@ -639,10 +614,10 @@ def delete_item_preset(preset_name: str) -> bool:
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
     if not filepath.exists():
-        print(f"[FEHLER] Preset '{preset_name}' nicht gefunden!")
+        print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
     filepath.unlink()
-    print(f"[DELETE] Item-Preset '{preset_name}' gelöscht")
+    print(delete_tag(f"Item-Preset '{preset_name}' gelöscht"))
     return True
 
 
@@ -704,7 +679,7 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
                 updated_scans += 1
 
         except (json.JSONDecodeError, IOError, KeyError) as e:
-            print(f"  [WARNUNG] Konnte {scan_file.name} nicht aktualisieren: {e}")
+            print(f"  {warn(f'Konnte {scan_file.name} nicht aktualisieren: {e}')}")
 
     return updated_scans
 
@@ -713,7 +688,7 @@ def print_points(state: AutoClickerState) -> None:
     """Zeigt alle gespeicherten Punkte an."""
     with state.lock:
         if not state.points:
-            print("\n[INFO] Keine Punkte vorhanden.")
+            print(f"\n{info('Keine Punkte vorhanden.')}")
             print("       Punkte mit CTRL+ALT+A aufnehmen.")
             return
 
