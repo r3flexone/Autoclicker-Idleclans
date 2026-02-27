@@ -45,6 +45,34 @@ pip install pillow opencv-python numpy  # Optional, für erweiterte Features
 python main.py
 ```
 
+## Schnellstart-Anleitung
+
+### Einfache Klick-Sequenz
+
+1. **Punkte aufnehmen**: Maus auf die gewünschte Stelle bewegen, dann `CTRL+ALT+A` drücken. Für jede Klick-Position wiederholen.
+2. **Sequenz erstellen**: `CTRL+ALT+E` öffnet den Editor. Punkte mit Zeiten verknüpfen, z.B.:
+   - `1 30` → Punkt 1 klicken nach 30 Sekunden Wartezeit
+   - `2 0` → Punkt 2 sofort klicken
+   - `3 30-45` → Punkt 3 klicken nach 30-45s zufälliger Wartezeit
+3. **Sequenz starten**: `CTRL+ALT+S`
+
+### Mit Item-Erkennung (automatisches Erkennen + Klicken von Items)
+
+1. **Punkte aufnehmen** wie oben (für alle Klick-Positionen)
+2. **Item-Scan System einrichten** mit `CTRL+ALT+N`:
+   - **Slots** erstellen (Menü 1) → Bereiche wo Items im Spiel erscheinen können
+   - **Items** lernen (Menü 2) → Welche Items erkannt werden sollen (`learn <Slot-Nr>`)
+   - **Scan** erstellen (Menü 3) → Slots + Items verknüpfen und benennen
+3. **Im Sequenz-Editor** (`CTRL+ALT+E`) den Scan als Schritt einfügen: `scan <Name>`
+4. **Starten** mit `CTRL+ALT+S`
+
+### Mit Farb-Triggern (warte bis Farbe erscheint/verschwindet)
+
+Im Sequenz-Editor:
+- `1 pixel` → Warte bis bestimmte Farbe erscheint, dann Punkt 1 klicken
+- `1 gone` → Warte bis Farbe VERSCHWINDET, dann Punkt 1 klicken
+- `wait pixel` → Nur auf Farbe warten (kein Klick)
+
 ## Hotkeys
 
 | Hotkey | Funktion |
@@ -287,19 +315,43 @@ So muss man Sequenzen nicht neu erstellen, sondern nur die Punkte einmal lokal a
 Während eine Sequenz läuft:
 
 - **CTRL+ALT+S** - Stoppt die Sequenz komplett
+- **CTRL+ALT+F** - Sanfter Abbruch (aktuellen Zyklus abschließen, dann END-Phase + Stop)
 - **CTRL+ALT+G** - Pausiert/Setzt fort (Fortschritt bleibt erhalten)
 - **CTRL+ALT+K** - Überspringt die aktuelle Wartezeit
 
+### Timeout-Verhalten bei Farb-Triggern
+
+Wenn ein Farb-Trigger die eingestellte Zeit (`pixel_wait_timeout`) überschreitet, greift die konfigurierte Aktion (`pixel_timeout_action`):
+
+| Wert | Verhalten |
+|------|-----------|
+| `skip_cycle` (Standard) | Aktueller Zyklus wird übersprungen, nächster startet |
+| `restart` | Kompletter Neustart der Sequenz inkl. INIT-Phase |
+| `stop` | Sequenz stoppt komplett |
+
+- **`pixel_wait_timeout: 0`** deaktiviert den Timeout → wartet unendlich auf die Farbe (nur Skip/Stop beendet)
+- Hat ein Schritt ein **`else`** definiert, wird dieses statt der globalen Config-Aktion ausgeführt
+
+### Restart vs. Skip Cycle
+
+| Aktion | Beschreibung |
+|--------|-------------|
+| `skip_cycle` | Überspringt nur den aktuellen Zyklus, nächster Loop-Zyklus startet (INIT wird nicht wiederholt) |
+| `restart` | **Kompletter Neustart**: INIT-Phase wird erneut ausgeführt, dann Loops von vorne |
+
 ### Statistiken
 
-Nach Sequenz-Ende werden Statistiken angezeigt:
+Nach Sequenz-Ende werden Statistiken angezeigt (Einträge erscheinen nur wenn > 0):
 ```
 STATISTIKEN:
-  Laufzeit:     1h 23m 45s
-  Zyklen:       5
-  Klicks:       1234
-  Items:        56
-  Tasten:       12
+  Laufzeit:       1h 23m 45s
+  Zyklen:         5
+  Klicks:         1234
+  Items:          56
+  Tasten:         12
+  Timeouts:       3
+  Übersprungen:   2
+  Neustarts:      1
 ```
 
 ### Zeitplan (`CTRL+ALT+Z`)
@@ -381,10 +433,10 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ### Wann wird ELSE ausgelöst?
 
 - **Item-Scan**: Wenn kein Item gefunden wird
-- **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 60s)
+- **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 300s, `0` = deaktiviert)
 - **Wait Gone**: Wenn Farbe nicht verschwindet
 
-Ohne `else` stoppt die Sequenz bei Fehlschlag.
+Ohne `else` wird die globale `pixel_timeout_action` ausgeführt (Standard: `skip_cycle`).
 
 ## IDE-Kompatibilität (PyCharm, VS Code, etc.)
 
@@ -415,6 +467,7 @@ Wird beim ersten Start automatisch erstellt:
   "color_tolerance": 0,
   "pixel_wait_tolerance": 10,
   "pixel_wait_timeout": 300,
+  "pixel_timeout_action": "skip_cycle",
   "pixel_check_interval": 1,
   "scan_pixel_step": 2,
   "show_pixel_delay": 0.3,
@@ -460,7 +513,8 @@ Wird beim ersten Start automatisch erstellt:
 |--------|--------------|
 | `color_tolerance` | Toleranz für Item-Scan (0 = exakt, höher = toleranter) |
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
-| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300) |
+| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300, `0` = unendlich) |
+| `pixel_timeout_action` | Aktion bei Timeout ohne `else`: `skip_cycle` (Standard), `restart`, `stop` |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
 | `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
 | `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
@@ -638,6 +692,15 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Farbige Ausgaben überall**: Alle `[DEBUG]`-, `[PAUSE]`- und Menü-Ausgaben sind jetzt farbig (nicht nur der Worker)
+- **Restart = Kompletter Neustart**: `restart` führt jetzt INIT-Phase erneut aus (nicht nur Loops)
+- **Erweiterte Statistiken**: Timeouts, übersprungene Zyklen und Neustarts werden gezählt und angezeigt
+- **Unendliches Warten**: `pixel_wait_timeout: 0` deaktiviert den Timeout (wartet unendlich auf Farbe)
+- **Standard-Timeout-Aktion**: `pixel_timeout_action` Default von `stop` auf `skip_cycle` geändert
+- **Verbesserte Konsolen-Hilfe**: Ausführliche Schritt-für-Schritt-Anleitung beim Programmstart
+
+### Vorherige Änderungen
 
 - **INIT-Phase**: Einmalige Initialisierung vor allen Zyklen (ersetzt START-Phase)
 - **Sanfter Abbruch** (`CTRL+ALT+F`): Aktuellen Zyklus abschließen, dann END-Phase ausführen und stoppen
