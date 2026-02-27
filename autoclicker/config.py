@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
     "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
-    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
+    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min, 0 = unendlich)
     "pixel_timeout_action": "skip_cycle", # Aktion bei Timeout ohne 'else': "skip_cycle", "restart", "stop"
     "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
     "scan_pixel_step": 2,               # Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller)

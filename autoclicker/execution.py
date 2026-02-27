@@ -440,18 +440,20 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                     print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", _phase_color(phase)), end="", flush=True)
 
         elapsed = time.time() - start_time
-        if elapsed >= timeout:
+        if timeout > 0 and elapsed >= timeout:
+            with state.lock:
+                state.timeouts += 1
             clear_line()
             print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
             if step.else_action:
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
-            timeout_action = state.config.get("pixel_timeout_action", "stop")
+            timeout_action = state.config.get("pixel_timeout_action", "skip_cycle")
             if timeout_action == "skip_cycle":
                 print(col(f" → Zyklus wird übersprungen", "yellow"))
                 state.skip_cycle_event.set()
             elif timeout_action == "restart":
-                print(col(f" → Sequenz wird neu gestartet", "yellow"))
+                print(col(f" → Sequenz wird neu gestartet (inkl. INIT)", "yellow"))
                 state.restart_event.set()
             else:
                 print(col(f" → Stoppe.", "red"))
@@ -638,6 +640,9 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.total_clicks = 0
         state.items_found = 0
         state.key_presses = 0
+        state.skipped_cycles = 0
+        state.restarts = 0
+        state.timeouts = 0
         state.start_time = time.time()
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
@@ -664,11 +669,15 @@ def sequence_worker(state: AutoClickerState) -> None:
         while not state.stop_event.is_set() and not state.quit_event.is_set():
             if state.skip_cycle_event.is_set():
                 state.skip_cycle_event.clear()
+                with state.lock:
+                    state.skipped_cycles += 1
                 print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
 
             if state.restart_event.is_set():
                 state.restart_event.clear()
                 do_restart = True
+                with state.lock:
+                    state.restarts += 1
                 print(col("\n[RESTART] Kompletter Neustart (inkl. INIT)...", "yellow"))
                 break  # Bricht innere Schleife ab → äußere Schleife startet INIT erneut
 
@@ -766,5 +775,11 @@ def sequence_worker(state: AutoClickerState) -> None:
         print(f"  {col('Items:', 'cyan'):22s} {state.items_found}")
     if state.key_presses > 0:
         print(f"  {col('Tasten:', 'cyan'):22s} {state.key_presses}")
+    if state.timeouts > 0:
+        print(f"  {col('Timeouts:', 'yellow'):22s} {state.timeouts}")
+    if state.skipped_cycles > 0:
+        print(f"  {col('Übersprungen:', 'yellow'):22s} {state.skipped_cycles}")
+    if state.restarts > 0:
+        print(f"  {col('Neustarts:', 'yellow'):22s} {state.restarts}")
     print(col("-" * 50, 'cyan'))
     print_status(state)

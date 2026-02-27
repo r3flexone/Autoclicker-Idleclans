@@ -249,6 +249,9 @@ class AutoClickerState:
     # Statistiken
     items_found: int = 0
     key_presses: int = 0
+    skipped_cycles: int = 0
+    restarts: int = 0
+    timeouts: int = 0
     start_time: Optional[float] = None
 
     # Bereits geklickte Kategorien im aktuellen Zyklus mit bester Priorität
