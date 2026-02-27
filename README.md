@@ -259,9 +259,10 @@ Eine Sequenz besteht aus drei Phasen:
 | `scan <Name>` | Item-Scan ausführen (bestes pro Kategorie) |
 | `scan <Name> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
 | `scan <Name> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
-| `... else skip` | Bei Fehlschlag überspringen |
-| `... else restart` | Bei Fehlschlag Sequenz neu starten |
-| `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
+| `... else skip` | Bei Fehlschlag **diesen Schritt** überspringen (nächster Schritt läuft weiter) |
+| `... else skip_cycle` | Bei Fehlschlag **ganzen Zyklus** abbrechen (nächster Zyklus startet) |
+| `... else restart` | Bei Fehlschlag **komplett neu starten** (inkl. INIT) |
+| `... else <Nr> [s]` | Bei Fehlschlag anderen Punkt klicken (optional mit Wartezeit) |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
 | `ins <Nr>` | Nächsten Schritt an Position einfügen (statt am Ende) |
 | `ins 0` / `ins end` | Insert-Modus beenden |
@@ -321,22 +322,19 @@ Während eine Sequenz läuft:
 
 ### Timeout-Verhalten bei Farb-Triggern
 
-Wenn ein Farb-Trigger die eingestellte Zeit (`pixel_wait_timeout`) überschreitet, greift die konfigurierte Aktion (`pixel_timeout_action`):
+Wenn ein Farb-Trigger die eingestellte Zeit (`pixel_wait_timeout`, Standard: 300s) überschreitet:
 
-| Wert | Verhalten |
-|------|-----------|
-| `skip_cycle` (Standard) | Aktueller Zyklus wird übersprungen, nächster startet |
-| `restart` | Kompletter Neustart der Sequenz inkl. INIT-Phase |
-| `stop` | Sequenz stoppt komplett |
+1. **Hat der Schritt ein `else`?** → Das `else` wird ausgeführt (z.B. `else skip`, `else skip_cycle`)
+2. **Kein `else` definiert?** → Die globale Fallback-Einstellung `pixel_timeout_action` aus der Config greift
 
-- **`pixel_wait_timeout: 0`** deaktiviert den Timeout → wartet unendlich auf die Farbe (nur Skip/Stop beendet)
-- Hat ein Schritt ein **`else`** definiert, wird dieses statt der globalen Config-Aktion ausgeführt
+**`pixel_wait_timeout: 0`** deaktiviert den Timeout komplett → wartet unendlich auf die Farbe (nur manueller Skip/Stop beendet)
 
 ### Restart vs. Skip Cycle
 
 | Aktion | Beschreibung |
 |--------|-------------|
-| `skip_cycle` | Überspringt nur den aktuellen Zyklus, nächster Loop-Zyklus startet (INIT wird nicht wiederholt) |
+| `skip` | Überspringt nur **diesen einen Schritt**, nächster Schritt im selben Zyklus läuft weiter |
+| `skip_cycle` | Überspringt den **gesamten Zyklus**, nächster Zyklus startet (INIT wird nicht wiederholt) |
 | `restart` | **Kompletter Neustart**: INIT-Phase wird erneut ausgeführt, dann Loops von vorne |
 
 ### Statistiken
@@ -405,27 +403,45 @@ Ergebnis von `scan items`:
 
 ## Bedingte Logik (ELSE)
 
-Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen definiert werden:
+Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen definiert werden.
 
 ### ELSE-Syntax
 
 | Befehl | Beschreibung |
 |--------|--------------|
-| `else skip` | Schritt überspringen, Sequenz fortsetzen |
-| `else restart` | Sequenz komplett neu starten |
+| `else skip` | **Nur diesen Schritt** überspringen → nächster Schritt läuft normal weiter |
+| `else skip_cycle` | **Ganzen Zyklus** abbrechen → nächster Zyklus startet von vorne (ohne INIT) |
+| `else restart` | **Komplett neu starten** → inkl. INIT-Phase |
 | `else <Nr>` | Anderen Punkt klicken |
 | `else <Nr> <Sek>` | Warten, dann anderen Punkt klicken |
 | `else key <Taste>` | Taste drücken |
 
+### Unterschied: skip vs. skip_cycle vs. restart
+
+Beispiel-Sequenz mit 3 Schritten in einem Loop:
+```
+Schritt 1: 1 pixel else ???    ← Farbe wird NICHT erkannt
+Schritt 2: 2 5                 ← Punkt 2 klicken nach 5s
+Schritt 3: 3 0                 ← Punkt 3 klicken
+```
+
+| ELSE-Aktion | Was passiert |
+|-------------|-------------|
+| `else skip` | Schritt 1 wird übersprungen → **Schritt 2 und 3 laufen trotzdem** |
+| `else skip_cycle` | Schritt 1, 2 und 3 werden alle abgebrochen → **nächster Zyklus startet** |
+| `else restart` | Alles wird abgebrochen → **INIT wird erneut ausgeführt**, dann Loops von vorne |
+
 ### Beispiele
 
 ```
-scan items else skip           # Wenn kein Item: überspringen
-scan items else restart        # Wenn kein Item: Sequenz neu starten
+scan items else skip           # Wenn kein Item: Schritt überspringen, weiter mit nächstem
+scan items else skip_cycle     # Wenn kein Item: ganzen Zyklus abbrechen, nächster startet
+scan items else restart        # Wenn kein Item: Sequenz komplett neu starten (inkl. INIT)
 scan items else 2              # Wenn kein Item: Punkt 2 klicken
 scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
-1 pixel else skip              # Wenn Timeout: überspringen
-1 pixel else restart           # Wenn Timeout: von vorne beginnen
+1 pixel else skip              # Wenn Timeout: nur diesen Schritt überspringen
+1 pixel else skip_cycle        # Wenn Timeout: ganzen Zyklus abbrechen
+1 pixel else restart           # Wenn Timeout: von vorne beginnen (inkl. INIT)
 1 pixel else key enter         # Wenn Timeout: Enter drücken
 wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ```
@@ -436,7 +452,17 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 - **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 300s, `0` = deaktiviert)
 - **Wait Gone**: Wenn Farbe nicht verschwindet
 
-Ohne `else` wird die globale `pixel_timeout_action` ausgeführt (Standard: `skip_cycle`).
+### Was passiert OHNE `else`?
+
+Wenn ein Pixel-Schritt **kein** `else` definiert hat und der Timeout abläuft, greift die **globale Fallback-Einstellung** `pixel_timeout_action` aus der `config.json`:
+
+| Wert | Verhalten |
+|------|-----------|
+| `skip_cycle` (Standard) | Ganzen Zyklus abbrechen, nächster startet |
+| `restart` | Komplett neu starten inkl. INIT |
+| `stop` | Sequenz komplett stoppen |
+
+**Wichtig:** Diese Einstellung ist nur ein Sicherheitsnetz. Wenn du bei deinen Pixel-Schritten immer ein `else` definierst (z.B. `else skip` oder `else skip_cycle`), wird `pixel_timeout_action` **nie** verwendet.
 
 ## IDE-Kompatibilität (PyCharm, VS Code, etc.)
 
@@ -514,7 +540,7 @@ Wird beim ersten Start automatisch erstellt:
 | `color_tolerance` | Toleranz für Item-Scan (0 = exakt, höher = toleranter) |
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
 | `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300, `0` = unendlich) |
-| `pixel_timeout_action` | Aktion bei Timeout ohne `else`: `skip_cycle` (Standard), `restart`, `stop` |
+| `pixel_timeout_action` | **Nur Fallback** wenn kein `else` definiert: `skip_cycle` (Standard), `restart`, `stop` |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
 | `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
 | `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
