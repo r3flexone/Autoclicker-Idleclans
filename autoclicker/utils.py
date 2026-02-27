@@ -84,6 +84,11 @@ def hint(msg: str) -> str:
     return col(msg, 'gray')
 
 
+def dbg(msg: str) -> str:
+    """Formatiert eine Debug-Meldung: [DEBUG] in grau."""
+    return f"{col('[DEBUG]', 'gray')} {msg}"
+
+
 def save_tag(msg: str) -> str:
     """Formatiert eine Speicher-Meldung: [SAVE] grün."""
     return f"{col('[SAVE]', 'green')} {msg}"
@@ -708,7 +713,7 @@ def wait_while_paused(state: 'AutoClickerState', message: str) -> bool:
     pause_interval = state.config.get("pause_check_interval", 0.5)
     while state.pause_event.is_set() and not state.stop_event.is_set():
         clear_line()
-        print(f"[PAUSE] {message} | Fortsetzen: CTRL+ALT+G", end="", flush=True)
+        print(f"{col('[PAUSE]', 'yellow')} {message} | Fortsetzen: {col('CTRL+ALT+G', 'yellow')}", end="", flush=True)
         time.sleep(pause_interval)
     return not state.stop_event.is_set()
 
