@@ -642,96 +642,102 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
 
-    # INIT-Phase (einmalig vor allen Zyklen)
-    if has_init and not state.stop_event.is_set():
-        print(col("\n[INIT] Führe Initialisierung aus (einmalig)...", "green"))
-        total_init = len(sequence.init_steps)
-        for i, step in enumerate(sequence.init_steps):
-            if state.stop_event.is_set() or state.quit_event.is_set():
-                break
-            if not execute_step(state, step, i + 1, total_init, "INIT"):
-                break
-        if not state.stop_event.is_set() and not state.quit_event.is_set():
-            print(col("\n[INIT] Initialisierung abgeschlossen.", "green"))
+    # Äußere Schleife: Ermöglicht kompletten Neustart (inkl. INIT) bei restart_event
+    do_restart = True  # Erster Durchlauf startet immer
+    while do_restart and not state.stop_event.is_set() and not state.quit_event.is_set():
+        do_restart = False
 
-    cycle_count = 0
-
-    while not state.stop_event.is_set() and not state.quit_event.is_set():
-        if state.skip_cycle_event.is_set():
-            state.skip_cycle_event.clear()
-            print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
-
-        if state.restart_event.is_set():
-            state.restart_event.clear()
-            cycle_count = 0
-            print(col("\n[RESTART] Sequenz wird neu gestartet...", "yellow"))
-
-        cycle_count += 1
-
-        with state.lock:
-            state.clicked_categories.clear()
-
-        if total_cycles > 0 and cycle_count > total_cycles:
-            print(f"\n{ok(f'Alle {total_cycles} Zyklen abgeschlossen!')}")
-            break
-
-        cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
-
-        # LOOP-Phasen
-        if has_loops and not state.stop_event.is_set():
-            for loop_phase in sequence.loop_phases:
+        # INIT-Phase
+        if has_init and not state.stop_event.is_set():
+            print(col("\n[INIT] Führe Initialisierung aus...", "green"))
+            total_init = len(sequence.init_steps)
+            for i, step in enumerate(sequence.init_steps):
                 if state.stop_event.is_set() or state.quit_event.is_set():
                     break
+                if not execute_step(state, step, i + 1, total_init, "INIT"):
+                    break
+            if not state.stop_event.is_set() and not state.quit_event.is_set():
+                print(col("\n[INIT] Initialisierung abgeschlossen.", "green"))
 
-                total_steps = len(loop_phase.steps)
-                if total_steps == 0:
-                    continue
+        cycle_count = 0
 
-                print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
+        while not state.stop_event.is_set() and not state.quit_event.is_set():
+            if state.skip_cycle_event.is_set():
+                state.skip_cycle_event.clear()
+                print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
 
-                for repeat_num in range(1, loop_phase.repeat + 1):
+            if state.restart_event.is_set():
+                state.restart_event.clear()
+                do_restart = True
+                print(col("\n[RESTART] Kompletter Neustart (inkl. INIT)...", "yellow"))
+                break  # Bricht innere Schleife ab → äußere Schleife startet INIT erneut
+
+            cycle_count += 1
+
+            with state.lock:
+                state.clicked_categories.clear()
+
+            if total_cycles > 0 and cycle_count > total_cycles:
+                print(f"\n{ok(f'Alle {total_cycles} Zyklen abgeschlossen!')}")
+                break
+
+            cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
+
+            # LOOP-Phasen
+            if has_loops and not state.stop_event.is_set():
+                for loop_phase in sequence.loop_phases:
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
 
-                    if state.config.get("debug_mode", False):
-                        print(dbg(f"Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'"))
+                    total_steps = len(loop_phase.steps)
+                    if total_steps == 0:
+                        continue
 
-                    for i, step in enumerate(loop_phase.steps):
+                    print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
+
+                    for repeat_num in range(1, loop_phase.repeat + 1):
                         if state.stop_event.is_set() or state.quit_event.is_set():
                             break
 
-                        phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
-                        if not execute_step(state, step, i + 1, total_steps, phase_label):
+                        if state.config.get("debug_mode", False):
+                            print(dbg(f"Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'"))
+
+                        for i, step in enumerate(loop_phase.steps):
+                            if state.stop_event.is_set() or state.quit_event.is_set():
+                                break
+
+                            phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
+                            if not execute_step(state, step, i + 1, total_steps, phase_label):
+                                break
+
+                        if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                             break
 
                     if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                         break
 
-                if state.skip_cycle_event.is_set() or state.restart_event.is_set():
-                    break
+                    if not state.stop_event.is_set() and not state.skip_cycle_event.is_set():
+                        print(col(f"\n[{loop_phase.name}] Abgeschlossen.", "magenta"))
 
-                if not state.stop_event.is_set() and not state.skip_cycle_event.is_set():
-                    print(col(f"\n[{loop_phase.name}] Abgeschlossen.", "magenta"))
+                if state.skip_cycle_event.is_set():
+                    continue
+                if state.restart_event.is_set():
+                    continue  # → wird oben in der inneren Schleife per break behandelt
+                if state.stop_event.is_set():
+                    break
 
             if state.skip_cycle_event.is_set():
                 continue
             if state.restart_event.is_set():
                 continue
-            if state.stop_event.is_set():
+
+            if not has_loops or total_cycles == 1:
+                print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
                 break
 
-        if state.skip_cycle_event.is_set():
-            continue
-        if state.restart_event.is_set():
-            continue
-
-        if not has_loops or total_cycles == 1:
-            print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
-            break
-
-        if state.finish_event.is_set():
-            print(f"\n{ok('Sanfter Abbruch: Zyklus abgeschlossen.')}")
-            break
+            if state.finish_event.is_set():
+                print(f"\n{ok('Sanfter Abbruch: Zyklus abgeschlossen.')}")
+                break
 
     # END-Phase
     if has_end and not state.quit_event.is_set():
