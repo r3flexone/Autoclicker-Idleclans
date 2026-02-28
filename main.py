@@ -131,6 +131,7 @@ def main() -> int:
         print()
 
     print(col("Bereit!", 'green') + f" Starte mit {col('CTRL+ALT+A', 'yellow')} um Punkte aufzunehmen.")
+    print(f"        oder mit {col('CTRL+ALT+S', 'yellow')} eine Sequenz starten.")
     print_status(state)
     print()
 
