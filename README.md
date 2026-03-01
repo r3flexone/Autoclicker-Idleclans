@@ -498,6 +498,8 @@ Wird beim ersten Start automatisch erstellt:
   "scan_pixel_step": 2,
   "show_pixel_delay": 0.3,
   "scan_reverse": false,
+  "scan_click_immediate": false,
+  "scan_park_mouse": null,
   "scan_slot_delay": 0.1,
   "item_click_delay": 1.0,
   "marker_count": 5,
@@ -550,6 +552,8 @@ Wird beim ersten Start automatisch erstellt:
 | Option | Beschreibung |
 |--------|--------------|
 | `scan_reverse` | Slots von hinten nach vorne scannen |
+| `scan_click_immediate` | `true` = Scan→Klick pro Slot (sofort klicken), `false` = alle scannen, dann alle klicken (Standard) |
+| `scan_park_mouse` | `[x, y]` = Maus vor Scan dorthin parken (verhindert Tooltip-Störungen), `null` = Maus nicht bewegen (Standard) |
 | `scan_slot_delay` | Pause zwischen Slot-Scans in Sekunden (Standard: 0.1) |
 | `item_click_delay` | Pause nach Item-Klick in Sekunden (Standard: 1.0) |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
@@ -719,6 +723,8 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
+- **Immediate Scan-Modus**: `scan_click_immediate: true` scannt und klickt jeden Slot einzeln (Scan→Klick→Scan→Klick) statt alle zu scannen und dann zu klicken
+- **Maus parken vor Scan**: `scan_park_mouse: [x, y]` bewegt die Maus vor dem Scannen weg, damit Tooltips/Hover-Effekte den Screenshot nicht stören
 - **Farbige Ausgaben überall**: Alle `[DEBUG]`-, `[PAUSE]`- und Menü-Ausgaben sind jetzt farbig (nicht nur der Worker)
 - **Restart = Kompletter Neustart**: `restart` führt jetzt INIT-Phase erneut aus (nicht nur Loops)
 - **Erweiterte Statistiken**: Timeouts, übersprungene Zyklen und Neustarts werden gezählt und angezeigt
