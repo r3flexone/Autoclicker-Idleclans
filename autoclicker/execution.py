@@ -179,6 +179,12 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     scan_delay = state.config.get("scan_slot_delay", 0.1)
     debug = state.config.get("debug_detection", False)
 
+    # Maus vor dem Scannen wegparken (verhindert Tooltip/Hover-Störungen)
+    park_pos = state.config.get("scan_park_mouse")
+    if park_pos and len(park_pos) == 2:
+        set_cursor_pos(int(park_pos[0]), int(park_pos[1]))
+        time.sleep(0.05)  # Kurz warten bis Maus angekommen & Tooltip weg
+
     for idx, slot in enumerate(slots_to_scan):
         if state.stop_event.is_set():
             break
