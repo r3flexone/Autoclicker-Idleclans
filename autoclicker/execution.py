@@ -154,8 +154,10 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     return True
 
 
-def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all") -> list:
-    """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück."""
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all",
+                      slots_override: list = None) -> list:
+    """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück.
+    slots_override: Wenn gesetzt, werden nur diese Slots gescannt (ohne Reverse-Logik)."""
     if scan_name not in state.item_scans:
         print(err(f"Item-Scan '{scan_name}' nicht gefunden!"))
         return []
@@ -166,10 +168,13 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         return []
 
     found_items = []
-    slots_to_scan = list(config.slots)
 
-    if state.config.get("scan_reverse", False):
-        slots_to_scan = list(reversed(slots_to_scan))
+    if slots_override is not None:
+        slots_to_scan = list(slots_override)
+    else:
+        slots_to_scan = list(config.slots)
+        if state.config.get("scan_reverse", False):
+            slots_to_scan = list(reversed(slots_to_scan))
 
     scan_delay = state.config.get("scan_slot_delay", 0.1)
     debug = state.config.get("debug_detection", False)
@@ -288,18 +293,57 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         return [(best_slot.click_pos, best_item, best_priority)]
 
 
+def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool) -> None:
+    """Klickt ein gefundenes Item (inkl. Confirm-Klick und Delays)."""
+    if debug:
+        print(dbg(f"Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})"))
+
+    send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
+               state.config.get("post_click_delay", 0.05))
+    with state.lock:
+        state.total_clicks += 1
+        state.items_found += 1
+        cat = item.category or item.name
+        if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
+            state.clicked_categories[cat] = priority
+
+    if item.confirm_point is not None:
+        if item.confirm_delay > 0:
+            if debug:
+                print(dbg(f"Warte {item.confirm_delay}s vor Confirm..."))
+            time.sleep(item.confirm_delay)
+
+        if debug:
+            print(dbg(f"Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})"))
+
+        send_click(item.confirm_point.x, item.confirm_point.y,
+                   state.config.get("click_move_delay", 0.01),
+                   state.config.get("post_click_delay", 0.05))
+        with state.lock:
+            state.total_clicks += 1
+
+    click_delay = state.config.get("item_click_delay", 1.0)
+    if click_delay > 0:
+        time.sleep(click_delay)
+
+
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Item-Scan Schritt aus."""
     debug = state.config.get("debug_mode", False)
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
+    immediate = state.config.get("scan_click_immediate", False)
 
     if debug:
-        print(dbg(f"Starte Scan '{step.item_scan}' ({mode_str})..."))
+        im_str = " [IMMEDIATE]" if immediate else ""
+        print(dbg(f"Starte Scan '{step.item_scan}' ({mode_str}{im_str})..."))
     else:
         clear_line()
         print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), flush=True)
+
+    if immediate:
+        return _execute_item_scan_immediate(state, step, step_num, total_steps, phase, mode, debug)
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
 
@@ -307,37 +351,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         for i, (pos, item, priority) in enumerate(scan_results):
             if state.stop_event.is_set():
                 return False
-
-            if debug:
-                print(dbg(f"Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})"))
-
-            send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
-                       state.config.get("post_click_delay", 0.05))
-            with state.lock:
-                state.total_clicks += 1
-                state.items_found += 1
-                cat = item.category or item.name
-                if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
-                    state.clicked_categories[cat] = priority
-
-            if item.confirm_point is not None:
-                if item.confirm_delay > 0:
-                    if debug:
-                        print(dbg(f"Warte {item.confirm_delay}s vor Confirm..."))
-                    time.sleep(item.confirm_delay)
-
-                if debug:
-                    print(dbg(f"Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})"))
-
-                send_click(item.confirm_point.x, item.confirm_point.y,
-                           state.config.get("click_move_delay", 0.01),
-                           state.config.get("post_click_delay", 0.05))
-                with state.lock:
-                    state.total_clicks += 1
-
-            click_delay = state.config.get("item_click_delay", 1.0)
-            if click_delay > 0:
-                time.sleep(click_delay)
+            _click_scan_result(state, pos, item, priority, debug)
 
         if debug:
             print(dbg(f"Scan fertig: {len(scan_results)} Item(s) geklickt"))
@@ -349,6 +363,51 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
             return execute_else_action(state, step, phase, step_num, total_steps)
         if debug:
             print(dbg("Scan fertig: kein Item gefunden"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", _phase_color(phase)), end="", flush=True)
+
+    return True
+
+
+def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
+                                  step_num: int, total_steps: int, phase: str,
+                                  mode: str, debug: bool) -> bool:
+    """Immediate-Modus: Scan→Klick pro Slot statt alle scannen, dann alle klicken."""
+    config = state.item_scans.get(step.item_scan)
+    if not config or not config.slots or not config.items:
+        return True
+
+    slots = list(config.slots)
+    if state.config.get("scan_reverse", False):
+        slots = list(reversed(slots))
+
+    total_clicked = 0
+    for slot in slots:
+        if state.stop_event.is_set():
+            return False
+
+        # Einen einzelnen Slot scannen
+        results = execute_item_scan(state, step.item_scan, mode, slots_override=[slot])
+
+        if results:
+            for pos, item, priority in results:
+                if state.stop_event.is_set():
+                    return False
+                _click_scan_result(state, pos, item, priority, debug)
+                total_clicked += 1
+
+    if total_clicked > 0:
+        if debug:
+            print(dbg(f"Scan fertig: {total_clicked} Item(s) geklickt (immediate)"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {total_clicked} Item(s)!", _phase_color(phase)), end="", flush=True)
+    else:
+        if step.else_action:
+            return execute_else_action(state, step, phase, step_num, total_steps)
+        if debug:
+            print(dbg("Scan fertig: kein Item gefunden (immediate)"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", _phase_color(phase)), end="", flush=True)
