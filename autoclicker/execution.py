@@ -356,7 +356,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         print(dbg(f"Starte Scan '{step.item_scan}' ({mode_str}{im_str})..."))
     else:
         clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), flush=True)
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), end="", flush=True)
 
     if immediate:
         return _execute_item_scan_immediate(state, step, step_num, total_steps, phase, mode, debug)
@@ -640,7 +640,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 
     if step.wait_only:
         clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)))
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)), end="", flush=True)
         return True
 
     return _execute_click(state, step, step_num, total_steps, phase)
