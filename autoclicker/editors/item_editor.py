@@ -793,30 +793,16 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
     # Gecachtes Template dem Item zuweisen und umbenennen
     if cached_template_path and cached_template_path.exists():
-        save_template = safe_input("  Gecachtes Template verwenden? (j/n, Enter=j): ").strip().lower()
-        if save_template != "n":
-            safe_name = sanitize_filename(item_name)
-            template_file = f"{safe_name}.png"
-            final_path = Path(TEMPLATES_DIR) / template_file
-            try:
-                cached_template_path.rename(final_path)
-                item.template = template_file
-                print(f"  + Template gespeichert: {template_file}")
-
-                # Konfidenz abfragen
-                conf_input = safe_input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
-                if conf_input:
-                    try:
-                        conf = float(conf_input.replace("%", "")) / 100
-                        item.min_confidence = max(0.1, min(1.0, conf))
-                    except ValueError:
-                        pass
-            except OSError as e:
-                print(f"  -> Template-Fehler: {e}")
-                _cleanup_cached_template()
-        else:
+        safe_name = sanitize_filename(item_name)
+        template_file = f"{safe_name}.png"
+        final_path = Path(TEMPLATES_DIR) / template_file
+        try:
+            cached_template_path.rename(final_path)
+            item.template = template_file
+            print(f"  + Template gespeichert: {template_file}")
+        except OSError as e:
+            print(f"  -> Template-Fehler: {e}")
             _cleanup_cached_template()
-            print("  -> Template verworfen")
 
     with state.lock:
         state.global_items[item_name] = item
