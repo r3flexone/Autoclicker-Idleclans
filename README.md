@@ -499,7 +499,7 @@ Wird beim ersten Start automatisch erstellt:
   "show_pixel_delay": 0.3,
   "scan_reverse": false,
   "scan_click_immediate": false,
-  "scan_park_mouse": null,
+  "scan_park_mouse": false,
   "scan_slot_delay": 0.1,
   "item_click_delay": 1.0,
   "marker_count": 5,
@@ -553,7 +553,7 @@ Wird beim ersten Start automatisch erstellt:
 |--------|--------------|
 | `scan_reverse` | Slots von hinten nach vorne scannen |
 | `scan_click_immediate` | `true` = Scan→Klick pro Slot (sofort klicken), `false` = alle scannen, dann alle klicken (Standard) |
-| `scan_park_mouse` | `[x, y]` = Maus vor Scan dorthin parken (verhindert Tooltip-Störungen), `null` = Maus nicht bewegen (Standard) |
+| `scan_park_mouse` | `[x, y]` = Maus vor Scan dorthin parken (verhindert Tooltip-Störungen), `false` = Maus nicht bewegen (Standard) |
 | `scan_slot_delay` | Pause zwischen Slot-Scans in Sekunden (Standard: 0.1) |
 | `item_click_delay` | Pause nach Item-Klick in Sekunden (Standard: 1.0) |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |

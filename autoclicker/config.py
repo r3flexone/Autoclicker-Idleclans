@@ -42,7 +42,7 @@ DEFAULT_CONFIG = {
     # === ITEM-SCAN EINSTELLUNGEN ===
     "scan_reverse": True,               # True = Slots rückwärts scannen (4,3,2,1)
     "scan_click_immediate": False,       # True = Scan→Klick pro Slot, False = alle scannen, dann alle klicken
-    "scan_park_mouse": None,             # [x, y] = Maus vor Scan dorthin parken, None = Maus nicht bewegen
+    "scan_park_mouse": False,            # [x, y] = Maus vor Scan dorthin parken, False = Maus nicht bewegen
     "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
     "item_click_delay": 1.0,            # Pause nach Item-Klick in Sekunden
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
