@@ -683,12 +683,44 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
         return True
 
     selected_slot = slot_list[slot_num - 1]
-    print(f"\n  Scanne Slot '{selected_slot.name}'...")
+
+    # === SOFORT: Screenshot + Farben + Template aufnehmen ===
+    print(f"\n  Scanne Slot '{selected_slot.name}' SOFORT...")
+    marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
+
+    if not marker_colors:
+        print("  -> Keine Farben gefunden!")
+        return True
+
+    # Template sofort aufnehmen (wenn OpenCV verfügbar)
+    cached_template_path = None
+    if OPENCV_AVAILABLE:
+        template_img = take_screenshot(selected_slot.scan_region)
+        if template_img:
+            # Temporär unter generischem Namen speichern, wird später umbenannt
+            temp_name = f"_learn_temp_{slot_num}.png"
+            cached_template_path = Path(TEMPLATES_DIR) / temp_name
+            cached_template_path.parent.mkdir(parents=True, exist_ok=True)
+            template_img.save(cached_template_path)
+            print(ok("Screenshot + Farben aufgenommen! Jetzt hast du Zeit für die Eingaben."))
+    else:
+        print(ok("Farben aufgenommen! Jetzt hast du Zeit für die Eingaben."))
+
+    # === Ab hier: Benutzereingaben (Item kann sich inzwischen ändern, Daten sind gecacht) ===
+
+    def _cleanup_cached_template():
+        """Löscht das gecachte Template bei Abbruch."""
+        if cached_template_path and cached_template_path.exists():
+            try:
+                cached_template_path.unlink()
+            except OSError:
+                pass
 
     # Item-Name abfragen
     item_num = len(state.global_items) + 1
     item_name = safe_input(f"  Item-Name (Enter = 'Item {item_num}'): ").strip()
     if is_cancel(item_name):
+        _cleanup_cached_template()
         return True
     if not item_name:
         item_name = f"Item {item_num}"
@@ -699,6 +731,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     if name_exists:
         if not confirm(f"  '{item_name}' existiert bereits. Überschreiben?"):
             print("  -> Abgebrochen")
+            _cleanup_cached_template()
             return True
         print(f"  -> '{item_name}' wird überschrieben")
 
@@ -711,6 +744,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
         prio_input = safe_input(f"  Priorität (1=beste, 0=beste+verschieben, Enter={priority}): ").strip()
         if is_cancel(prio_input):
             print("  -> Abgebrochen")
+            _cleanup_cached_template()
             return True
         if prio_input:
             prio_val = int(prio_input)
@@ -726,14 +760,6 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     except ValueError:
         pass
 
-    # Screenshot des Slots machen und Farben extrahieren
-    print(f"  Scanne Farben in Region {selected_slot.scan_region}...")
-    marker_colors = collect_marker_colors(selected_slot.scan_region, selected_slot.slot_color)
-
-    if not marker_colors:
-        print("  -> Keine Farben gefunden!")
-        return True
-
     # Bestätigungs-Klick abfragen
     confirm_point = None
     confirm_delay = state.config.get("default_confirm_delay", CONFIG.get("default_confirm_delay", 0.5))
@@ -742,6 +768,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
     confirm_input = safe_input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()
     if is_cancel(confirm_input):
         print("  -> Abgebrochen")
+        _cleanup_cached_template()
         return True
     if confirm_input:
         try:
@@ -761,21 +788,20 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
         except ValueError:
             print("  -> Keine gültige Zahl, keine Bestätigung")
 
-    # Item erstellen und speichern
+    # Item erstellen
     item = ItemProfile(item_name, marker_colors, category, priority, confirm_point, confirm_delay)
 
-    # Optional: Auch als Template speichern?
-    if OPENCV_AVAILABLE:
-        save_template = safe_input("  Auch als Template speichern? (j/n, Enter=n): ").strip().lower()
-        if save_template == "j":
-            template_img = take_screenshot(selected_slot.scan_region)
-            if template_img:
-                safe_name = sanitize_filename(item_name)
-                template_file = f"{safe_name}.png"
-                template_path = Path(TEMPLATES_DIR) / template_file
-                template_path.parent.mkdir(parents=True, exist_ok=True)
-                template_img.save(template_path)
+    # Gecachtes Template dem Item zuweisen und umbenennen
+    if cached_template_path and cached_template_path.exists():
+        save_template = safe_input("  Gecachtes Template verwenden? (j/n, Enter=j): ").strip().lower()
+        if save_template != "n":
+            safe_name = sanitize_filename(item_name)
+            template_file = f"{safe_name}.png"
+            final_path = Path(TEMPLATES_DIR) / template_file
+            try:
+                cached_template_path.rename(final_path)
                 item.template = template_file
+                print(f"  + Template gespeichert: {template_file}")
 
                 # Konfidenz abfragen
                 conf_input = safe_input(f"  Min. Konfidenz für Template (Enter={item.min_confidence:.0%}): ").strip()
@@ -785,8 +811,12 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
                         item.min_confidence = max(0.1, min(1.0, conf))
                     except ValueError:
                         pass
-
-                print(f"  + Template gespeichert: {template_file}")
+            except OSError as e:
+                print(f"  -> Template-Fehler: {e}")
+                _cleanup_cached_template()
+        else:
+            _cleanup_cached_template()
+            print("  -> Template verworfen")
 
     with state.lock:
         state.global_items[item_name] = item
