@@ -3,6 +3,7 @@ Sequenz-Ausführung für den Autoclicker.
 Enthält die Worker-Funktion und Step-Ausführungslogik.
 """
 
+import ctypes
 import time
 from datetime import datetime
 from pathlib import Path
@@ -181,8 +182,17 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
     # Maus vor dem Scannen wegparken (verhindert Tooltip/Hover-Störungen)
     park_pos = state.config.get("scan_park_mouse", False)
-    if isinstance(park_pos, (list, tuple)) and len(park_pos) == 2:
-        set_cursor_pos(int(park_pos[0]), int(park_pos[1]))
+    if park_pos:
+        if isinstance(park_pos, (list, tuple)) and len(park_pos) == 2:
+            px, py = int(park_pos[0]), int(park_pos[1])
+        else:
+            # true = Bildschirmmitte
+            try:
+                px = ctypes.windll.user32.GetSystemMetrics(0) // 2
+                py = ctypes.windll.user32.GetSystemMetrics(1) // 2
+            except (AttributeError, OSError):
+                px, py = 960, 540  # Fallback 1920x1080
+        set_cursor_pos(px, py)
         time.sleep(0.05)  # Kurz warten bis Maus angekommen & Tooltip weg
 
     for idx, slot in enumerate(slots_to_scan):
