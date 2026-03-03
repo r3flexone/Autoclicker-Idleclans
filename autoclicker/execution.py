@@ -356,7 +356,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         print(dbg(f"Starte Scan '{step.item_scan}' ({mode_str}{im_str})..."))
     else:
         clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), end="", flush=True)
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), flush=True)
 
     if immediate:
         return _execute_item_scan_immediate(state, step, step_num, total_steps, phase, mode, debug)
@@ -398,10 +398,19 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
     if state.config.get("scan_reverse", False):
         slots = list(reversed(slots))
 
+    # clicked_categories VOR dem Loop sichern, damit Klicks innerhalb
+    # dieses Scan-Schritts sich nicht gegenseitig ausfiltern
+    with state.lock:
+        saved_categories = dict(state.clicked_categories)
+
     total_clicked = 0
     for slot in slots:
         if state.stop_event.is_set():
             return False
+
+        # Für jeden Slot den Ausgangszustand wiederherstellen
+        with state.lock:
+            state.clicked_categories = dict(saved_categories)
 
         # Einen einzelnen Slot scannen
         results = execute_item_scan(state, step.item_scan, mode, slots_override=[slot])
@@ -468,7 +477,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
         time.sleep(state.config.get("show_pixel_delay", 0.3))
 
-    timeout = state.config.get("pixel_wait_timeout", 30)
+    timeout = state.config.get("pixel_wait_timeout", 300)
     start_time = time.time()
     expected_name = get_color_name(step.wait_color)
 
@@ -539,6 +548,9 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         if state.stop_event.wait(check_interval):
             return False
 
+    # stop_event oder wait_while_paused-Abbruch → nicht weitermachen
+    if state.stop_event.is_set():
+        return False
     return True
 
 

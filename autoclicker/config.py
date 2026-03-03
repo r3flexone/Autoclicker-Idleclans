@@ -40,7 +40,7 @@ DEFAULT_CONFIG = {
     "show_pixel_delay": 0.3,            # Wie lange Pixel-Position angezeigt wird (Sekunden)
 
     # === ITEM-SCAN EINSTELLUNGEN ===
-    "scan_reverse": True,               # True = Slots rückwärts scannen (4,3,2,1)
+    "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
     "scan_click_immediate": False,       # True = Scan→Klick pro Slot, False = alle scannen, dann alle klicken
     "scan_park_mouse": False,            # [x, y] = Maus vor Scan dorthin parken, False = Maus nicht bewegen
     "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
