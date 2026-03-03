@@ -618,7 +618,7 @@ def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
         return True  # Nicht als Fehler werten, Sequenz läuft weiter
 
     if not state.session_screenshots_dir:
-        session_ts = datetime.now().strftime("%Y-%m-%d_%H")
+        session_ts = datetime.now().strftime("%Y-%m-%d")
         state.session_screenshots_dir = Path(SCREENSHOTS_DIR) / session_ts
     screenshots_dir = state.session_screenshots_dir
     screenshots_dir.mkdir(parents=True, exist_ok=True)
