@@ -267,7 +267,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 elif template_ok and marker_ok:
                     print(dbg(f"  → {item.name} gefunden! ({', '.join(info_parts)})"))
                 else:
-                    print(dbg(f"  → {item.name}: {', '.join(info_parts)})"))
+                    print(dbg(f"  → {item.name}: {', '.join(info_parts)}"))
 
             # 4. Item gefunden wenn Template UND Marker OK
             if template_ok and marker_ok and (item.template or item.marker_colors):
