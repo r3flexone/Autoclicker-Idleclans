@@ -196,11 +196,19 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         time.sleep(0.05)  # Kurz warten bis Maus angekommen & Tooltip weg
 
     for idx, slot in enumerate(slots_to_scan):
-        if state.stop_event.is_set():
+        if state.stop_event.is_set() or state.skip_event.is_set():
             break
 
+        # Pause respektieren zwischen Slots
+        if state.pause_event.is_set():
+            while state.pause_event.is_set() and not state.stop_event.is_set():
+                state.stop_event.wait(0.2)
+            if state.stop_event.is_set():
+                break
+
         if scan_delay > 0 and idx > 0:
-            time.sleep(scan_delay)
+            if state.stop_event.wait(scan_delay):
+                break
 
         screenshot_start = time.time()
         img = take_screenshot(slot.scan_region)
@@ -309,8 +317,9 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         return [(best_slot.click_pos, best_item, best_priority)]
 
 
-def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool) -> None:
-    """Klickt ein gefundenes Item (inkl. Confirm-Klick und Delays)."""
+def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool) -> bool:
+    """Klickt ein gefundenes Item (inkl. Confirm-Klick und Delays).
+    Gibt False zurück wenn stop_event während Warten feuert."""
     if debug:
         print(dbg(f"Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})"))
 
@@ -327,7 +336,8 @@ def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool
         if item.confirm_delay > 0:
             if debug:
                 print(dbg(f"Warte {item.confirm_delay}s vor Confirm..."))
-            time.sleep(item.confirm_delay)
+            if state.stop_event.wait(item.confirm_delay):
+                return False
 
         if debug:
             print(dbg(f"Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})"))
@@ -340,7 +350,9 @@ def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool
 
     click_delay = state.config.get("item_click_delay", 1.0)
     if click_delay > 0:
-        time.sleep(click_delay)
+        if state.stop_event.wait(click_delay):
+            return False
+    return True
 
 
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
@@ -367,7 +379,8 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         for i, (pos, item, priority) in enumerate(scan_results):
             if state.stop_event.is_set():
                 return False
-            _click_scan_result(state, pos, item, priority, debug)
+            if not _click_scan_result(state, pos, item, priority, debug):
+                return False
 
         if debug:
             print(dbg(f"Scan fertig: {len(scan_results)} Item(s) geklickt"))
@@ -419,7 +432,8 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
             for pos, item, priority in results:
                 if state.stop_event.is_set():
                     return False
-                _click_scan_result(state, pos, item, priority, debug)
+                if not _click_scan_result(state, pos, item, priority, debug):
+                    return False
                 total_clicked += 1
 
     if total_clicked > 0:
@@ -605,13 +619,13 @@ def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
 
     if not state.session_screenshots_dir:
         session_ts = datetime.now().strftime("%Y-%m-%d_%H")
-        state.session_screenshots_dir = str(Path(SCREENSHOTS_DIR) / session_ts)
-    screenshots_dir = Path(state.session_screenshots_dir)
+        state.session_screenshots_dir = Path(SCREENSHOTS_DIR) / session_ts
+    screenshots_dir = state.session_screenshots_dir
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     filename = f"seq_{timestamp}.png"
     path = screenshots_dir / filename
-    img.save(str(path))
+    img.save(path)
 
     region_str = f"({region[0]},{region[1]})→({region[2]},{region[3]})" if region else "Vollbild"
     print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT {region_str} → {filename}", _phase_color(phase)))

@@ -4,6 +4,7 @@ Screenshots, Farbanalyse, Template-Matching.
 """
 
 import ctypes
+import ctypes.wintypes as wintypes
 import logging
 import os
 from typing import Optional, TYPE_CHECKING
@@ -11,6 +12,33 @@ from typing import Optional, TYPE_CHECKING
 from .config import CONFIG, DEFAULT_MIN_CONFIDENCE
 from .utils import safe_input, interactive_select, err
 from .winapi import get_cursor_pos
+
+# GDI32 Funktions-Deklarationen (restype nötig um Handle-Trunkierung auf 64-bit zu vermeiden)
+_gdi32 = ctypes.windll.gdi32
+_user32 = ctypes.windll.user32
+
+_user32.GetDesktopWindow.restype = wintypes.HWND
+_user32.GetWindowDC.argtypes = [wintypes.HWND]
+_user32.GetWindowDC.restype = wintypes.HDC
+_user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+_user32.ReleaseDC.restype = ctypes.c_int
+
+_gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+_gdi32.CreateCompatibleDC.restype = wintypes.HDC
+_gdi32.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
+_gdi32.CreateCompatibleBitmap.restype = wintypes.HBITMAP
+_gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+_gdi32.SelectObject.restype = wintypes.HGDIOBJ
+_gdi32.BitBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                           wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+_gdi32.BitBlt.restype = wintypes.BOOL
+_gdi32.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT,
+                              ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT]
+_gdi32.GetDIBits.restype = ctypes.c_int
+_gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+_gdi32.DeleteObject.restype = wintypes.BOOL
+_gdi32.DeleteDC.argtypes = [wintypes.HDC]
+_gdi32.DeleteDC.restype = wintypes.BOOL
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -278,6 +306,11 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
     if not PILLOW_AVAILABLE or not NUMPY_AVAILABLE:
         return None
 
+    hwnd = None
+    hwndDC = None
+    memDC = None
+    bmp = None
+    old_bmp = None
     try:
         # Virtual Screen Metriken für Multi-Monitor-Support
         SM_XVIRTUALSCREEN = 76   # Linke Kante des virtuellen Desktops
@@ -285,8 +318,8 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         SM_CXVIRTUALSCREEN = 78  # Breite des virtuellen Desktops
         SM_CYVIRTUALSCREEN = 79  # Höhe des virtuellen Desktops
 
-        virtual_left = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
-        virtual_top = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        virtual_left = _user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        virtual_top = _user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
 
         if region:
             left, top, right, bottom = region
@@ -296,18 +329,18 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
             # Vollbild: gesamter virtueller Desktop (alle Monitore)
             left = virtual_left
             top = virtual_top
-            width = ctypes.windll.user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
-            height = ctypes.windll.user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            width = _user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            height = _user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
 
         # Device Contexts - GetWindowDC(GetDesktopWindow()) liefert DC für gesamten virtuellen Desktop
-        hwnd = ctypes.windll.user32.GetDesktopWindow()
-        hwndDC = ctypes.windll.user32.GetWindowDC(hwnd)
-        memDC = ctypes.windll.gdi32.CreateCompatibleDC(hwndDC)
-        bmp = ctypes.windll.gdi32.CreateCompatibleBitmap(hwndDC, width, height)
-        old_bmp = ctypes.windll.gdi32.SelectObject(memDC, bmp)
+        hwnd = _user32.GetDesktopWindow()
+        hwndDC = _user32.GetWindowDC(hwnd)
+        memDC = _gdi32.CreateCompatibleDC(hwndDC)
+        bmp = _gdi32.CreateCompatibleBitmap(hwndDC, width, height)
+        old_bmp = _gdi32.SelectObject(memDC, bmp)
 
         # BitBlt - Koordinaten funktionieren auch negativ (linker Monitor)
-        ctypes.windll.gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)
+        _gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)
 
         # Bitmap-Daten auslesen
         class BITMAPINFOHEADER(ctypes.Structure):
@@ -329,13 +362,7 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         bi.biCompression = 0
 
         buffer = (ctypes.c_char * (width * height * 4))()
-        ctypes.windll.gdi32.GetDIBits(memDC, bmp, 0, height, buffer, ctypes.byref(bi), 0)
-
-        # Aufräumen
-        ctypes.windll.gdi32.SelectObject(memDC, old_bmp)
-        ctypes.windll.gdi32.DeleteObject(bmp)
-        ctypes.windll.gdi32.DeleteDC(memDC)
-        ctypes.windll.user32.ReleaseDC(hwnd, hwndDC)
+        _gdi32.GetDIBits(memDC, bmp, 0, height, buffer, ctypes.byref(bi), 0)
 
         # In PIL Image konvertieren
         img_array = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
@@ -345,6 +372,16 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
     except (OSError, ValueError, AttributeError) as e:
         logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
+    finally:
+        # GDI-Resourcen IMMER freigeben (auch bei Exception)
+        if old_bmp and memDC:
+            _gdi32.SelectObject(memDC, old_bmp)
+        if bmp:
+            _gdi32.DeleteObject(bmp)
+        if memDC:
+            _gdi32.DeleteDC(memDC)
+        if hwndDC and hwnd:
+            _user32.ReleaseDC(hwnd, hwndDC)
 
 
 def analyze_screen_colors(region: tuple = None, pixel_step: int = 2) -> dict:

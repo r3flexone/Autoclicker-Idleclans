@@ -412,7 +412,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
     img_bgr = img_array[:, :, ::-1].copy()
 
     hsv_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    tol = state.config.get("slot_hsv_tolerance", CONFIG.get("slot_hsv_tolerance", 25))
+    tol = state.config.get("slot_hsv_tolerance", 25)
     lower = np.array([max(0, int(h) - tol), max(0, int(s) - 50), max(0, int(v) - 50)])
     upper = np.array([min(180, int(h) + tol), min(255, int(s) + 50), min(255, int(v) + 50)])
 
@@ -455,7 +455,7 @@ def slot_auto_detect(state: AutoClickerState) -> bool:
     slot_color = (r, g, b)
 
     # Slots hinzufügen
-    inset = state.config.get("slot_inset", CONFIG.get("slot_inset", 10))
+    inset = state.config.get("slot_inset", 10)
     added = 0
     start_num = len(state.global_slots) + 1
 

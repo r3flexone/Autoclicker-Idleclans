@@ -121,10 +121,15 @@ def _sequence_to_dict(seq: Sequence) -> dict:
     }
 
 
-def save_sequence_file(seq: Sequence, filepath: Path) -> None:
+def save_sequence_file(seq: Sequence, filepath: Path) -> bool:
     """Speichert eine einzelne Sequenz direkt in die angegebene Datei."""
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(compact_json(_sequence_to_dict(seq)))
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(compact_json(_sequence_to_dict(seq)))
+        return True
+    except (IOError, OSError) as e:
+        print(err(f"Sequenz konnte nicht gespeichert werden: {e}"))
+        return False
 
 
 def save_data(state: AutoClickerState) -> None:
@@ -132,9 +137,12 @@ def save_data(state: AutoClickerState) -> None:
     ensure_sequences_dir()
 
     # Punkte speichern (mit stabiler ID)
-    points_data = [{"id": p.id, "x": p.x, "y": p.y, "name": p.name} for p in state.points]
-    with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
-        f.write(compact_json(points_data))
+    try:
+        points_data = [{"id": p.id, "x": p.x, "y": p.y, "name": p.name} for p in state.points]
+        with open(Path(SEQUENCES_DIR) / "points.json", "w", encoding="utf-8") as f:
+            f.write(compact_json(points_data))
+    except (IOError, OSError) as e:
+        print(err(f"Punkte konnten nicht gespeichert werden: {e}"))
 
     # Sequenzen speichern
     for name, seq in state.sequences.items():
@@ -288,7 +296,7 @@ def list_available_sequences() -> list[tuple[str, Path]]:
                     data = json.load(file)
                     name = data.get("name", f.stem)
                     sequences.append((name, f))
-            except (json.JSONDecodeError, IOError, KeyError):
+            except (json.JSONDecodeError, IOError, KeyError, TypeError):
                 pass  # Ungültige/korrupte Datei überspringen
     return sequences
 
@@ -323,10 +331,12 @@ def save_item_scan(config: ItemScanConfig) -> None:
     }
 
     filename = f"{sanitize_filename(config.name)}.json"
-    with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-
-    print(save_tag(f"Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'"))
+    try:
+        with open(Path(ITEM_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"Item-Scan '{config.name}' gespeichert in '{ITEM_SCANS_DIR}/'"))
+    except (IOError, OSError) as e:
+        print(err(f"Item-Scan konnte nicht gespeichert werden: {e}"))
 
 
 def load_item_scan_file(filepath: Path) -> Optional[ItemScanConfig]:
@@ -378,7 +388,7 @@ def list_available_item_scans() -> list[tuple[str, Path]]:
                 data = json.load(file)
                 name = data.get("name", f.stem)
                 scans.append((name, f))
-        except (json.JSONDecodeError, IOError, KeyError):
+        except (json.JSONDecodeError, IOError, KeyError, TypeError):
             pass  # Ungültige/korrupte Datei überspringen
     return scans
 
@@ -407,9 +417,12 @@ def save_global_slots(state: AutoClickerState) -> None:
         }
         for name, slot in state.global_slots.items()
     }
-    with open(SLOTS_FILE, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(save_tag(f"{len(state.global_slots)} Slot(s) gespeichert"))
+    try:
+        with open(SLOTS_FILE, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"{len(state.global_slots)} Slot(s) gespeichert"))
+    except (IOError, OSError) as e:
+        print(err(f"Slots konnten nicht gespeichert werden: {e}"))
 
 
 def load_global_slots(state: AutoClickerState) -> None:
@@ -438,9 +451,12 @@ def save_global_items(state: AutoClickerState) -> None:
     sorted_items = sorted(state.global_items.items(),
                           key=lambda kv: (kv[1].category is None, kv[1].category or "", kv[1].priority))
     data = {name: _item_to_dict(item) for name, item in sorted_items}
-    with open(ITEMS_FILE, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(save_tag(f"{len(state.global_items)} Item(s) gespeichert"))
+    try:
+        with open(ITEMS_FILE, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"{len(state.global_items)} Item(s) gespeichert"))
+    except (IOError, OSError) as e:
+        print(err(f"Items konnten nicht gespeichert werden: {e}"))
 
 
 def load_global_items(state: AutoClickerState) -> None:
@@ -497,10 +513,15 @@ def save_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
 
     safe_name = sanitize_filename(preset_name)
     filepath = Path(SLOT_PRESETS_DIR) / f"{safe_name}.json"
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(save_tag(f"Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)"))
-    return True
+    try:
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"Slot-Preset '{preset_name}' gespeichert ({len(state.global_slots)} Slots)"))
+        return True
+    except (IOError, OSError) as e:
+        print(err(f"Slot-Preset konnte nicht gespeichert werden: {e}"))
+        return False
 
 
 def load_slot_preset(state: AutoClickerState, preset_name: str) -> bool:
@@ -542,9 +563,13 @@ def delete_slot_preset(preset_name: str) -> bool:
     if not filepath.exists():
         print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
-    filepath.unlink()
-    print(delete_tag(f"Slot-Preset '{preset_name}' gelöscht"))
-    return True
+    try:
+        filepath.unlink()
+        print(delete_tag(f"Slot-Preset '{preset_name}' gelöscht"))
+        return True
+    except OSError as e:
+        print(err(f"Preset konnte nicht gelöscht werden: {e}"))
+        return False
 
 
 def list_item_presets() -> list[tuple[str, Path, int]]:
@@ -577,10 +602,15 @@ def save_item_preset(state: AutoClickerState, preset_name: str) -> bool:
 
     safe_name = sanitize_filename(preset_name)
     filepath = Path(ITEM_PRESETS_DIR) / f"{safe_name}.json"
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(compact_json(data))
-    print(save_tag(f"Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)"))
-    return True
+    try:
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"Item-Preset '{preset_name}' gespeichert ({len(state.global_items)} Items)"))
+        return True
+    except (IOError, OSError) as e:
+        print(err(f"Item-Preset konnte nicht gespeichert werden: {e}"))
+        return False
 
 
 def load_item_preset(state: AutoClickerState, preset_name: str) -> bool:
@@ -616,9 +646,13 @@ def delete_item_preset(preset_name: str) -> bool:
     if not filepath.exists():
         print(err(f"Preset '{preset_name}' nicht gefunden!"))
         return False
-    filepath.unlink()
-    print(delete_tag(f"Item-Preset '{preset_name}' gelöscht"))
-    return True
+    try:
+        filepath.unlink()
+        print(delete_tag(f"Item-Preset '{preset_name}' gelöscht"))
+        return True
+    except OSError as e:
+        print(err(f"Preset konnte nicht gelöscht werden: {e}"))
+        return False
 
 
 # =============================================================================
@@ -678,7 +712,7 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
                     f.write(compact_json(data))
                 updated_scans += 1
 
-        except (json.JSONDecodeError, IOError, KeyError) as e:
+        except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
             print(f"  {warn(f'Konnte {scan_file.name} nicht aktualisieren: {e}')}")
 
     return updated_scans

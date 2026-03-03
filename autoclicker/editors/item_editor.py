@@ -587,7 +587,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
             # Bestätigungs-Punkt einmal für alle abfragen
             confirm_point = None
-            confirm_delay = state.config.get("default_confirm_delay", CONFIG.get("default_confirm_delay", 0.5))
+            confirm_delay = state.config.get("default_confirm_delay", 0.5)
             confirm_input = safe_input("  Bestätigungs-Punkt-ID für alle (Enter = keine): ").strip()
             if confirm_input:
                 try:
@@ -762,7 +762,7 @@ def item_learn_command(state: AutoClickerState, user_input: str) -> bool:
 
     # Bestätigungs-Klick abfragen
     confirm_point = None
-    confirm_delay = state.config.get("default_confirm_delay", CONFIG.get("default_confirm_delay", 0.5))
+    confirm_delay = state.config.get("default_confirm_delay", 0.5)
     print("\n  Soll nach dem Item-Klick noch ein Bestätigungs-Klick erfolgen?")
     print("  (z.B. auf einen 'Accept' oder 'Craft' Button)")
     confirm_input = safe_input("  Punkt-ID für Bestätigung (Enter = Nein): ").strip()

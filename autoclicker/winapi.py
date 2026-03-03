@@ -5,8 +5,11 @@ Kapselt alle ctypes-Definitionen für Maus, Tastatur und Hotkeys.
 
 import ctypes
 import ctypes.wintypes as wintypes
+import logging
 import time
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger("autoclicker")
 
 if TYPE_CHECKING:
     from .models import AutoClickerState
@@ -208,7 +211,9 @@ def send_click(x: int, y: int, move_delay: float = 0.01, post_delay: float = 0.0
     inputs[1].type = INPUT_MOUSE
     inputs[1].union.mi.dwFlags = MOUSEEVENTF_LEFTUP
 
-    user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+    sent = user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+    if sent != 2:
+        logger.warning(f"SendInput Klick: nur {sent}/2 Events gesendet @ ({x}, {y})")
 
     # Warte nach dem Klick damit das Ziel-Programm den Klick verarbeiten kann
     if post_delay > 0:
@@ -235,7 +240,10 @@ def send_key(key_name: str) -> bool:
     inputs[1].union.ki.wVk = vk_code
     inputs[1].union.ki.dwFlags = KEYEVENTF_KEYUP
 
-    user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+    sent = user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
+    if sent != 2:
+        logger.warning(f"SendInput Taste '{key_name}': nur {sent}/2 Events gesendet")
+        return False
     return True
 
 

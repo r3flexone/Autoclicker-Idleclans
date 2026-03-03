@@ -560,8 +560,8 @@ def _ansi_select(options: list[str], title: str,
     if title:
         print(title)
 
-    cancel_hint = ", Esc=Abbruch" if allow_cancel else ""
-    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_hint})")
+    cancel_str = ", Esc=Abbruch" if allow_cancel else ""
+    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_str})")
 
     _draw_menu(options, selected)
 
@@ -611,8 +611,8 @@ def _single_line_select(options: list[str], title: str,
     if title:
         print(title)
 
-    cancel_hint = ", Esc=Abbruch" if allow_cancel else ""
-    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_hint})")
+    cancel_str = ", Esc=Abbruch" if allow_cancel else ""
+    print(f"  (Pfeiltasten: navigieren, Enter: wählen{cancel_str})")
 
     # Alle Optionen einmal auflisten (statisch)
     for i, opt in enumerate(options):
