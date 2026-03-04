@@ -207,7 +207,10 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 selected_slot_names = []
                 print("  + Auswahl gelöscht")
             elif inp in ("show", "s"):
-                print(f"\nAusgewählt: {', '.join(selected_slot_names) if selected_slot_names else '(keine)'}")
+                print(f"\nSlots ({len(selected_slot_names)}/{len(slot_list)} ausgewählt):")
+                for i, name in enumerate(slot_list):
+                    marker = "X" if name in selected_slot_names else " "
+                    print(f"  [{marker}] {i+1}. {available_slots[name]}")
             elif "-" in inp:
                 # Bereich: 1-5
                 try:
@@ -299,7 +302,13 @@ def edit_item_scan(state: AutoClickerState, existing: Optional[ItemScanConfig]) 
                 selected_item_names = []
                 print("  + Auswahl gelöscht")
             elif inp_lower in ("show", "s"):
-                print(f"\nAusgewählt: {', '.join(selected_item_names) if selected_item_names else '(keine)'}")
+                print(f"\nItems ({len(selected_item_names)}/{len(item_list)} ausgewählt):")
+                if item_list:
+                    for i, name in enumerate(item_list):
+                        marker = "X" if name in selected_item_names else " "
+                        print(f"  [{marker}] {i+1}. {available_items[name]}")
+                else:
+                    print("  (Keine Items vorhanden)")
 
             elif inp_lower.startswith("new"):
                 # Neues Item per Template erstellen
