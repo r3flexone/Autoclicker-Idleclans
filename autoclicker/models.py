@@ -6,7 +6,8 @@ Definiert alle Datenstrukturen wie ClickPoint, SequenceStep, Sequence, etc.
 import random
 import threading
 from dataclasses import dataclass, field
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 from .config import DEFAULT_MIN_CONFIDENCE
 
@@ -36,8 +37,8 @@ class SequenceStep:
     delay_before: float   # Wartezeit in Sekunden VOR diesem Klick (0 = sofort)
     name: str = ""        # Optionaler Name des Punktes
     # Optional: Warten auf Farbe statt Zeit (VOR dem Klick)
-    wait_pixel: Optional[tuple] = None   # (x, y) Position zum Prüfen
-    wait_color: Optional[tuple] = None   # (r, g, b) Farbe die erscheinen soll
+    wait_pixel: Optional[tuple[int, int]] = None   # (x, y) Position zum Prüfen
+    wait_color: Optional[tuple[int, int, int]] = None   # (r, g, b) Farbe die erscheinen soll
     wait_until_gone: bool = False        # True = warte bis Farbe WEG ist, False = warte bis Farbe DA ist
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
@@ -57,7 +58,7 @@ class SequenceStep:
     else_name: str = ""                  # Name des Fallback-Punkts
     # Optional: Screenshot machen (kein Klick, kein Scan)
     screenshot_only: bool = False        # True = nur Screenshot, kein Klick
-    screenshot_region: Optional[tuple] = None  # (x1,y1,x2,y2) oder None = Vollbild
+    screenshot_region: Optional[tuple[int, int, int, int]] = None  # (x1,y1,x2,y2) oder None = Vollbild
 
     def __str__(self) -> str:
         else_str = self._else_str()
@@ -171,7 +172,7 @@ class Sequence:
 class ItemProfile:
     """Ein Item-Typ mit Marker-Farben und/oder Template-Matching."""
     name: str
-    marker_colors: list[tuple] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
+    marker_colors: list[tuple[int, int, int]] = field(default_factory=list)  # Liste von (r,g,b) Marker-Farben
     # Kategorie für Prioritäts-Vergleich (z.B. "Hosen", "Jacken", "Juwelen")
     category: Optional[str] = None  # Wenn None, ist jedes Item seine eigene Kategorie
     priority: int = 1  # 1 = beste, höher = schlechter (innerhalb der Kategorie)
@@ -198,9 +199,9 @@ class ItemProfile:
 class ItemSlot:
     """Ein Slot wo Items erscheinen können."""
     name: str
-    scan_region: tuple  # (x1, y1, x2, y2) Bereich zum Scannen
-    click_pos: tuple    # (x, y) Wo geklickt werden soll
-    slot_color: Optional[tuple] = None  # RGB-Farbe des leeren Slots (wird bei Items ausgeschlossen)
+    scan_region: tuple[int, int, int, int]  # (x1, y1, x2, y2) Bereich zum Scannen
+    click_pos: tuple[int, int]              # (x, y) Wo geklickt werden soll
+    slot_color: Optional[tuple[int, int, int]] = None  # RGB-Farbe des leeren Slots
 
     def __str__(self) -> str:
         r = self.scan_region
@@ -249,11 +250,14 @@ class AutoClickerState:
     # Statistiken
     items_found: int = 0
     key_presses: int = 0
+    skipped_cycles: int = 0
+    restarts: int = 0
+    timeouts: int = 0
     start_time: Optional[float] = None
 
     # Bereits geklickte Kategorien im aktuellen Zyklus mit bester Priorität
     # Dict: {kategorie: beste_priorität} - verhindert schlechtere Items derselben Kategorie
-    clicked_categories: dict = field(default_factory=dict)
+    clicked_categories: dict[str, int] = field(default_factory=dict)
 
     # Thread-sichere Events
     stop_event: threading.Event = field(default_factory=threading.Event)
@@ -272,7 +276,7 @@ class AutoClickerState:
     countdown_active: bool = False
 
     # Screenshot-Ordner für die aktuelle Sequenz-Session (z.B. "slots/Screenshots/2025-01-15_14-30-00")
-    session_screenshots_dir: Optional[str] = None
+    session_screenshots_dir: Optional[Path] = None
 
     # Konfiguration (thread-safe über lock)
-    config: dict = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)

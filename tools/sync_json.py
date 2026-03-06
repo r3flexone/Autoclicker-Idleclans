@@ -60,7 +60,7 @@ CONFIG_DEFAULTS = {
     "pixel_wait_tolerance": 10,
     "pixel_wait_timeout": 300,
     "pixel_check_interval": 1,
-    "scan_reverse": False,
+    "scan_reverse": True,
     "marker_count": 5,
     "require_all_markers": True,
     "min_markers_required": 2,

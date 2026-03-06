@@ -45,6 +45,34 @@ pip install pillow opencv-python numpy  # Optional, für erweiterte Features
 python main.py
 ```
 
+## Schnellstart-Anleitung
+
+### Einfache Klick-Sequenz
+
+1. **Punkte aufnehmen**: Maus auf die gewünschte Stelle bewegen, dann `CTRL+ALT+A` drücken. Für jede Klick-Position wiederholen.
+2. **Sequenz erstellen**: `CTRL+ALT+E` öffnet den Editor. Punkte mit Zeiten verknüpfen, z.B.:
+   - `1 30` → Punkt 1 klicken nach 30 Sekunden Wartezeit
+   - `2 0` → Punkt 2 sofort klicken
+   - `3 30-45` → Punkt 3 klicken nach 30-45s zufälliger Wartezeit
+3. **Sequenz starten**: `CTRL+ALT+S`
+
+### Mit Item-Erkennung (automatisches Erkennen + Klicken von Items)
+
+1. **Punkte aufnehmen** wie oben (für alle Klick-Positionen)
+2. **Item-Scan System einrichten** mit `CTRL+ALT+N`:
+   - **Slots** erstellen (Menü 1) → Bereiche wo Items im Spiel erscheinen können
+   - **Items** lernen (Menü 2) → Welche Items erkannt werden sollen (`learn <Slot-Nr>`)
+   - **Scan** erstellen (Menü 3) → Slots + Items verknüpfen und benennen
+3. **Im Sequenz-Editor** (`CTRL+ALT+E`) den Scan als Schritt einfügen: `scan <Name>`
+4. **Starten** mit `CTRL+ALT+S`
+
+### Mit Farb-Triggern (warte bis Farbe erscheint/verschwindet)
+
+Im Sequenz-Editor:
+- `1 pixel` → Warte bis bestimmte Farbe erscheint, dann Punkt 1 klicken
+- `1 gone` → Warte bis Farbe VERSCHWINDET, dann Punkt 1 klicken
+- `wait pixel` → Nur auf Farbe warten (kein Klick)
+
 ## Hotkeys
 
 | Hotkey | Funktion |
@@ -142,7 +170,7 @@ Mit `learn <Nr>` wird ein Item vom entsprechenden Slot gelernt:
 2. 1 Sekunde warten (Item muss sichtbar sein)
 3. Marker-Farben werden automatisch gescannt
 4. Name, Priorität und **Kategorie** eingeben
-5. Optional: Template-Screenshot erstellen
+5. Template-Screenshot wird automatisch erstellt
 6. Optional: Bestätigungs-Klick konfigurieren
 
 ### Bulk-Learn (mehrere Items auf einmal)
@@ -231,9 +259,10 @@ Eine Sequenz besteht aus drei Phasen:
 | `scan <Name>` | Item-Scan ausführen (bestes pro Kategorie) |
 | `scan <Name> best` | Item-Scan: nur 1 Item total (das absolute Beste) |
 | `scan <Name> every` | Item-Scan: alle Treffer ohne Filter (für Duplikate) |
-| `... else skip` | Bei Fehlschlag überspringen |
-| `... else restart` | Bei Fehlschlag Sequenz neu starten |
-| `... else <Nr> [s]` | Bei Fehlschlag Punkt klicken |
+| `... else skip` | Bei Fehlschlag **diesen Schritt** überspringen (nächster Schritt läuft weiter) |
+| `... else skip_cycle` | Bei Fehlschlag **ganzen Zyklus** abbrechen (nächster Zyklus startet) |
+| `... else restart` | Bei Fehlschlag **komplett neu starten** (inkl. INIT) |
+| `... else <Nr> [s]` | Bei Fehlschlag anderen Punkt klicken (optional mit Wartezeit) |
 | `... else key <T>` | Bei Fehlschlag Taste drücken |
 | `ins <Nr>` | Nächsten Schritt an Position einfügen (statt am Ende) |
 | `ins 0` / `ins end` | Insert-Modus beenden |
@@ -287,19 +316,40 @@ So muss man Sequenzen nicht neu erstellen, sondern nur die Punkte einmal lokal a
 Während eine Sequenz läuft:
 
 - **CTRL+ALT+S** - Stoppt die Sequenz komplett
+- **CTRL+ALT+F** - Sanfter Abbruch (aktuellen Zyklus abschließen, dann END-Phase + Stop)
 - **CTRL+ALT+G** - Pausiert/Setzt fort (Fortschritt bleibt erhalten)
 - **CTRL+ALT+K** - Überspringt die aktuelle Wartezeit
 
+### Timeout-Verhalten bei Farb-Triggern
+
+Wenn ein Farb-Trigger die eingestellte Zeit (`pixel_wait_timeout`, Standard: 300s) überschreitet:
+
+1. **Hat der Schritt ein `else`?** → Das `else` wird ausgeführt (z.B. `else skip`, `else skip_cycle`)
+2. **Kein `else` definiert?** → Die globale Fallback-Einstellung `pixel_timeout_action` aus der Config greift
+
+**`pixel_wait_timeout: 0`** deaktiviert den Timeout komplett → wartet unendlich auf die Farbe (nur manueller Skip/Stop beendet)
+
+### Restart vs. Skip Cycle
+
+| Aktion | Beschreibung |
+|--------|-------------|
+| `skip` | Überspringt nur **diesen einen Schritt**, nächster Schritt im selben Zyklus läuft weiter |
+| `skip_cycle` | Überspringt den **gesamten Zyklus**, nächster Zyklus startet (INIT wird nicht wiederholt) |
+| `restart` | **Kompletter Neustart**: INIT-Phase wird erneut ausgeführt, dann Loops von vorne |
+
 ### Statistiken
 
-Nach Sequenz-Ende werden Statistiken angezeigt:
+Nach Sequenz-Ende werden Statistiken angezeigt (Einträge erscheinen nur wenn > 0):
 ```
 STATISTIKEN:
-  Laufzeit:     1h 23m 45s
-  Zyklen:       5
-  Klicks:       1234
-  Items:        56
-  Tasten:       12
+  Laufzeit:       1h 23m 45s
+  Zyklen:         5
+  Klicks:         1234
+  Items:          56
+  Tasten:         12
+  Timeouts:       3
+  Übersprungen:   2
+  Neustarts:      1
 ```
 
 ### Zeitplan (`CTRL+ALT+Z`)
@@ -353,27 +403,45 @@ Ergebnis von `scan items`:
 
 ## Bedingte Logik (ELSE)
 
-Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen definiert werden:
+Für Schritte mit Bedingungen (Scan, Pixel-Trigger) können Fallback-Aktionen definiert werden.
 
 ### ELSE-Syntax
 
 | Befehl | Beschreibung |
 |--------|--------------|
-| `else skip` | Schritt überspringen, Sequenz fortsetzen |
-| `else restart` | Sequenz komplett neu starten |
+| `else skip` | **Nur diesen Schritt** überspringen → nächster Schritt läuft normal weiter |
+| `else skip_cycle` | **Ganzen Zyklus** abbrechen → nächster Zyklus startet von vorne (ohne INIT) |
+| `else restart` | **Komplett neu starten** → inkl. INIT-Phase |
 | `else <Nr>` | Anderen Punkt klicken |
 | `else <Nr> <Sek>` | Warten, dann anderen Punkt klicken |
 | `else key <Taste>` | Taste drücken |
 
+### Unterschied: skip vs. skip_cycle vs. restart
+
+Beispiel-Sequenz mit 3 Schritten in einem Loop:
+```
+Schritt 1: 1 pixel else ???    ← Farbe wird NICHT erkannt
+Schritt 2: 2 5                 ← Punkt 2 klicken nach 5s
+Schritt 3: 3 0                 ← Punkt 3 klicken
+```
+
+| ELSE-Aktion | Was passiert |
+|-------------|-------------|
+| `else skip` | Schritt 1 wird übersprungen → **Schritt 2 und 3 laufen trotzdem** |
+| `else skip_cycle` | Schritt 1, 2 und 3 werden alle abgebrochen → **nächster Zyklus startet** |
+| `else restart` | Alles wird abgebrochen → **INIT wird erneut ausgeführt**, dann Loops von vorne |
+
 ### Beispiele
 
 ```
-scan items else skip           # Wenn kein Item: überspringen
-scan items else restart        # Wenn kein Item: Sequenz neu starten
+scan items else skip           # Wenn kein Item: Schritt überspringen, weiter mit nächstem
+scan items else skip_cycle     # Wenn kein Item: ganzen Zyklus abbrechen, nächster startet
+scan items else restart        # Wenn kein Item: Sequenz komplett neu starten (inkl. INIT)
 scan items else 2              # Wenn kein Item: Punkt 2 klicken
 scan items else 2 5            # Wenn kein Item: 5s warten, dann Punkt 2 klicken
-1 pixel else skip              # Wenn Timeout: überspringen
-1 pixel else restart           # Wenn Timeout: von vorne beginnen
+1 pixel else skip              # Wenn Timeout: nur diesen Schritt überspringen
+1 pixel else skip_cycle        # Wenn Timeout: ganzen Zyklus abbrechen
+1 pixel else restart           # Wenn Timeout: von vorne beginnen (inkl. INIT)
 1 pixel else key enter         # Wenn Timeout: Enter drücken
 wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ```
@@ -381,10 +449,20 @@ wait gone else skip            # Wenn Farbe nicht verschwindet: überspringen
 ### Wann wird ELSE ausgelöst?
 
 - **Item-Scan**: Wenn kein Item gefunden wird
-- **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 60s)
+- **Pixel-Trigger**: Wenn Timeout erreicht wird (Standard: 300s, `0` = deaktiviert)
 - **Wait Gone**: Wenn Farbe nicht verschwindet
 
-Ohne `else` stoppt die Sequenz bei Fehlschlag.
+### Was passiert OHNE `else`?
+
+Wenn ein Pixel-Schritt **kein** `else` definiert hat und der Timeout abläuft, greift die **globale Fallback-Einstellung** `pixel_timeout_action` aus der `config.json`:
+
+| Wert | Verhalten |
+|------|-----------|
+| `skip_cycle` (Standard) | Ganzen Zyklus abbrechen, nächster startet |
+| `restart` | Komplett neu starten inkl. INIT |
+| `stop` | Sequenz komplett stoppen |
+
+**Wichtig:** Diese Einstellung ist nur ein Sicherheitsnetz. Wenn du bei deinen Pixel-Schritten immer ein `else` definierst (z.B. `else skip` oder `else skip_cycle`), wird `pixel_timeout_action` **nie** verwendet.
 
 ## IDE-Kompatibilität (PyCharm, VS Code, etc.)
 
@@ -415,10 +493,13 @@ Wird beim ersten Start automatisch erstellt:
   "color_tolerance": 0,
   "pixel_wait_tolerance": 10,
   "pixel_wait_timeout": 300,
+  "pixel_timeout_action": "skip_cycle",
   "pixel_check_interval": 1,
   "scan_pixel_step": 2,
   "show_pixel_delay": 0.3,
-  "scan_reverse": false,
+  "scan_reverse": true,
+  "scan_click_immediate": false,
+  "scan_park_mouse": false,
   "scan_slot_delay": 0.1,
   "item_click_delay": 1.0,
   "marker_count": 5,
@@ -460,7 +541,8 @@ Wird beim ersten Start automatisch erstellt:
 |--------|--------------|
 | `color_tolerance` | Toleranz für Item-Scan (0 = exakt, höher = toleranter) |
 | `pixel_wait_tolerance` | Toleranz für Pixel-Trigger (niedriger = genauer) |
-| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300) |
+| `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300, `0` = unendlich) |
+| `pixel_timeout_action` | **Nur Fallback** wenn kein `else` definiert: `skip_cycle` (Standard), `restart`, `stop` |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
 | `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
 | `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
@@ -470,6 +552,8 @@ Wird beim ersten Start automatisch erstellt:
 | Option | Beschreibung |
 |--------|--------------|
 | `scan_reverse` | Slots von hinten nach vorne scannen |
+| `scan_click_immediate` | `true` = Scan→Klick pro Slot (sofort klicken), `false` = alle scannen, dann alle klicken (Standard) |
+| `scan_park_mouse` | `true` = Maus zur Bildschirmmitte parken, `[x, y]` = Maus zu bestimmter Position parken, `false` = Maus nicht bewegen (Standard) |
 | `scan_slot_delay` | Pause zwischen Slot-Scans in Sekunden (Standard: 0.1) |
 | `item_click_delay` | Pause nach Item-Klick in Sekunden (Standard: 1.0) |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
@@ -533,8 +617,8 @@ Autoclicker-Idleclans/
 │   └── presets/            # Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
-├── screenshots/            # Sequenz-Screenshots (nach Session gruppiert)
-│   └── YYYY-MM-DD_HH-MM-SS/  # Pro Sequenz-Session ein Unterordner
+├── screenshots/            # Sequenz-Screenshots (nach Tag gruppiert)
+│   └── YYYY-MM-DD/            # Pro Tag ein Unterordner
 └── tools/                  # Hilfswerkzeuge
     ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
     └── slot_tester.py      # Slot-Erkennung testen
@@ -638,6 +722,21 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Checkbox-Ansicht**: `show`/`s` im Scan-Editor zeigt `[X]`/`[ ]` für zugewiesene Slots/Items
+- **Screenshots nach Tag**: Sequenz-Screenshots werden nach Tag gruppiert (`YYYY-MM-DD/`) statt pro Session
+- **Auto-Template**: `learn` erstellt Templates automatisch (kein manuelles Bestätigen mehr)
+- **Maus parken: true**: `scan_park_mouse: true` parkt die Maus zur Bildschirmmitte (zusätzlich zu `[x, y]`)
+- **Immediate Scan-Modus**: `scan_click_immediate: true` scannt und klickt jeden Slot einzeln (Scan→Klick→Scan→Klick) statt alle zu scannen und dann zu klicken
+- **Maus parken vor Scan**: `scan_park_mouse: [x, y]` bewegt die Maus vor dem Scannen weg, damit Tooltips/Hover-Effekte den Screenshot nicht stören
+- **Farbige Ausgaben überall**: Alle `[DEBUG]`-, `[PAUSE]`- und Menü-Ausgaben sind jetzt farbig (nicht nur der Worker)
+- **Restart = Kompletter Neustart**: `restart` führt jetzt INIT-Phase erneut aus (nicht nur Loops)
+- **Erweiterte Statistiken**: Timeouts, übersprungene Zyklen und Neustarts werden gezählt und angezeigt
+- **Unendliches Warten**: `pixel_wait_timeout: 0` deaktiviert den Timeout (wartet unendlich auf Farbe)
+- **Standard-Timeout-Aktion**: `pixel_timeout_action` Default von `stop` auf `skip_cycle` geändert
+- **Verbesserte Konsolen-Hilfe**: Ausführliche Schritt-für-Schritt-Anleitung beim Programmstart
+
+### Vorherige Änderungen
 
 - **INIT-Phase**: Einmalige Initialisierung vor allen Zyklen (ersetzt START-Phase)
 - **Sanfter Abbruch** (`CTRL+ALT+F`): Aktuellen Zyklus abschließen, dann END-Phase ausführen und stoppen

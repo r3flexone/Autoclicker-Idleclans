@@ -328,7 +328,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     save_data(state)
 
     # Zusammenfassung
-    all_steps = [s for lp in loop_phases for s in lp.steps] + end_steps
+    all_steps = init_steps + [s for lp in loop_phases for s in lp.steps] + end_steps
     pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
 
     print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq_name}' gespeichert!")

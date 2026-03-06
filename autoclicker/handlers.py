@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
-from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, coord_context
+from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, coord_context, dbg
 from .winapi import get_cursor_pos, set_cursor_pos, user32
 from .persistence import (
     save_data, ensure_sequences_dir, list_available_sequences,
@@ -79,15 +79,15 @@ def handle_reset(state: AutoClickerState) -> None:
             return
 
     print(header("FACTORY RESET - ALLES WIRD GELÖSCHT!"))
-    print("\nFolgendes wird gelöscht:")
-    print(f"  - {len(state.points)} Punkt(e)")
-    print(f"  - {len(list_available_sequences())} Sequenz-Datei(en)")
-    print(f"  - {len(state.global_slots)} Slot(s)")
-    print(f"  - {len(state.global_items)} Item(s)")
-    print(f"  - {len(state.item_scans)} Item-Scan(s)")
-    print(f"  - Config-Einstellungen")
-    print("\nDas Programm wird danach wie frisch von GitHub sein!")
-    print("\nBist du sicher? Tippe 'JA' zum Bestätigen:")
+    print(f"\n{col('Folgendes wird gelöscht:', 'red')}")
+    print(f"  {col('-', 'red')} {len(state.points)} Punkt(e)")
+    print(f"  {col('-', 'red')} {len(list_available_sequences())} Sequenz-Datei(en)")
+    print(f"  {col('-', 'red')} {len(state.global_slots)} Slot(s)")
+    print(f"  {col('-', 'red')} {len(state.global_items)} Item(s)")
+    print(f"  {col('-', 'red')} {len(state.item_scans)} Item-Scan(s)")
+    print(f"  {col('-', 'red')} Config-Einstellungen")
+    print(f"\n{col('Das Programm wird danach wie frisch von GitHub sein!', 'yellow')}")
+    print(f"\nBist du sicher? Tippe {col('JA', 'red')} zum Bestätigen:")
 
     try:
         confirm_text = safe_input("> ").strip().upper()
@@ -110,13 +110,13 @@ def handle_reset(state: AutoClickerState) -> None:
             folder_path = Path(folder)
             if folder_path.exists():
                 shutil.rmtree(folder_path)
-                print(f"  - {folder}/ gelöscht")
+                print(f"  {col('-', 'red')} {folder}/ {col('gelöscht', 'red')}")
 
         # Config löschen
         config_path = Path(CONFIG_FILE)
         if config_path.exists():
             config_path.unlink()
-            print(f"  - {CONFIG_FILE} gelöscht")
+            print(f"  {col('-', 'red')} {CONFIG_FILE} {col('gelöscht', 'red')}")
 
         # Ordner neu erstellen
         ensure_sequences_dir()
@@ -173,14 +173,14 @@ def handle_show(state: AutoClickerState) -> None:
             return
         num_points = len(state.points)
 
-    print("-" * 50)
-    print("Optionen:")
-    print("  <Nr>        - Punkt testen (Maus hinbewegen ohne Klick)")
-    print("  <Nr> <Name> - Punkt umbenennen")
-    print("  del <Nr>    - Punkt löschen")
-    print("  done / d    - Zurück")
-    print("  Enter       - Zurück")
-    print("-" * 50)
+    print(col("-" * 50, 'gray'))
+    print(col("Optionen:", 'bold'))
+    print(f"  {col('<Nr>', 'yellow')}        - Punkt testen (Maus hinbewegen ohne Klick)")
+    print(f"  {col('<Nr> <Name>', 'yellow')} - Punkt umbenennen")
+    print(f"  {col('del <Nr>', 'yellow')}    - Punkt löschen")
+    print(f"  {col('done / d', 'yellow')}    - Zurück")
+    print(f"  {col('Enter', 'yellow')}       - Zurück")
+    print(col("-" * 50, 'gray'))
 
     while True:
         try:
@@ -374,18 +374,18 @@ def handle_schedule(state: AutoClickerState) -> None:
         if not state.active_sequence:
             return  # Nichts geladen
 
-    print("\n" + "=" * 50)
-    print("ZEITPLAN: Sequenz zu bestimmter Zeit starten")
-    print("=" * 50)
-    print(f"\nAktive Sequenz: {state.active_sequence.name}")
-    print("\nZeit-Formate:")
-    print("  14:30    - Startet um 14:30 Uhr")
-    print("  1430     - Startet um 14:30 Uhr (4-stellig, 0000-2359)")
-    print("  +30s     - Startet in 30 Sekunden")
-    print("  +30m     - Startet in 30 Minuten (+5 = +5m)")
-    print("  +2h      - Startet in 2 Stunden")
-    print("  30s/30m/2h - Wartet (Einheit s/m/h erforderlich!)")
-    print("\nZeit eingeben (oder 'cancel'):")
+    print("\n" + col("=" * 50, 'cyan'))
+    print(f"  {col('ZEITPLAN: Sequenz zu bestimmter Zeit starten', 'bold')}")
+    print(col("=" * 50, 'cyan'))
+    print(f"\nAktive Sequenz: {col(state.active_sequence.name, 'cyan')}")
+    print(f"\n{col('Zeit-Formate:', 'bold')}")
+    print(f"  {col('14:30', 'yellow')}    - Startet um 14:30 Uhr")
+    print(f"  {col('1430', 'yellow')}     - Startet um 14:30 Uhr (4-stellig, 0000-2359)")
+    print(f"  {col('+30s', 'yellow')}     - Startet in 30 Sekunden")
+    print(f"  {col('+30m', 'yellow')}     - Startet in 30 Minuten (+5 = +5m)")
+    print(f"  {col('+2h', 'yellow')}      - Startet in 2 Stunden")
+    print(f"  {col('30s/30m/2h', 'yellow')} - Wartet (Einheit s/m/h erforderlich!)")
+    print(f"\nZeit eingeben (oder {col('cancel', 'yellow')}):")
 
     try:
         time_input = safe_input("> ").strip()
@@ -398,7 +398,7 @@ def handle_schedule(state: AutoClickerState) -> None:
 
         # Debug: Zeige was geparst wurde
         if state.config.get("debug_mode", False):
-            print(f"[DEBUG] Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}', target_timestamp={target_timestamp}")
+            print(dbg(f"Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}', target_timestamp={target_timestamp}"))
 
         if seconds < 0:
             print(err(desc))
@@ -419,9 +419,9 @@ def handle_schedule(state: AutoClickerState) -> None:
             target_time = datetime.now().timestamp() + seconds
         target_dt = datetime.fromtimestamp(target_time)
         print(f"\n{col('[GEPLANT]', 'cyan')} Sequenz '{state.active_sequence.name}' startet {desc}")
-        print(f"          Zielzeit: {target_dt.strftime('%H:%M:%S')}")
-        print(f"          Wartezeit: {format_duration(seconds)}")
-        print("\n          Enter drücken zum Starten, 'cancel' zum Abbrechen")
+        print(f"          {col('Zielzeit:', 'cyan')} {target_dt.strftime('%H:%M:%S')}")
+        print(f"          {col('Wartezeit:', 'cyan')} {format_duration(seconds)}")
+        print(f"\n          {col('Enter', 'yellow')} drücken zum Starten, {col('cancel', 'yellow')} zum Abbrechen")
 
         # Bestätigung abwarten
         confirm_input = safe_input("> ").strip()

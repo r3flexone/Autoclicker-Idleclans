@@ -375,7 +375,7 @@ DEFAULT_CONFIG = {
     "show_pixel_delay": 0.3,            # Wie lange Pixel-Position angezeigt wird (Sekunden)
 
     # === ITEM-SCAN EINSTELLUNGEN ===
-    "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
+    "scan_reverse": True,               # True = Slots rückwärts scannen (4,3,2,1)
     "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
     "item_click_delay": 1.0,            # Pause nach Item-Klick in Sekunden
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen

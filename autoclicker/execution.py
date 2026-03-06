@@ -3,6 +3,7 @@ Sequenz-Ausführung für den Autoclicker.
 Enthält die Worker-Funktion und Step-Ausführungslogik.
 """
 
+import ctypes
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from .models import AutoClickerState, SequenceStep
 from .winapi import (
     send_click, send_key, check_failsafe, set_cursor_pos
 )
-from .utils import clear_line, wait_while_paused, safe_input, format_duration, col, ok, err, info, hint
+from .utils import clear_line, wait_while_paused, safe_input, format_duration, col, ok, err, info, hint, dbg
 from .imaging import (
     PILLOW_AVAILABLE, take_screenshot, color_distance, get_color_name,
     find_color_in_image, match_template_in_image
@@ -86,7 +87,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 
     if step.else_action == "skip":
         if debug:
-            print(f"[DEBUG] ELSE: übersprungen")
+            print(dbg("ELSE: übersprungen"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", _c), end="", flush=True)
@@ -108,7 +109,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             state.total_clicks += 1
 
         if debug:
-            print(f"[DEBUG] ELSE: Klick auf '{name}' ({step.else_x}, {step.else_y})")
+            print(dbg(f"ELSE: Klick auf '{name}' ({step.else_x}, {step.else_y})"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", _c), end="", flush=True)
@@ -127,7 +128,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             with state.lock:
                 state.key_presses += 1
             if debug:
-                print(f"[DEBUG] ELSE: Taste '{step.else_key}'")
+                print(dbg(f"ELSE: Taste '{step.else_key}'"))
             else:
                 clear_line()
                 print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", _c), end="", flush=True)
@@ -135,7 +136,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 
     elif step.else_action == "restart":
         if debug:
-            print(f"[DEBUG] ELSE: Neustart!")
+            print(dbg("ELSE: Neustart!"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Neustart!", _c), end="", flush=True)
@@ -144,7 +145,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 
     elif step.else_action == "skip_cycle":
         if debug:
-            print(f"[DEBUG] ELSE: Zyklus überspringen!")
+            print(dbg("ELSE: Zyklus überspringen!"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Zyklus überspringen!", _c), end="", flush=True)
@@ -154,8 +155,10 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     return True
 
 
-def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all") -> list:
-    """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück."""
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all",
+                      slots_override: list = None) -> list:
+    """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück.
+    slots_override: Wenn gesetzt, werden nur diese Slots gescannt (ohne Reverse-Logik)."""
     if scan_name not in state.item_scans:
         print(err(f"Item-Scan '{scan_name}' nicht gefunden!"))
         return []
@@ -166,20 +169,46 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         return []
 
     found_items = []
-    slots_to_scan = list(config.slots)
 
-    if state.config.get("scan_reverse", False):
-        slots_to_scan = list(reversed(slots_to_scan))
+    if slots_override is not None:
+        slots_to_scan = list(slots_override)
+    else:
+        slots_to_scan = list(config.slots)
+        if state.config.get("scan_reverse", False):
+            slots_to_scan = list(reversed(slots_to_scan))
 
     scan_delay = state.config.get("scan_slot_delay", 0.1)
     debug = state.config.get("debug_detection", False)
 
+    # Maus vor dem Scannen wegparken (verhindert Tooltip/Hover-Störungen)
+    park_pos = state.config.get("scan_park_mouse", False)
+    if park_pos:
+        if isinstance(park_pos, (list, tuple)) and len(park_pos) == 2:
+            px, py = int(park_pos[0]), int(park_pos[1])
+        else:
+            # true = Bildschirmmitte
+            try:
+                px = ctypes.windll.user32.GetSystemMetrics(0) // 2
+                py = ctypes.windll.user32.GetSystemMetrics(1) // 2
+            except (AttributeError, OSError):
+                px, py = 960, 540  # Fallback 1920x1080
+        set_cursor_pos(px, py)
+        time.sleep(0.05)  # Kurz warten bis Maus angekommen & Tooltip weg
+
     for idx, slot in enumerate(slots_to_scan):
-        if state.stop_event.is_set():
+        if state.stop_event.is_set() or state.skip_event.is_set():
             break
 
+        # Pause respektieren zwischen Slots
+        if state.pause_event.is_set():
+            while state.pause_event.is_set() and not state.stop_event.is_set():
+                state.stop_event.wait(0.2)
+            if state.stop_event.is_set():
+                break
+
         if scan_delay > 0 and idx > 0:
-            time.sleep(scan_delay)
+            if state.stop_event.wait(scan_delay):
+                break
 
         screenshot_start = time.time()
         img = take_screenshot(slot.scan_region)
@@ -190,7 +219,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
 
         if debug:
             size_info = f"{img.size[0]}x{img.size[1]}" if img else "?"
-            print(f"[DEBUG] Scanne {slot.name}... (Screenshot: {screenshot_ms:.0f}ms, {size_info}px)")
+            print(dbg(f"Scanne {slot.name}... (Screenshot: {screenshot_ms:.0f}ms, {size_info}px)"))
 
         for item in config.items:
             template_ok = True
@@ -234,11 +263,11 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                     info_parts.append(marker_info)
 
                 if not info_parts:
-                    print(f"[DEBUG]   → {item.name}: kein Template/Marker definiert")
+                    print(dbg(f"  → {item.name}: kein Template/Marker definiert"))
                 elif template_ok and marker_ok:
-                    print(f"[DEBUG]   → {item.name} gefunden! ({', '.join(info_parts)})")
+                    print(dbg(f"  → {item.name} gefunden! ({', '.join(info_parts)})"))
                 else:
-                    print(f"[DEBUG]   → {item.name}: {', '.join(info_parts)}")
+                    print(dbg(f"  → {item.name}: {', '.join(info_parts)}"))
 
             # 4. Item gefunden wenn Template UND Marker OK
             if template_ok and marker_ok and (item.template or item.marker_colors):
@@ -264,7 +293,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                 best_clicked_prio = state.clicked_categories[cat]
                 if priority >= best_clicked_prio:
                     if debug:
-                        print(f"[DEBUG]   → {item.name} übersprungen ('{cat}' bereits geklickt)")
+                        print(dbg(f"  → {item.name} übersprungen ('{cat}' bereits geklickt)"))
                     continue
 
         if cat not in best_per_category:
@@ -288,18 +317,61 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         return [(best_slot.click_pos, best_item, best_priority)]
 
 
+def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool) -> bool:
+    """Klickt ein gefundenes Item (inkl. Confirm-Klick und Delays).
+    Gibt False zurück wenn stop_event während Warten feuert."""
+    if debug:
+        print(dbg(f"Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})"))
+
+    send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
+               state.config.get("post_click_delay", 0.05))
+    with state.lock:
+        state.total_clicks += 1
+        state.items_found += 1
+        cat = item.category or item.name
+        if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
+            state.clicked_categories[cat] = priority
+
+    if item.confirm_point is not None:
+        if item.confirm_delay > 0:
+            if debug:
+                print(dbg(f"Warte {item.confirm_delay}s vor Confirm..."))
+            if state.stop_event.wait(item.confirm_delay):
+                return False
+
+        if debug:
+            print(dbg(f"Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})"))
+
+        send_click(item.confirm_point.x, item.confirm_point.y,
+                   state.config.get("click_move_delay", 0.01),
+                   state.config.get("post_click_delay", 0.05))
+        with state.lock:
+            state.total_clicks += 1
+
+    click_delay = state.config.get("item_click_delay", 1.0)
+    if click_delay > 0:
+        if state.stop_event.wait(click_delay):
+            return False
+    return True
+
+
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Item-Scan Schritt aus."""
     debug = state.config.get("debug_mode", False)
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
+    immediate = state.config.get("scan_click_immediate", False)
 
     if debug:
-        print(f"[DEBUG] Starte Scan '{step.item_scan}' ({mode_str})...")
+        im_str = " [IMMEDIATE]" if immediate else ""
+        print(dbg(f"Starte Scan '{step.item_scan}' ({mode_str}{im_str})..."))
     else:
         clear_line()
         print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan '{step.item_scan}' ({mode_str})...", _phase_color(phase)), flush=True)
+
+    if immediate:
+        return _execute_item_scan_immediate(state, step, step_num, total_steps, phase, mode, debug)
 
     scan_results = execute_item_scan(state, step.item_scan, mode)
 
@@ -307,40 +379,11 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         for i, (pos, item, priority) in enumerate(scan_results):
             if state.stop_event.is_set():
                 return False
-
-            if debug:
-                print(f"[DEBUG] Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})")
-
-            send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
-                       state.config.get("post_click_delay", 0.05))
-            with state.lock:
-                state.total_clicks += 1
-                state.items_found += 1
-                cat = item.category or item.name
-                if cat not in state.clicked_categories or priority < state.clicked_categories[cat]:
-                    state.clicked_categories[cat] = priority
-
-            if item.confirm_point is not None:
-                if item.confirm_delay > 0:
-                    if debug:
-                        print(f"[DEBUG] Warte {item.confirm_delay}s vor Confirm...")
-                    time.sleep(item.confirm_delay)
-
-                if debug:
-                    print(f"[DEBUG] Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})")
-
-                send_click(item.confirm_point.x, item.confirm_point.y,
-                           state.config.get("click_move_delay", 0.01),
-                           state.config.get("post_click_delay", 0.05))
-                with state.lock:
-                    state.total_clicks += 1
-
-            click_delay = state.config.get("item_click_delay", 1.0)
-            if click_delay > 0:
-                time.sleep(click_delay)
+            if not _click_scan_result(state, pos, item, priority, debug):
+                return False
 
         if debug:
-            print(f"[DEBUG] Scan fertig: {len(scan_results)} Item(s) geklickt")
+            print(dbg(f"Scan fertig: {len(scan_results)} Item(s) geklickt"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!", _phase_color(phase)), end="", flush=True)
@@ -348,7 +391,62 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
         if step.else_action:
             return execute_else_action(state, step, phase, step_num, total_steps)
         if debug:
-            print(f"[DEBUG] Scan fertig: kein Item gefunden")
+            print(dbg("Scan fertig: kein Item gefunden"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", _phase_color(phase)), end="", flush=True)
+
+    return True
+
+
+def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
+                                  step_num: int, total_steps: int, phase: str,
+                                  mode: str, debug: bool) -> bool:
+    """Immediate-Modus: Scan→Klick pro Slot statt alle scannen, dann alle klicken."""
+    config = state.item_scans.get(step.item_scan)
+    if not config or not config.slots or not config.items:
+        return True
+
+    slots = list(config.slots)
+    if state.config.get("scan_reverse", False):
+        slots = list(reversed(slots))
+
+    # clicked_categories VOR dem Loop sichern, damit Klicks innerhalb
+    # dieses Scan-Schritts sich nicht gegenseitig ausfiltern
+    with state.lock:
+        saved_categories = dict(state.clicked_categories)
+
+    total_clicked = 0
+    for slot in slots:
+        if state.stop_event.is_set():
+            return False
+
+        # Für jeden Slot den Ausgangszustand wiederherstellen
+        with state.lock:
+            state.clicked_categories = dict(saved_categories)
+
+        # Einen einzelnen Slot scannen
+        results = execute_item_scan(state, step.item_scan, mode, slots_override=[slot])
+
+        if results:
+            for pos, item, priority in results:
+                if state.stop_event.is_set():
+                    return False
+                if not _click_scan_result(state, pos, item, priority, debug):
+                    return False
+                total_clicked += 1
+
+    if total_clicked > 0:
+        if debug:
+            print(dbg(f"Scan fertig: {total_clicked} Item(s) geklickt (immediate)"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {total_clicked} Item(s)!", _phase_color(phase)), end="", flush=True)
+    else:
+        if step.else_action:
+            return execute_else_action(state, step, phase, step_num, total_steps)
+        if debug:
+            print(dbg("Scan fertig: kein Item gefunden (immediate)"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Scan: kein Item gefunden", _phase_color(phase)), end="", flush=True)
@@ -373,7 +471,7 @@ def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
         with state.lock:
             state.key_presses += 1
         if debug:
-            print(f"[DEBUG] Taste '{step.key_press}' | Gesamt: {state.key_presses}")
+            print(dbg(f"Taste '{step.key_press}' | Gesamt: {state.key_presses}"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Taste '{step.key_press}'!", _phase_color(phase)), end="", flush=True)
@@ -393,7 +491,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
         time.sleep(state.config.get("show_pixel_delay", 0.3))
 
-    timeout = state.config.get("pixel_wait_timeout", 30)
+    timeout = state.config.get("pixel_wait_timeout", 300)
     start_time = time.time()
     expected_name = get_color_name(step.wait_color)
 
@@ -425,7 +523,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 if condition_met:
                     msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
                     if debug:
-                        print(f"[DEBUG] {msg} | Erwartet: {expected_name} RGB{step.wait_color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
+                        print(dbg(f"{msg} | Erwartet: {expected_name} RGB{step.wait_color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
                     else:
                         clear_line()
                         print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", _phase_color(phase)), end="", flush=True)
@@ -433,25 +531,27 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
                 if debug:
                     # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
-                    print(f"[DEBUG] Warte auf {expected_name} RGB{step.wait_color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}")
+                    print(dbg(f"Warte auf {expected_name} RGB{step.wait_color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
                 else:
                     # Ohne Debug: Auf gleicher Zeile überschreiben
                     clear_line()
                     print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", _phase_color(phase)), end="", flush=True)
 
         elapsed = time.time() - start_time
-        if elapsed >= timeout:
+        if timeout > 0 and elapsed >= timeout:
+            with state.lock:
+                state.timeouts += 1
             clear_line()
             print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
             if step.else_action:
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
-            timeout_action = state.config.get("pixel_timeout_action", "stop")
+            timeout_action = state.config.get("pixel_timeout_action", "skip_cycle")
             if timeout_action == "skip_cycle":
                 print(col(f" → Zyklus wird übersprungen", "yellow"))
                 state.skip_cycle_event.set()
             elif timeout_action == "restart":
-                print(col(f" → Sequenz wird neu gestartet", "yellow"))
+                print(col(f" → Sequenz wird neu gestartet (inkl. INIT)", "yellow"))
                 state.restart_event.set()
             else:
                 print(col(f" → Stoppe.", "red"))
@@ -462,6 +562,9 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         if state.stop_event.wait(check_interval):
             return False
 
+    # stop_event oder wait_while_paused-Abbruch → nicht weitermachen
+    if state.stop_event.is_set():
+        return False
     return True
 
 
@@ -487,7 +590,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
 
         if debug:
             name = step.name if step.name else f"Punkt"
-            print(f"[DEBUG] Klick auf '{name}' ({step.x}, {step.y}) | Gesamt: {state.total_clicks}")
+            print(dbg(f"Klick auf '{name}' ({step.x}, {step.y}) | Gesamt: {state.total_clicks}"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", _phase_color(phase)), end="", flush=True)
@@ -515,14 +618,14 @@ def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
         return True  # Nicht als Fehler werten, Sequenz läuft weiter
 
     if not state.session_screenshots_dir:
-        session_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        state.session_screenshots_dir = str(Path(SCREENSHOTS_DIR) / session_ts)
-    screenshots_dir = Path(state.session_screenshots_dir)
+        session_ts = datetime.now().strftime("%Y-%m-%d")
+        state.session_screenshots_dir = Path(SCREENSHOTS_DIR) / session_ts
+    screenshots_dir = state.session_screenshots_dir
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
     filename = f"seq_{timestamp}.png"
     path = screenshots_dir / filename
-    img.save(str(path))
+    img.save(path)
 
     region_str = f"({region[0]},{region[1]})→({region[2]},{region[3]})" if region else "Vollbild"
     print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SCREENSHOT {region_str} → {filename}", _phase_color(phase)))
@@ -538,7 +641,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
         return False
 
     if state.config.get("debug_mode", False):
-        print(f"[DEBUG] Step {step_num}: name='{step.name}', x={step.x}, y={step.y}")
+        print(dbg(f"Step {step_num}: name='{step.name}', x={step.x}, y={step.y}"))
 
     if step.screenshot_only:
         return _execute_screenshot_step(state, step, step_num, total_steps, phase)
@@ -563,7 +666,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 
     if step.wait_only:
         clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)))
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)), end="", flush=True)
         return True
 
     return _execute_click(state, step, step_num, total_steps, phase)
@@ -621,117 +724,131 @@ def sequence_worker(state: AutoClickerState) -> None:
             return
 
         if state.config.get("debug_mode", False):
-            print("\n" + "=" * 60)
-            print("[DEBUG] GELADENE SEQUENZ-SCHRITTE:")
+            print("\n" + col("=" * 60, 'gray'))
+            print(dbg("GELADENE SEQUENZ-SCHRITTE:"))
             for i, step in enumerate(sequence.init_steps):
-                print(f"  INIT[{i+1}]: {step.name or 'unnamed'}")
+                print(col(f"  INIT[{i+1}]: {step.name or 'unnamed'}", 'green'))
             for lp in sequence.loop_phases:
-                print(f"  --- {lp.name} (x{lp.repeat}) ---")
+                print(col(f"  --- {lp.name} (x{lp.repeat}) ---", 'magenta'))
                 for i, step in enumerate(lp.steps):
-                    print(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'}")
-            print("=" * 60)
+                    print(col(f"  {lp.name}[{i+1}]: {step.name or 'unnamed'}", 'magenta'))
+            print(col("=" * 60, 'gray'))
             if not state.scheduled_start:
-                print("[DEBUG] Drücke Enter zum Starten...")
+                print(dbg("Drücke Enter zum Starten..."))
                 safe_input()
             state.scheduled_start = False
 
         state.total_clicks = 0
         state.items_found = 0
         state.key_presses = 0
+        state.skipped_cycles = 0
+        state.restarts = 0
+        state.timeouts = 0
         state.start_time = time.time()
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
 
-    # INIT-Phase (einmalig vor allen Zyklen)
-    if has_init and not state.stop_event.is_set():
-        print(col("\n[INIT] Führe Initialisierung aus (einmalig)...", "green"))
-        total_init = len(sequence.init_steps)
-        for i, step in enumerate(sequence.init_steps):
-            if state.stop_event.is_set() or state.quit_event.is_set():
-                break
-            if not execute_step(state, step, i + 1, total_init, "INIT"):
-                break
-        if not state.stop_event.is_set() and not state.quit_event.is_set():
-            print(col("\n[INIT] Initialisierung abgeschlossen.", "green"))
-
+    # Äußere Schleife: Ermöglicht kompletten Neustart (inkl. INIT) bei restart_event
     cycle_count = 0
+    do_restart = True  # Erster Durchlauf startet immer
+    while do_restart and not state.stop_event.is_set() and not state.quit_event.is_set():
+        do_restart = False
 
-    while not state.stop_event.is_set() and not state.quit_event.is_set():
-        if state.skip_cycle_event.is_set():
-            state.skip_cycle_event.clear()
-            print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
-
-        if state.restart_event.is_set():
-            state.restart_event.clear()
-            cycle_count = 0
-            print(col("\n[RESTART] Sequenz wird neu gestartet...", "yellow"))
-
-        cycle_count += 1
-
-        with state.lock:
-            state.clicked_categories.clear()
-
-        if total_cycles > 0 and cycle_count > total_cycles:
-            print(f"\n{ok(f'Alle {total_cycles} Zyklen abgeschlossen!')}")
-            break
-
-        cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
-
-        # LOOP-Phasen
-        if has_loops and not state.stop_event.is_set():
-            for loop_phase in sequence.loop_phases:
+        # INIT-Phase
+        if has_init and not state.stop_event.is_set():
+            print(col("\n[INIT] Führe Initialisierung aus...", "green"))
+            total_init = len(sequence.init_steps)
+            for i, step in enumerate(sequence.init_steps):
                 if state.stop_event.is_set() or state.quit_event.is_set():
                     break
+                if not execute_step(state, step, i + 1, total_init, "INIT"):
+                    break
+            if not state.stop_event.is_set() and not state.quit_event.is_set():
+                print(col("\n[INIT] Initialisierung abgeschlossen.", "green"))
 
-                total_steps = len(loop_phase.steps)
-                if total_steps == 0:
-                    continue
+        cycle_count = 0
 
-                print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
+        while not state.stop_event.is_set() and not state.quit_event.is_set():
+            if state.skip_cycle_event.is_set():
+                state.skip_cycle_event.clear()
+                with state.lock:
+                    state.skipped_cycles += 1
+                print(col("\n[SKIP] Zyklus übersprungen, starte nächsten...", "yellow"))
 
-                for repeat_num in range(1, loop_phase.repeat + 1):
+            if state.restart_event.is_set():
+                state.restart_event.clear()
+                do_restart = True
+                with state.lock:
+                    state.restarts += 1
+                print(col("\n[RESTART] Kompletter Neustart (inkl. INIT)...", "yellow"))
+                break  # Bricht innere Schleife ab → äußere Schleife startet INIT erneut
+
+            cycle_count += 1
+
+            with state.lock:
+                state.clicked_categories.clear()
+
+            if total_cycles > 0 and cycle_count > total_cycles:
+                print(f"\n{ok(f'Alle {total_cycles} Zyklen abgeschlossen!')}")
+                break
+
+            cycle_str = f"Zyklus {cycle_count}" if total_cycles == 0 else f"Zyklus {cycle_count}/{total_cycles}"
+
+            # LOOP-Phasen
+            if has_loops and not state.stop_event.is_set():
+                for loop_phase in sequence.loop_phases:
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
 
-                    if state.config.get("debug_mode", False):
-                        print(f"[DEBUG] Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'")
+                    total_steps = len(loop_phase.steps)
+                    if total_steps == 0:
+                        continue
 
-                    for i, step in enumerate(loop_phase.steps):
+                    print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
+
+                    for repeat_num in range(1, loop_phase.repeat + 1):
                         if state.stop_event.is_set() or state.quit_event.is_set():
                             break
 
-                        phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
-                        if not execute_step(state, step, i + 1, total_steps, phase_label):
+                        if state.config.get("debug_mode", False):
+                            print(dbg(f"Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'"))
+
+                        for i, step in enumerate(loop_phase.steps):
+                            if state.stop_event.is_set() or state.quit_event.is_set():
+                                break
+
+                            phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
+                            if not execute_step(state, step, i + 1, total_steps, phase_label):
+                                break
+
+                        if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                             break
 
                     if state.skip_cycle_event.is_set() or state.restart_event.is_set():
                         break
 
-                if state.skip_cycle_event.is_set() or state.restart_event.is_set():
-                    break
+                    if not state.stop_event.is_set() and not state.skip_cycle_event.is_set():
+                        print(col(f"\n[{loop_phase.name}] Abgeschlossen.", "magenta"))
 
-                if not state.stop_event.is_set() and not state.skip_cycle_event.is_set():
-                    print(col(f"\n[{loop_phase.name}] Abgeschlossen.", "magenta"))
+                if state.skip_cycle_event.is_set():
+                    continue
+                if state.restart_event.is_set():
+                    continue  # → wird oben in der inneren Schleife per break behandelt
+                if state.stop_event.is_set():
+                    break
 
             if state.skip_cycle_event.is_set():
                 continue
             if state.restart_event.is_set():
                 continue
-            if state.stop_event.is_set():
+
+            if not has_loops or total_cycles == 1:
+                print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
                 break
 
-        if state.skip_cycle_event.is_set():
-            continue
-        if state.restart_event.is_set():
-            continue
-
-        if not has_loops or total_cycles == 1:
-            print(f"\n{ok('Sequenz einmal durchgelaufen.')}")
-            break
-
-        if state.finish_event.is_set():
-            print(f"\n{ok('Sanfter Abbruch: Zyklus abgeschlossen.')}")
-            break
+            if state.finish_event.is_set():
+                print(f"\n{ok('Sanfter Abbruch: Zyklus abgeschlossen.')}")
+                break
 
     # END-Phase
     if has_end and not state.quit_event.is_set():
@@ -760,5 +877,11 @@ def sequence_worker(state: AutoClickerState) -> None:
         print(f"  {col('Items:', 'cyan'):22s} {state.items_found}")
     if state.key_presses > 0:
         print(f"  {col('Tasten:', 'cyan'):22s} {state.key_presses}")
+    if state.timeouts > 0:
+        print(f"  {col('Timeouts:', 'yellow'):22s} {state.timeouts}")
+    if state.skipped_cycles > 0:
+        print(f"  {col('Übersprungen:', 'yellow'):22s} {state.skipped_cycles}")
+    if state.restarts > 0:
+        print(f"  {col('Neustarts:', 'yellow'):22s} {state.restarts}")
     print(col("-" * 50, 'cyan'))
     print_status(state)

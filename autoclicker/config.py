@@ -33,14 +33,16 @@ DEFAULT_CONFIG = {
     # === FARB-/PIXEL-ERKENNUNG ===
     "color_tolerance": 0,               # Farbtoleranz für Item-Scan (0 = exakt)
     "pixel_wait_tolerance": 10,         # Toleranz für Pixel-Trigger (10 = kleine Abweichungen OK)
-    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min)
-    "pixel_timeout_action": "stop",     # Aktion bei Timeout ohne 'else': "stop", "skip_cycle", "restart"
+    "pixel_wait_timeout": 300,          # Timeout für Pixel-Trigger in Sekunden (5 Min, 0 = unendlich)
+    "pixel_timeout_action": "skip_cycle", # Aktion bei Timeout ohne 'else': "skip_cycle", "restart", "stop"
     "pixel_check_interval": 1,          # Prüf-Intervall für Farbe in Sekunden
     "scan_pixel_step": 2,               # Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller)
     "show_pixel_delay": 0.3,            # Wie lange Pixel-Position angezeigt wird (Sekunden)
 
     # === ITEM-SCAN EINSTELLUNGEN ===
-    "scan_reverse": False,              # True = Slots rückwärts scannen (4,3,2,1)
+    "scan_reverse": True,               # True = Slots rückwärts scannen (4,3,2,1)
+    "scan_click_immediate": False,       # True = Scan→Klick pro Slot, False = alle scannen, dann alle klicken
+    "scan_park_mouse": False,            # [x, y] = Maus vor Scan dorthin parken, False = Maus nicht bewegen
     "scan_slot_delay": 0.1,             # Pause zwischen Slot-Scans in Sekunden (0 = keine)
     "item_click_delay": 1.0,            # Pause nach Item-Klick in Sekunden
     "marker_count": 5,                  # Anzahl Marker-Farben beim Item-Lernen
