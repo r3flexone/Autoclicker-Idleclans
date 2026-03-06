@@ -170,7 +170,7 @@ Mit `learn <Nr>` wird ein Item vom entsprechenden Slot gelernt:
 2. 1 Sekunde warten (Item muss sichtbar sein)
 3. Marker-Farben werden automatisch gescannt
 4. Name, Priorität und **Kategorie** eingeben
-5. Optional: Template-Screenshot erstellen
+5. Template-Screenshot wird automatisch erstellt
 6. Optional: Bestätigungs-Klick konfigurieren
 
 ### Bulk-Learn (mehrere Items auf einmal)
@@ -553,7 +553,7 @@ Wird beim ersten Start automatisch erstellt:
 |--------|--------------|
 | `scan_reverse` | Slots von hinten nach vorne scannen |
 | `scan_click_immediate` | `true` = Scan→Klick pro Slot (sofort klicken), `false` = alle scannen, dann alle klicken (Standard) |
-| `scan_park_mouse` | `[x, y]` = Maus vor Scan dorthin parken (verhindert Tooltip-Störungen), `false` = Maus nicht bewegen (Standard) |
+| `scan_park_mouse` | `true` = Maus zur Bildschirmmitte parken, `[x, y]` = Maus zu bestimmter Position parken, `false` = Maus nicht bewegen (Standard) |
 | `scan_slot_delay` | Pause zwischen Slot-Scans in Sekunden (Standard: 0.1) |
 | `item_click_delay` | Pause nach Item-Klick in Sekunden (Standard: 1.0) |
 | `marker_count` | Anzahl Marker-Farben pro Item (Standard: 5) |
@@ -617,8 +617,8 @@ Autoclicker-Idleclans/
 │   └── presets/            # Item-Presets
 ├── item_scans/             # Item-Scan Konfigurationen
 │   └── *.json              # Scan-Konfigurationen (verknüpft Slots + Items)
-├── screenshots/            # Sequenz-Screenshots (nach Session gruppiert)
-│   └── YYYY-MM-DD_HH-MM-SS/  # Pro Sequenz-Session ein Unterordner
+├── screenshots/            # Sequenz-Screenshots (nach Tag gruppiert)
+│   └── YYYY-MM-DD/            # Pro Tag ein Unterordner
 └── tools/                  # Hilfswerkzeuge
     ├── sync_json.py        # JSON-Dateien synchronisieren/migrieren
     └── slot_tester.py      # Slot-Erkennung testen
@@ -723,6 +723,10 @@ python tools/slot_tester.py
 
 ### Neueste Änderungen
 
+- **Checkbox-Ansicht**: `show`/`s` im Scan-Editor zeigt `[X]`/`[ ]` für zugewiesene Slots/Items
+- **Screenshots nach Tag**: Sequenz-Screenshots werden nach Tag gruppiert (`YYYY-MM-DD/`) statt pro Session
+- **Auto-Template**: `learn` erstellt Templates automatisch (kein manuelles Bestätigen mehr)
+- **Maus parken: true**: `scan_park_mouse: true` parkt die Maus zur Bildschirmmitte (zusätzlich zu `[x, y]`)
 - **Immediate Scan-Modus**: `scan_click_immediate: true` scannt und klickt jeden Slot einzeln (Scan→Klick→Scan→Klick) statt alle zu scannen und dann zu klicken
 - **Maus parken vor Scan**: `scan_park_mouse: [x, y]` bewegt die Maus vor dem Scannen weg, damit Tooltips/Hover-Effekte den Screenshot nicht stören
 - **Farbige Ausgaben überall**: Alle `[DEBUG]`-, `[PAUSE]`- und Menü-Ausgaben sind jetzt farbig (nicht nur der Worker)
