@@ -497,7 +497,7 @@ Wird beim ersten Start automatisch erstellt:
   "pixel_check_interval": 1,
   "scan_pixel_step": 2,
   "show_pixel_delay": 0.3,
-  "scan_reverse": false,
+  "scan_reverse": true,
   "scan_click_immediate": false,
   "scan_park_mouse": false,
   "scan_slot_delay": 0.1,
