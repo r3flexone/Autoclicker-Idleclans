@@ -749,6 +749,7 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.finish_event.clear()
 
     # Äußere Schleife: Ermöglicht kompletten Neustart (inkl. INIT) bei restart_event
+    cycle_count = 0
     do_restart = True  # Erster Durchlauf startet immer
     while do_restart and not state.stop_event.is_set() and not state.quit_event.is_set():
         do_restart = False
