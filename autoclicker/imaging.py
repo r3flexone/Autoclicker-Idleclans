@@ -40,6 +40,17 @@ _gdi32.DeleteObject.restype = wintypes.BOOL
 _gdi32.DeleteDC.argtypes = [wintypes.HDC]
 _gdi32.DeleteDC.restype = wintypes.BOOL
 
+# BITMAPINFOHEADER für Screenshots (einmal definiert, wiederverwendbar)
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ('biSize', ctypes.c_uint32), ('biWidth', ctypes.c_int32),
+        ('biHeight', ctypes.c_int32), ('biPlanes', ctypes.c_uint16),
+        ('biBitCount', ctypes.c_uint16), ('biCompression', ctypes.c_uint32),
+        ('biSizeImage', ctypes.c_uint32), ('biXPelsPerMeter', ctypes.c_int32),
+        ('biYPelsPerMeter', ctypes.c_int32), ('biClrUsed', ctypes.c_uint32),
+        ('biClrImportant', ctypes.c_uint32),
+    ]
+
 if TYPE_CHECKING:
     from PIL import Image
 
@@ -179,7 +190,7 @@ def match_template_in_image(img: 'Image.Image', template_name: str, min_confiden
                 template_cv = cv2.resize(template_cv, (iw, ih), interpolation=cv2.INTER_AREA)
 
         # Debug: Scan-Bild und Template speichern zum Vergleich
-        if CONFIG.get("debug_save_templates", False):
+        if CONFIG.debug_save_templates:
             debug_dir = os.path.join(ITEMS_DIR, "debug")
             os.makedirs(debug_dir, exist_ok=True)
             # Basis-Name aus Template (ohne .png)
@@ -343,16 +354,6 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         _gdi32.BitBlt(memDC, 0, 0, width, height, hwndDC, left, top, 0x00CC0020)
 
         # Bitmap-Daten auslesen
-        class BITMAPINFOHEADER(ctypes.Structure):
-            _fields_ = [
-                ('biSize', ctypes.c_uint32), ('biWidth', ctypes.c_int32),
-                ('biHeight', ctypes.c_int32), ('biPlanes', ctypes.c_uint16),
-                ('biBitCount', ctypes.c_uint16), ('biCompression', ctypes.c_uint32),
-                ('biSizeImage', ctypes.c_uint32), ('biXPelsPerMeter', ctypes.c_int32),
-                ('biYPelsPerMeter', ctypes.c_int32), ('biClrUsed', ctypes.c_uint32),
-                ('biClrImportant', ctypes.c_uint32),
-            ]
-
         bi = BITMAPINFOHEADER()
         bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
         bi.biWidth = width

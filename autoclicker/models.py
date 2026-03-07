@@ -7,9 +7,9 @@ import random
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-from .config import DEFAULT_MIN_CONFIDENCE
+from .config import AppConfig, DEFAULT_MIN_CONFIDENCE
 
 
 # =============================================================================
@@ -293,4 +293,4 @@ class AutoClickerState:
     session_screenshots_dir: Optional[Path] = None
 
     # Konfiguration (thread-safe über lock)
-    config: dict[str, Any] = field(default_factory=dict)
+    config: AppConfig = field(default_factory=AppConfig)

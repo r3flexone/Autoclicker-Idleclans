@@ -37,7 +37,7 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
                          total_steps: int, message: str) -> bool:
     """Wartet die angegebene Zeit, respektiert Pause und Skip. Gibt False zurück wenn gestoppt."""
     remaining = seconds
-    debug_active = state.config.get("debug_mode", False) or state.config.get("debug_detection", False)
+    debug_active = state.config.debug_mode or state.config.debug_detection
     last_remaining = -1
 
     while remaining > 0:
@@ -82,7 +82,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     if not ec:
         return True
 
-    debug = state.config.get("debug_mode", False)
+    debug = state.config.debug_mode
 
     _c = _phase_color(phase)
 
@@ -104,8 +104,8 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             return False
 
         name = ec.name or f"({ec.x},{ec.y})"
-        send_click(ec.x, ec.y, state.config.get("click_move_delay", 0.01),
-                   state.config.get("post_click_delay", 0.05))
+        send_click(ec.x, ec.y, state.config.click_move_delay,
+                   state.config.post_click_delay)
         with state.lock:
             state.total_clicks += 1
 
@@ -175,14 +175,14 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         slots_to_scan = list(slots_override)
     else:
         slots_to_scan = list(config.slots)
-        if state.config.get("scan_reverse", False):
+        if state.config.scan_reverse:
             slots_to_scan = list(reversed(slots_to_scan))
 
-    scan_delay = state.config.get("scan_slot_delay", 0.1)
-    debug = state.config.get("debug_detection", False)
+    scan_delay = state.config.scan_slot_delay
+    debug = state.config.debug_detection
 
     # Maus vor dem Scannen wegparken (verhindert Tooltip/Hover-Störungen)
-    park_pos = state.config.get("scan_park_mouse", False)
+    park_pos = state.config.scan_park_mouse
     if park_pos:
         if isinstance(park_pos, (list, tuple)) and len(park_pos) == 2:
             px, py = int(park_pos[0]), int(park_pos[1])
@@ -244,8 +244,8 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
                                    if find_color_in_image(img, marker, tolerance))
 
                 # Config-Einstellungen für Marker-Anforderung
-                require_all = state.config.get("require_all_markers", True)
-                min_required = state.config.get("min_markers_required", 2)
+                require_all = state.config.require_all_markers
+                min_required = state.config.min_markers_required
 
                 if require_all:
                     marker_ok = (markers_found == markers_total)
@@ -324,8 +324,8 @@ def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool
     if debug:
         print(dbg(f"Item-Klick: '{item.name}' (P{priority}) @ ({pos[0]}, {pos[1]})"))
 
-    send_click(pos[0], pos[1], state.config.get("click_move_delay", 0.01),
-               state.config.get("post_click_delay", 0.05))
+    send_click(pos[0], pos[1], state.config.click_move_delay,
+               state.config.post_click_delay)
     with state.lock:
         state.total_clicks += 1
         state.items_found += 1
@@ -344,12 +344,12 @@ def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool
             print(dbg(f"Confirm-Klick @ ({item.confirm_point.x}, {item.confirm_point.y})"))
 
         send_click(item.confirm_point.x, item.confirm_point.y,
-                   state.config.get("click_move_delay", 0.01),
-                   state.config.get("post_click_delay", 0.05))
+                   state.config.click_move_delay,
+                   state.config.post_click_delay)
         with state.lock:
             state.total_clicks += 1
 
-    click_delay = state.config.get("item_click_delay", 1.0)
+    click_delay = state.config.item_click_delay
     if click_delay > 0:
         if state.stop_event.wait(click_delay):
             return False
@@ -359,10 +359,10 @@ def _click_scan_result(state: AutoClickerState, pos, item, priority, debug: bool
 def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Item-Scan Schritt aus."""
-    debug = state.config.get("debug_mode", False)
+    debug = state.config.debug_mode
     mode = step.item_scan_mode
     mode_str = "alle" if mode == "all" else "bestes"
-    immediate = state.config.get("scan_click_immediate", False)
+    immediate = state.config.scan_click_immediate
 
     if debug:
         im_str = " [IMMEDIATE]" if immediate else ""
@@ -409,7 +409,7 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
         return True
 
     slots = list(config.slots)
-    if state.config.get("scan_reverse", False):
+    if state.config.scan_reverse:
         slots = list(reversed(slots))
 
     # clicked_categories VOR dem Loop sichern, damit Klicks innerhalb
@@ -458,7 +458,7 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
 def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Tastendruck-Schritt aus."""
-    debug = state.config.get("debug_mode", False)
+    debug = state.config.debug_mode
     actual_delay = step.get_actual_delay()
     if actual_delay > 0:
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps,
@@ -483,17 +483,18 @@ def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
 def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Wartet auf eine Farbe an einer Pixel-Position."""
+    debug = state.config.debug_mode
     wc = step.wait_condition
     actual_delay = step.get_actual_delay()
     if actual_delay > 0:
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, "Vor Farbprüfung"):
             return False
 
-    if state.config.get("show_pixel_position", False):
+    if state.config.show_pixel_position:
         set_cursor_pos(wc.pixel[0], wc.pixel[1])
-        time.sleep(state.config.get("show_pixel_delay", 0.3))
+        time.sleep(state.config.show_pixel_delay)
 
-    timeout = state.config.get("pixel_wait_timeout", 300)
+    timeout = state.config.pixel_wait_timeout
     start_time = time.time()
     expected_name = get_color_name(wc.color)
 
@@ -513,13 +514,12 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             if img:
                 current_color = img.getpixel((0, 0))[:3]
                 dist = color_distance(current_color, wc.color)
-                pixel_tolerance = state.config.get("pixel_wait_tolerance", 10)
+                pixel_tolerance = state.config.pixel_wait_tolerance
                 color_matches = dist <= pixel_tolerance
                 condition_met = (not color_matches) if wc.until_gone else color_matches
 
                 # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
                 elapsed = time.time() - start_time
-                debug = state.config.get("debug_mode", False)
                 current_name = get_color_name(current_color)
 
                 if condition_met:
@@ -548,7 +548,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             if step.else_config:
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
-            timeout_action = state.config.get("pixel_timeout_action", "skip_cycle")
+            timeout_action = state.config.pixel_timeout_action
             if timeout_action == "skip_cycle":
                 print(col(f" → Zyklus wird übersprungen", "yellow"))
                 state.skip_cycle_event.set()
@@ -560,7 +560,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 state.stop_event.set()
             return False
 
-        check_interval = state.config.get("pixel_check_interval", 1)
+        check_interval = state.config.pixel_check_interval
         if state.stop_event.wait(check_interval):
             return False
 
@@ -573,8 +573,8 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 def _execute_click(state: AutoClickerState, step: SequenceStep,
                    step_num: int, total_steps: int, phase: str) -> bool:
     """Führt den eigentlichen Klick aus."""
-    debug = state.config.get("debug_mode", False)
-    clicks = state.config.get("clicks_per_point", 1)
+    debug = state.config.debug_mode
+    clicks = state.config.clicks_per_point
     for _ in range(clicks):
         if state.stop_event.is_set():
             return False
@@ -584,8 +584,8 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
             state.stop_event.set()
             return False
 
-        send_click(step.x, step.y, state.config.get("click_move_delay", 0.01),
-                   state.config.get("post_click_delay", 0.05))
+        send_click(step.x, step.y, state.config.click_move_delay,
+                   state.config.post_click_delay)
 
         with state.lock:
             state.total_clicks += 1
@@ -597,7 +597,7 @@ def _execute_click(state: AutoClickerState, step: SequenceStep,
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Klick! (Gesamt: {state.total_clicks})", _phase_color(phase)), end="", flush=True)
 
-        max_clicks = state.config.get("max_total_clicks", None)
+        max_clicks = state.config.max_total_clicks
         if max_clicks and state.total_clicks >= max_clicks:
             print(f"\n{info(f'Maximum von {max_clicks} Klicks erreicht.')}")
             state.stop_event.set()
@@ -642,7 +642,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
         state.stop_event.set()
         return False
 
-    if state.config.get("debug_mode", False):
+    if state.config.debug_mode:  # Kein lokaler Cache nötig - nur 1x pro Step
         print(dbg(f"Step {step_num}: name='{step.name}', x={step.x}, y={step.y}"))
 
     if step.screenshot_only:
@@ -706,6 +706,7 @@ def print_status(state: AutoClickerState) -> None:
 
 def sequence_worker(state: AutoClickerState) -> None:
     """Worker-Thread, der die Sequenz ausführt."""
+    debug = state.config.debug_mode
     print(col("\n[START] Sequenz gestartet.", "green"))
 
     with state.lock:
@@ -725,7 +726,7 @@ def sequence_worker(state: AutoClickerState) -> None:
             state.is_running = False
             return
 
-        if state.config.get("debug_mode", False):
+        if debug:
             print("\n" + col("=" * 60, 'gray'))
             print(dbg("GELADENE SEQUENZ-SCHRITTE:"))
             for i, step in enumerate(sequence.init_steps):
@@ -812,7 +813,7 @@ def sequence_worker(state: AutoClickerState) -> None:
                         if state.stop_event.is_set() or state.quit_event.is_set():
                             break
 
-                        if state.config.get("debug_mode", False):
+                        if debug:
                             print(dbg(f"Loop {repeat_num}/{loop_phase.repeat} von '{loop_phase.name}'"))
 
                         for i, step in enumerate(loop_phase.steps):

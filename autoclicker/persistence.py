@@ -6,6 +6,7 @@ Speichern/Laden von Sequenzen, Punkten, Slots, Items, Scans.
 import json
 import logging
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
@@ -44,17 +45,12 @@ def init_directories() -> None:
 # =============================================================================
 
 def _item_to_dict(item: ItemProfile) -> dict:
-    """Serialisiert ein ItemProfile zu einem Dict."""
-    return {
-        "name": item.name,
-        "marker_colors": [list(c) for c in item.marker_colors] if item.marker_colors else [],
-        "category": item.category,
-        "priority": item.priority,
-        "confirm_point": {"x": item.confirm_point.x, "y": item.confirm_point.y} if item.confirm_point else None,
-        "confirm_delay": item.confirm_delay,
-        "template": item.template,
-        "min_confidence": item.min_confidence
-    }
+    """Serialisiert ein ItemProfile zu einem Dict (via dataclasses.asdict)."""
+    d = asdict(item)
+    # confirm_point: ClickPoint → nur {x, y} behalten (id/name nicht relevant)
+    if d["confirm_point"]:
+        d["confirm_point"] = {"x": d["confirm_point"]["x"], "y": d["confirm_point"]["y"]}
+    return d
 
 
 def _item_from_dict(data: dict) -> ItemProfile:
@@ -297,11 +293,24 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
         return None
 
 
+_seq_cache: list[tuple[str, Path]] = []
+_seq_cache_mtime: float = 0
+
+
 def list_available_sequences() -> list[tuple[str, Path]]:
-    """Listet alle verfügbaren Sequenz-Dateien auf."""
+    """Listet alle verfügbaren Sequenz-Dateien auf (mit mtime-Cache)."""
+    global _seq_cache, _seq_cache_mtime
     seq_dir = Path(SEQUENCES_DIR)
     if not seq_dir.exists():
         return []
+
+    try:
+        current_mtime = seq_dir.stat().st_mtime
+    except OSError:
+        return []
+
+    if _seq_cache and _seq_cache_mtime == current_mtime:
+        return _seq_cache
 
     sequences = []
     for f in seq_dir.glob("*.json"):
@@ -313,6 +322,8 @@ def list_available_sequences() -> list[tuple[str, Path]]:
                     sequences.append((name, f))
             except (json.JSONDecodeError, IOError, KeyError, TypeError):
                 pass  # Ungültige/korrupte Datei überspringen
+    _seq_cache = sequences
+    _seq_cache_mtime = current_mtime
     return sequences
 
 

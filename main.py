@@ -10,7 +10,7 @@ import sys
 import time
 
 # Modulare Imports
-from autoclicker.config import CONFIG, SEQUENCES_DIR, CONFIG_FILE
+from autoclicker.config import AppConfig, CONFIG, SEQUENCES_DIR, CONFIG_FILE
 from autoclicker.models import AutoClickerState
 from autoclicker.winapi import (
     user32, kernel32,
@@ -111,7 +111,7 @@ def main() -> int:
 
     # State initialisieren
     state = AutoClickerState()
-    state.config = CONFIG.copy()
+    state.config = AppConfig.from_dict(CONFIG.to_dict())
     main_thread_id = kernel32.GetCurrentThreadId()
 
     # Ordner erstellen

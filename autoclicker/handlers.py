@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .config import CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
+from .config import AppConfig, CONFIG_FILE, SEQUENCES_DIR, DEFAULT_CONFIG
 from .models import AutoClickerState, ClickPoint
 from .utils import safe_input, format_duration, parse_time_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, coord_context, dbg
 from .winapi import get_cursor_pos, set_cursor_pos, user32
@@ -124,7 +124,7 @@ def handle_reset(state: AutoClickerState) -> None:
 
         # Config auf Standard zurücksetzen
         with state.lock:
-            state.config = DEFAULT_CONFIG.copy()
+            state.config = AppConfig()
 
         print(f"\n{ok('Factory Reset abgeschlossen!')}")
         print(ok("Das Programm ist jetzt wie frisch von GitHub."))
@@ -397,7 +397,7 @@ def handle_schedule(state: AutoClickerState) -> None:
         seconds, desc, target_timestamp = parse_time_input(time_input)
 
         # Debug: Zeige was geparst wurde
-        if state.config.get("debug_mode", False):
+        if state.config.debug_mode:
             print(dbg(f"Eingabe: '{time_input}' -> seconds={seconds}, desc='{desc}', target_timestamp={target_timestamp}"))
 
         if seconds < 0:
