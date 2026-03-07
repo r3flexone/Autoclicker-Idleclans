@@ -30,6 +30,25 @@ class ClickPoint:
 
 
 @dataclass
+class ElseConfig:
+    """Fallback-Aktion wenn eine Bedingung (Farbe/Scan) fehlschlägt."""
+    action: str                          # "skip", "skip_cycle", "restart", "click", "key"
+    x: int = 0                           # X für Fallback-Klick
+    y: int = 0                           # Y für Fallback-Klick
+    delay: float = 0                     # Delay vor Fallback
+    key: Optional[str] = None            # Taste für Fallback
+    name: str = ""                       # Name des Fallback-Punkts
+
+
+@dataclass
+class WaitCondition:
+    """Warten auf eine Farbe an einer Pixel-Position."""
+    pixel: tuple[int, int]               # (x, y) Position zum Prüfen
+    color: tuple[int, int, int]          # (r, g, b) Farbe die erscheinen soll
+    until_gone: bool = False             # True = warte bis Farbe WEG ist
+
+
+@dataclass
 class SequenceStep:
     """Ein Schritt in einer Sequenz: Erst warten/prüfen, DANN klicken."""
     x: int                # X-Koordinate (direkt gespeichert)
@@ -37,9 +56,7 @@ class SequenceStep:
     delay_before: float   # Wartezeit in Sekunden VOR diesem Klick (0 = sofort)
     name: str = ""        # Optionaler Name des Punktes
     # Optional: Warten auf Farbe statt Zeit (VOR dem Klick)
-    wait_pixel: Optional[tuple[int, int]] = None   # (x, y) Position zum Prüfen
-    wait_color: Optional[tuple[int, int, int]] = None   # (r, g, b) Farbe die erscheinen soll
-    wait_until_gone: bool = False        # True = warte bis Farbe WEG ist, False = warte bis Farbe DA ist
+    wait_condition: Optional[WaitCondition] = None
     # Optional: Item-Scan ausführen statt direktem Klick
     item_scan: Optional[str] = None      # Name des Item-Scans
     item_scan_mode: str = "all"          # "all" = bestes pro Kategorie, "best" = nur 1 Item total
@@ -50,12 +67,7 @@ class SequenceStep:
     # Optional: Tastendruck statt Mausklick
     key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
     # Optional: Fallback/Else-Aktion wenn Bedingung fehlschlägt
-    else_action: Optional[str] = None    # "skip", "restart", "click", "key"
-    else_x: int = 0                      # X für Fallback-Klick
-    else_y: int = 0                      # Y für Fallback-Klick
-    else_delay: float = 0                # Delay vor Fallback
-    else_key: Optional[str] = None       # Taste für Fallback
-    else_name: str = ""                  # Name des Fallback-Punkts
+    else_config: Optional[ElseConfig] = None
     # Optional: Screenshot machen (kein Klick, kein Scan)
     screenshot_only: bool = False        # True = nur Screenshot, kein Klick
     screenshot_region: Optional[tuple[int, int, int, int]] = None  # (x1,y1,x2,y2) oder None = Vollbild
@@ -74,18 +86,19 @@ class SequenceStep:
             mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
             mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
+        wc = self.wait_condition
         if self.wait_only:
-            if self.wait_pixel and self.wait_color:
-                gone_str = "WEG ist" if self.wait_until_gone else "DA ist"
-                return f"WARTE bis Farbe {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) (kein Klick){else_str}"
+            if wc:
+                gone_str = "WEG ist" if wc.until_gone else "DA ist"
+                return f"WARTE bis Farbe {gone_str} bei ({wc.pixel[0]},{wc.pixel[1]}) (kein Klick){else_str}"
             return f"WARTE {self._delay_str()} (kein Klick)"
         pos_str = f"{self.name} ({self.x}, {self.y})" if self.name else f"({self.x}, {self.y})"
-        if self.wait_pixel and self.wait_color:
-            gone_str = "bis Farbe WEG" if self.wait_until_gone else "auf Farbe"
+        if wc:
+            gone_str = "bis Farbe WEG" if wc.until_gone else "auf Farbe"
             delay_str = self._delay_str()
             if self.delay_before > 0:
-                return f"warte {delay_str}, dann {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
-            return f"warte {gone_str} bei ({self.wait_pixel[0]},{self.wait_pixel[1]}) → klicke {pos_str}{else_str}"
+                return f"warte {delay_str}, dann {gone_str} bei ({wc.pixel[0]},{wc.pixel[1]}) → klicke {pos_str}{else_str}"
+            return f"warte {gone_str} bei ({wc.pixel[0]},{wc.pixel[1]}) → klicke {pos_str}{else_str}"
         elif self.delay_before > 0:
             return f"warte {self._delay_str()} → klicke {pos_str}"
         else:
@@ -93,19 +106,20 @@ class SequenceStep:
 
     def _else_str(self) -> str:
         """Hilfsfunktion für Else-Anzeige."""
-        if not self.else_action:
+        ec = self.else_config
+        if not ec:
             return ""
-        if self.else_action == "skip":
+        if ec.action == "skip":
             return " | ELSE: skip"
-        elif self.else_action == "skip_cycle":
+        elif ec.action == "skip_cycle":
             return " | ELSE: skip_cycle"
-        elif self.else_action == "restart":
+        elif ec.action == "restart":
             return " | ELSE: restart"
-        elif self.else_action == "click":
-            name = self.else_name or f"({self.else_x},{self.else_y})"
+        elif ec.action == "click":
+            name = ec.name or f"({ec.x},{ec.y})"
             return f" | ELSE: klicke {name}"
-        elif self.else_action == "key":
-            return f" | ELSE: Taste '{self.else_key}'"
+        elif ec.action == "key":
+            return f" | ELSE: Taste '{ec.key}'"
         return ""
 
     def _delay_str(self) -> str:
@@ -130,7 +144,7 @@ class LoopPhase:
 
     def __str__(self) -> str:
         step_count = len(self.steps)
-        pixel_triggers = sum(1 for s in self.steps if s.wait_pixel)
+        pixel_triggers = sum(1 for s in self.steps if s.wait_condition)
         trigger_str = f" [Farb: {pixel_triggers}]" if pixel_triggers > 0 else ""
         return f"{self.name}: {step_count} Schritte x{self.repeat}{trigger_str}"
 
@@ -155,7 +169,7 @@ class Sequence:
         else:
             loop_info += f" (x{self.total_cycles})"
         all_steps = self.init_steps + [s for lp in self.loop_phases for s in lp.steps] + self.end_steps
-        pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
+        pixel_triggers = sum(1 for s in all_steps if s.wait_condition)
         trigger_str = f" [Farb-Trigger: {pixel_triggers}]" if pixel_triggers > 0 else ""
         init_str = f"Init: {init_count}, " if init_count > 0 else ""
         end_str = f", End: {end_count}" if end_count > 0 else ""

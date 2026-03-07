@@ -11,7 +11,7 @@ from typing import Optional
 
 from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE
 from .models import (
-    ClickPoint, SequenceStep, LoopPhase, Sequence,
+    ClickPoint, ElseConfig, WaitCondition, SequenceStep, LoopPhase, Sequence,
     ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
 )
 from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag, err, info, warn
@@ -91,14 +91,19 @@ def ensure_sequences_dir() -> Path:
 
 def _step_to_dict(s: SequenceStep) -> dict:
     """Konvertiert einen SequenceStep in ein JSON-serialisierbares dict."""
+    wc = s.wait_condition
+    ec = s.else_config
     return {"x": s.x, "y": s.y, "name": s.name, "delay_before": s.delay_before,
-            "wait_pixel": s.wait_pixel, "wait_color": s.wait_color,
-            "wait_until_gone": s.wait_until_gone,
+            "wait_pixel": wc.pixel if wc else None,
+            "wait_color": wc.color if wc else None,
+            "wait_until_gone": wc.until_gone if wc else False,
             "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
             "wait_only": s.wait_only, "delay_max": s.delay_max,
-            "key_press": s.key_press, "else_action": s.else_action,
-            "else_x": s.else_x, "else_y": s.else_y, "else_delay": s.else_delay,
-            "else_key": s.else_key, "else_name": s.else_name,
+            "key_press": s.key_press,
+            "else_action": ec.action if ec else None,
+            "else_x": ec.x if ec else 0, "else_y": ec.y if ec else 0,
+            "else_delay": ec.delay if ec else 0,
+            "else_key": ec.key if ec else None, "else_name": ec.name if ec else "",
             "screenshot_only": s.screenshot_only,
             "screenshot_region": list(s.screenshot_region) if s.screenshot_region else None}
 
@@ -210,25 +215,35 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     if delay_raw is None:
                         delay_raw = 0
                     delay_max_raw = s.get("delay_max")
+                    # WaitCondition zusammenbauen
+                    wait_cond = None
+                    if wait_pixel and wait_color:
+                        wait_cond = WaitCondition(
+                            pixel=wait_pixel, color=wait_color,
+                            until_gone=s.get("wait_until_gone", False)
+                        )
+                    # ElseConfig zusammenbauen
+                    else_cfg = None
+                    else_action = s.get("else_action")
+                    if else_action:
+                        else_cfg = ElseConfig(
+                            action=else_action,
+                            x=s.get("else_x", 0), y=s.get("else_y", 0),
+                            delay=s.get("else_delay", 0),
+                            key=s.get("else_key"), name=s.get("else_name", "")
+                        )
                     step = SequenceStep(
                         x=s.get("x", 0),
                         y=s.get("y", 0),
                         delay_before=float(delay_raw),
                         name=s.get("name", ""),
-                        wait_pixel=wait_pixel,
-                        wait_color=wait_color,
-                        wait_until_gone=s.get("wait_until_gone", False),
+                        wait_condition=wait_cond,
                         item_scan=s.get("item_scan"),
                         item_scan_mode=s.get("item_scan_mode", "all"),
                         wait_only=s.get("wait_only", False),
                         delay_max=float(delay_max_raw) if delay_max_raw is not None else None,
                         key_press=s.get("key_press"),
-                        else_action=s.get("else_action"),
-                        else_x=s.get("else_x", 0),
-                        else_y=s.get("else_y", 0),
-                        else_delay=s.get("else_delay", 0),
-                        else_key=s.get("else_key"),
-                        else_name=s.get("else_name", ""),
+                        else_config=else_cfg,
                         screenshot_only=s.get("screenshot_only", False),
                         screenshot_region=tuple(int(v) for v in s["screenshot_region"]) if s.get("screenshot_region") else None,
                     )

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from ..models import ClickPoint, SequenceStep, LoopPhase, Sequence, AutoClickerState
+from ..models import ClickPoint, ElseConfig, WaitCondition, SequenceStep, LoopPhase, Sequence, AutoClickerState
 from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context, cancel_hint, parse_non_negative_float, parse_non_negative_range
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
@@ -25,16 +25,19 @@ def apply_else_to_step(step: SequenceStep, else_parts: list, state: AutoClickerS
     """
     if not else_parts:
         return
-    if not step.wait_pixel and not step.item_scan:
+    if not step.wait_condition and not step.item_scan:
         print(warn("  -> 'else' hat keine Wirkung ohne 'pixel'/'gone' oder 'scan'-Bedingung!"))
         return
     else_result = parse_else_condition(else_parts, state)
-    step.else_action = else_result.get("else_action")
-    step.else_x = else_result.get("else_x", 0)
-    step.else_y = else_result.get("else_y", 0)
-    step.else_delay = else_result.get("else_delay", 0)
-    step.else_key = else_result.get("else_key")
-    step.else_name = else_result.get("else_name", "")
+    if else_result:
+        step.else_config = ElseConfig(
+            action=else_result["else_action"],
+            x=else_result.get("else_x", 0),
+            y=else_result.get("else_y", 0),
+            delay=else_result.get("else_delay", 0),
+            key=else_result.get("else_key"),
+            name=else_result.get("else_name", "")
+        )
 
 
 def capture_pixel_color() -> tuple:
@@ -126,13 +129,14 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence,
                     missing.add(step.name)
 
         # Else-Klick-Punkt
-        if step.else_action == "click" and step.else_name:
-            if step.else_name in local_by_name:
-                lp = local_by_name[step.else_name]
-                if step.else_x != lp.x or step.else_y != lp.y:
-                    updates.append((step, "else", step.else_x, step.else_y, lp.x, lp.y, step.else_name))
-            elif step.else_x != 0 or step.else_y != 0:
-                missing.add(step.else_name)
+        ec = step.else_config
+        if ec and ec.action == "click" and ec.name:
+            if ec.name in local_by_name:
+                lp = local_by_name[ec.name]
+                if ec.x != lp.x or ec.y != lp.y:
+                    updates.append((step, "else", ec.x, ec.y, lp.x, lp.y, ec.name))
+            elif ec.x != 0 or ec.y != 0:
+                missing.add(ec.name)
 
     if not updates and not missing:
         return
@@ -158,8 +162,8 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence,
                 step.x = new_x
                 step.y = new_y
             else:
-                step.else_x = new_x
-                step.else_y = new_y
+                step.else_config.x = new_x
+                step.else_config.y = new_y
         # Direkt in die Originaldatei speichern
         save_sequence_file(sequence, filepath)
         print(f"    {ok('Gespeichert in')} {filepath.name}")
@@ -329,7 +333,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
 
     # Zusammenfassung
     all_steps = init_steps + [s for lp in loop_phases for s in lp.steps] + end_steps
-    pixel_triggers = sum(1 for s in all_steps if s.wait_pixel)
+    pixel_triggers = sum(1 for s in all_steps if s.wait_condition)
 
     print(f"\n{col('[ERFOLG]', 'green')} Sequenz '{seq_name}' gespeichert!")
     for i, lp in enumerate(loop_phases):
@@ -890,13 +894,11 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     px, py, color = capture_pixel_color()
                     if color is None:
                         continue
-                    step.wait_pixel = (px, py)
-                    step.wait_color = color
-                    if arg == "gone":
-                        step.wait_until_gone = True
-                        step.name = "Wait:Gone"
-                    else:
-                        step.name = "Wait:Pixel"
+                    step.wait_condition = WaitCondition(
+                        pixel=(px, py), color=color,
+                        until_gone=(arg == "gone")
+                    )
+                    step.name = "Wait:Gone" if arg == "gone" else "Wait:Pixel"
                 else:
                     # wait <Zeit> oder wait <Min>-<Max>
                     if "-" in arg:
@@ -1041,11 +1043,14 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                                     if opt == "gone":
                                         wait_until_gone = True
 
+                wait_cond = None
+                if wait_pixel and wait_color:
+                    wait_cond = WaitCondition(pixel=wait_pixel, color=wait_color,
+                                              until_gone=wait_until_gone)
                 step = SequenceStep(
                     x=point.x, y=point.y, delay_before=delay,
                     name=point.name or f"#{point_id}",
-                    wait_pixel=wait_pixel, wait_color=wait_color,
-                    wait_until_gone=wait_until_gone,
+                    wait_condition=wait_cond,
                     delay_max=delay_max
                 )
 

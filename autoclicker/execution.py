@@ -78,14 +78,15 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
 def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
                         step_num: int, total_steps: int) -> bool:
     """Führt die Else-Aktion eines Schritts aus. Gibt False zurück wenn abgebrochen."""
-    if not step.else_action:
+    ec = step.else_config
+    if not ec:
         return True
 
     debug = state.config.get("debug_mode", False)
 
     _c = _phase_color(phase)
 
-    if step.else_action == "skip":
+    if ec.action == "skip":
         if debug:
             print(dbg("ELSE: übersprungen"))
         else:
@@ -93,48 +94,48 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", _c), end="", flush=True)
         return True
 
-    elif step.else_action == "click":
-        if step.else_delay > 0:
-            if not wait_with_pause_skip(state, step.else_delay, phase, step_num, total_steps,
+    elif ec.action == "click":
+        if ec.delay > 0:
+            if not wait_with_pause_skip(state, ec.delay, phase, step_num, total_steps,
                                         f"ELSE: klicke in"):
                 return False
 
         if state.stop_event.is_set():
             return False
 
-        name = step.else_name or f"({step.else_x},{step.else_y})"
-        send_click(step.else_x, step.else_y, state.config.get("click_move_delay", 0.01),
+        name = ec.name or f"({ec.x},{ec.y})"
+        send_click(ec.x, ec.y, state.config.get("click_move_delay", 0.01),
                    state.config.get("post_click_delay", 0.05))
         with state.lock:
             state.total_clicks += 1
 
         if debug:
-            print(dbg(f"ELSE: Klick auf '{name}' ({step.else_x}, {step.else_y})"))
+            print(dbg(f"ELSE: Klick auf '{name}' ({ec.x}, {ec.y})"))
         else:
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", _c), end="", flush=True)
         return True
 
-    elif step.else_action == "key":
-        if step.else_delay > 0:
-            if not wait_with_pause_skip(state, step.else_delay, phase, step_num, total_steps,
+    elif ec.action == "key":
+        if ec.delay > 0:
+            if not wait_with_pause_skip(state, ec.delay, phase, step_num, total_steps,
                                         f"ELSE: Taste in"):
                 return False
 
         if state.stop_event.is_set():
             return False
 
-        if send_key(step.else_key):
+        if send_key(ec.key):
             with state.lock:
                 state.key_presses += 1
             if debug:
-                print(dbg(f"ELSE: Taste '{step.else_key}'"))
+                print(dbg(f"ELSE: Taste '{ec.key}'"))
             else:
                 clear_line()
-                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{step.else_key}'!", _c), end="", flush=True)
+                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{ec.key}'!", _c), end="", flush=True)
         return True
 
-    elif step.else_action == "restart":
+    elif ec.action == "restart":
         if debug:
             print(dbg("ELSE: Neustart!"))
         else:
@@ -143,7 +144,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         state.restart_event.set()
         return False
 
-    elif step.else_action == "skip_cycle":
+    elif ec.action == "skip_cycle":
         if debug:
             print(dbg("ELSE: Zyklus überspringen!"))
         else:
@@ -388,7 +389,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {len(scan_results)} Item(s)!", _phase_color(phase)), end="", flush=True)
     else:
-        if step.else_action:
+        if step.else_config:
             return execute_else_action(state, step, phase, step_num, total_steps)
         if debug:
             print(dbg("Scan fertig: kein Item gefunden"))
@@ -443,7 +444,7 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
             clear_line()
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {total_clicked} Item(s)!", _phase_color(phase)), end="", flush=True)
     else:
-        if step.else_action:
+        if step.else_config:
             return execute_else_action(state, step, phase, step_num, total_steps)
         if debug:
             print(dbg("Scan fertig: kein Item gefunden (immediate)"))
@@ -482,18 +483,19 @@ def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
 def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Wartet auf eine Farbe an einer Pixel-Position."""
+    wc = step.wait_condition
     actual_delay = step.get_actual_delay()
     if actual_delay > 0:
         if not wait_with_pause_skip(state, actual_delay, phase, step_num, total_steps, "Vor Farbprüfung"):
             return False
 
     if state.config.get("show_pixel_position", False):
-        set_cursor_pos(step.wait_pixel[0], step.wait_pixel[1])
+        set_cursor_pos(wc.pixel[0], wc.pixel[1])
         time.sleep(state.config.get("show_pixel_delay", 0.3))
 
     timeout = state.config.get("pixel_wait_timeout", 300)
     start_time = time.time()
-    expected_name = get_color_name(step.wait_color)
+    expected_name = get_color_name(wc.color)
 
     while not state.stop_event.is_set():
         if state.skip_event.is_set():
@@ -506,14 +508,14 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             break
 
         if PILLOW_AVAILABLE:
-            img = take_screenshot((step.wait_pixel[0], step.wait_pixel[1],
-                                   step.wait_pixel[0]+1, step.wait_pixel[1]+1))
+            img = take_screenshot((wc.pixel[0], wc.pixel[1],
+                                   wc.pixel[0]+1, wc.pixel[1]+1))
             if img:
                 current_color = img.getpixel((0, 0))[:3]
-                dist = color_distance(current_color, step.wait_color)
+                dist = color_distance(current_color, wc.color)
                 pixel_tolerance = state.config.get("pixel_wait_tolerance", 10)
                 color_matches = dist <= pixel_tolerance
-                condition_met = (not color_matches) if step.wait_until_gone else color_matches
+                condition_met = (not color_matches) if wc.until_gone else color_matches
 
                 # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
                 elapsed = time.time() - start_time
@@ -521,9 +523,9 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 current_name = get_color_name(current_color)
 
                 if condition_met:
-                    msg = "Farbe weg!" if step.wait_until_gone else "Farbe erkannt!"
+                    msg = "Farbe weg!" if wc.until_gone else "Farbe erkannt!"
                     if debug:
-                        print(dbg(f"{msg} | Erwartet: {expected_name} RGB{step.wait_color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
+                        print(dbg(f"{msg} | Erwartet: {expected_name} RGB{wc.color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
                     else:
                         clear_line()
                         print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", _phase_color(phase)), end="", flush=True)
@@ -531,7 +533,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
 
                 if debug:
                     # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
-                    print(dbg(f"Warte auf {expected_name} RGB{step.wait_color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
+                    print(dbg(f"Warte auf {expected_name} RGB{wc.color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
                 else:
                     # Ohne Debug: Auf gleicher Zeile überschreiben
                     clear_line()
@@ -543,7 +545,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 state.timeouts += 1
             clear_line()
             print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
-            if step.else_action:
+            if step.else_config:
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
             timeout_action = state.config.get("pixel_timeout_action", "skip_cycle")
@@ -652,7 +654,7 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
     if step.key_press:
         return _execute_key_press_step(state, step, step_num, total_steps, phase)
 
-    if step.wait_pixel and step.wait_color:
+    if step.wait_condition:
         if not _execute_wait_for_color(state, step, step_num, total_steps, phase):
             return False
     elif step.delay_before > 0 or step.delay_max:
