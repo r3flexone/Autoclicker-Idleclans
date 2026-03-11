@@ -14,6 +14,8 @@ from .models import (
     AutoClickerState, SequenceStep,
     ELSE_SKIP, ELSE_SKIP_CYCLE, ELSE_RESTART, ELSE_CLICK, ELSE_KEY,
     SCAN_MODE_ALL, SCAN_MODE_BEST, SCAN_MODE_EVERY,
+    TIMEOUT_SKIP_CYCLE, TIMEOUT_RESTART,
+    CONSEC_EXIT, CONSEC_QUIT,
 )
 from .winapi import (
     send_click, send_key, check_failsafe, set_cursor_pos
@@ -161,7 +163,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
     return True
 
 
-def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all",
+def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = SCAN_MODE_ALL,
                       slots_override: list = None) -> list:
     """Führt einen Item-Scan aus und gibt Liste von (position, item, priority) zurück.
     slots_override: Wenn gesetzt, werden nur diese Slots gescannt (ohne Reverse-Logik)."""
@@ -579,12 +581,12 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             # Notbremse: Zu viele aufeinanderfolgende Timeouts
             if max_consec > 0 and consec >= max_consec:
                 consec_action = state.config.consecutive_timeout_action
-                if consec_action == "exit":
+                if consec_action == CONSEC_EXIT:
                     print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Python-Prozess wird beendet!", "red"))
                     print(col("[NOTBREMSE] Programm muss manuell neu gestartet werden.", "red"), flush=True)
                     time.sleep(1)  # Kurz warten damit Ausgabe sichtbar
                     os._exit(1)
-                elif consec_action == "quit":
+                elif consec_action == CONSEC_QUIT:
                     print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Programm wird beendet!", "red"))
                     state.stop_event.set()
                     state.quit_event.set()
@@ -597,10 +599,10 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
             timeout_action = state.config.pixel_timeout_action
-            if timeout_action == "skip_cycle":
+            if timeout_action == TIMEOUT_SKIP_CYCLE:
                 print(col(f" → Zyklus wird übersprungen", "yellow"))
                 state.skip_cycle_event.set()
-            elif timeout_action == "restart":
+            elif timeout_action == TIMEOUT_RESTART:
                 print(col(f" → Sequenz wird neu gestartet (inkl. INIT)", "yellow"))
                 state.restart_event.set()
             else:

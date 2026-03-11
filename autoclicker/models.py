@@ -23,6 +23,16 @@ ELSE_CLICK = "click"
 ELSE_KEY = "key"
 VALID_ELSE_ACTIONS = {ELSE_SKIP, ELSE_SKIP_CYCLE, ELSE_RESTART, ELSE_CLICK, ELSE_KEY}
 
+# pixel_timeout_action (Config)
+TIMEOUT_SKIP_CYCLE = "skip_cycle"
+TIMEOUT_RESTART = "restart"
+TIMEOUT_STOP = "stop"
+
+# consecutive_timeout_action (Config)
+CONSEC_STOP = "stop"
+CONSEC_QUIT = "quit"
+CONSEC_EXIT = "exit"
+
 # SequenceStep.item_scan_mode
 SCAN_MODE_ALL = "all"         # Bestes pro Kategorie
 SCAN_MODE_BEST = "best"       # Nur 1 bestes Item total
@@ -101,7 +111,7 @@ class SequenceStep:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
         if self.item_scan:
-            mode_strs = {"all": "bestes/Kategorie", "best": "1 bestes", "every": "JEDES"}
+            mode_strs = {SCAN_MODE_ALL: "bestes/Kategorie", SCAN_MODE_BEST: "1 bestes", SCAN_MODE_EVERY: "JEDES"}
             mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
             return f"SCAN '{self.item_scan}' → klicke {mode_str}{else_str}"
         wc = self.wait_condition
@@ -127,16 +137,16 @@ class SequenceStep:
         ec = self.else_config
         if not ec:
             return ""
-        if ec.action == "skip":
+        if ec.action == ELSE_SKIP:
             return " | ELSE: skip"
-        elif ec.action == "skip_cycle":
+        elif ec.action == ELSE_SKIP_CYCLE:
             return " | ELSE: skip_cycle"
-        elif ec.action == "restart":
+        elif ec.action == ELSE_RESTART:
             return " | ELSE: restart"
-        elif ec.action == "click":
+        elif ec.action == ELSE_CLICK:
             name = ec.name or f"({ec.x},{ec.y})"
             return f" | ELSE: klicke {name}"
-        elif ec.action == "key":
+        elif ec.action == ELSE_KEY:
             return f" | ELSE: Taste '{ec.key}'"
         return ""
 
