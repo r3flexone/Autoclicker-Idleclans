@@ -4,6 +4,7 @@ Enthält die Worker-Funktion und Step-Ausführungslogik.
 """
 
 import ctypes
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -558,7 +559,12 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             # Notbremse: Zu viele aufeinanderfolgende Timeouts
             if max_consec > 0 and consec >= max_consec:
                 consec_action = state.config.consecutive_timeout_action
-                if consec_action == "quit":
+                if consec_action == "exit":
+                    print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Python-Prozess wird beendet!", "red"))
+                    print(col("[NOTBREMSE] Programm muss manuell neu gestartet werden.", "red"), flush=True)
+                    time.sleep(1)  # Kurz warten damit Ausgabe sichtbar
+                    os._exit(1)
+                elif consec_action == "quit":
                     print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Programm wird beendet!", "red"))
                     state.stop_event.set()
                     state.quit_event.set()

@@ -41,7 +41,7 @@ class AppConfig:
     pixel_timeout_action: str = "skip_cycle"        # Aktion bei Timeout: "skip_cycle", "restart", "stop"
     pixel_check_interval: float = 1                 # Prüf-Intervall für Farbe in Sekunden
     max_consecutive_timeouts: int = 5               # Nach X aufeinanderfolgenden Timeouts → Notbremse (0 = deaktiviert)
-    consecutive_timeout_action: str = "stop"        # Notbremse-Aktion: "stop" = Sequenz stoppen, "quit" = Programm beenden
+    consecutive_timeout_action: str = "stop"        # Notbremse: "stop" = Sequenz stoppen, "quit" = Menü beenden, "exit" = Prozess killen
     scan_pixel_step: int = 2                        # Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller)
     show_pixel_delay: float = 0.3                   # Wie lange Pixel-Position angezeigt wird (Sekunden)
 
