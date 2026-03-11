@@ -525,8 +525,11 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
     while not state.stop_event.is_set():
         if state.skip_event.is_set():
             state.skip_event.clear()
-            clear_line()
-            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", _phase_color(phase)), end="", flush=True)
+            if debug:
+                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", _phase_color(phase)))
+            else:
+                clear_line()
+                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | SKIP Farbwarten!", _phase_color(phase)), end="", flush=True)
             break
 
         if not wait_while_paused(state, "Warte auf Farbe..."):
@@ -720,8 +723,12 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
         return False
 
     if step.wait_only:
-        clear_line()
-        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)), end="", flush=True)
+        debug_active = state.config.debug_mode or state.config.debug_detection
+        if debug_active:
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warten beendet (kein Klick)", _phase_color(phase)), end="", flush=True)
         return True
 
     return _execute_click(state, step, step_num, total_steps, phase)
