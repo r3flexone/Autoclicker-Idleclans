@@ -555,10 +555,16 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
             else:
                 print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
 
-            # Notbremse: Zu viele aufeinanderfolgende Timeouts → hart stoppen
+            # Notbremse: Zu viele aufeinanderfolgende Timeouts
             if max_consec > 0 and consec >= max_consec:
-                print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge erreicht → Stoppe komplett!", "red"))
-                state.stop_event.set()
+                consec_action = state.config.consecutive_timeout_action
+                if consec_action == "quit":
+                    print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Programm wird beendet!", "red"))
+                    state.stop_event.set()
+                    state.quit_event.set()
+                else:
+                    print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge → Stoppe Sequenz!", "red"))
+                    state.stop_event.set()
                 return False
 
             if step.else_config:
