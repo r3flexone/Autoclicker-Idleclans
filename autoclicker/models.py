@@ -13,6 +13,24 @@ from .config import AppConfig, DEFAULT_MIN_CONFIDENCE
 
 
 # =============================================================================
+# STRING-KONSTANTEN (zentral definiert, verhindert Tippfehler)
+# =============================================================================
+# ElseConfig.action
+ELSE_SKIP = "skip"
+ELSE_SKIP_CYCLE = "skip_cycle"
+ELSE_RESTART = "restart"
+ELSE_CLICK = "click"
+ELSE_KEY = "key"
+VALID_ELSE_ACTIONS = {ELSE_SKIP, ELSE_SKIP_CYCLE, ELSE_RESTART, ELSE_CLICK, ELSE_KEY}
+
+# SequenceStep.item_scan_mode
+SCAN_MODE_ALL = "all"         # Bestes pro Kategorie
+SCAN_MODE_BEST = "best"       # Nur 1 bestes Item total
+SCAN_MODE_EVERY = "every"     # Jedes gefundene Item
+VALID_SCAN_MODES = {SCAN_MODE_ALL, SCAN_MODE_BEST, SCAN_MODE_EVERY}
+
+
+# =============================================================================
 # DATENKLASSEN
 # =============================================================================
 @dataclass

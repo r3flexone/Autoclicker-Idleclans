@@ -118,14 +118,15 @@ def find_color_in_image(img: 'Image.Image', target_color: tuple, tolerance: floa
     """
     if NUMPY_AVAILABLE:
         # Schnelle NumPy-Version (ca. 100x schneller)
-        img_array = np.array(img)
+        # asarray vermeidet Kopie wenn PIL-Daten bereits im richtigen Format
+        img_array = np.asarray(img)
         if len(img_array.shape) == 3 and img_array.shape[2] >= 3:
             # Nur RGB-Kanäle verwenden, mit pixel_step für Performance
             rgb = img_array[::pixel_step, ::pixel_step, :3].astype(np.float32)
             target = np.array(target_color, dtype=np.float32)
-            # Euklidische Distanz für alle Pixel gleichzeitig berechnen
-            distances = np.sqrt(np.sum((rgb - target) ** 2, axis=2))
-            return bool(np.any(distances <= tolerance))
+            # Quadrierte Distanz vergleichen (vermeidet teure sqrt-Berechnung)
+            sq_distances = np.sum((rgb - target) ** 2, axis=2)
+            return bool(np.any(sq_distances <= tolerance * tolerance))
         return False
     else:
         # Fallback: Langsame PIL-Version
@@ -300,6 +301,10 @@ def take_screenshot(region: tuple = None) -> Optional['Image.Image']:
                 region[2] - x_offset,
                 region[3] - y_offset
             )
+            # Bounds-Check: Region muss positive Größe haben
+            if adjusted_region[2] <= adjusted_region[0] or adjusted_region[3] <= adjusted_region[1]:
+                logger.error(f"Ungültige Region nach Offset-Anpassung: {adjusted_region}")
+                return None
             return full_screenshot.crop(adjusted_region)
         else:
             return ImageGrab.grab(all_screens=True)
@@ -336,6 +341,8 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
             left, top, right, bottom = region
             width = right - left
             height = bottom - top
+            if width <= 0 or height <= 0:
+                return None
         else:
             # Vollbild: gesamter virtueller Desktop (alle Monitore)
             left = virtual_left
@@ -374,15 +381,27 @@ def take_screenshot_bitblt(region: tuple = None) -> Optional['Image.Image']:
         logger.error(f"BitBlt Screenshot fehlgeschlagen: {e}")
         return None
     finally:
-        # GDI-Resourcen IMMER freigeben (auch bei Exception)
-        if old_bmp and memDC:
-            _gdi32.SelectObject(memDC, old_bmp)
-        if bmp:
-            _gdi32.DeleteObject(bmp)
-        if memDC:
-            _gdi32.DeleteDC(memDC)
-        if hwndDC and hwnd:
-            _user32.ReleaseDC(hwnd, hwndDC)
+        # GDI-Resourcen IMMER freigeben (jeder Schritt einzeln abgesichert)
+        try:
+            if old_bmp and memDC:
+                _gdi32.SelectObject(memDC, old_bmp)
+        except OSError:
+            pass
+        try:
+            if bmp:
+                _gdi32.DeleteObject(bmp)
+        except OSError:
+            pass
+        try:
+            if memDC:
+                _gdi32.DeleteDC(memDC)
+        except OSError:
+            pass
+        try:
+            if hwndDC and hwnd:
+                _user32.ReleaseDC(hwnd, hwndDC)
+        except OSError:
+            pass
 
 
 def analyze_screen_colors(region: tuple = None, pixel_step: int = 2) -> dict:
@@ -439,6 +458,11 @@ def select_region() -> Optional[tuple]:
 
         width = x2 - x1
         height = y2 - y1
+
+        if width < 2 or height < 2:
+            print(f"\n  {err('Region zu klein!')} {width}x{height} Pixel (mindestens 2x2 nötig)")
+            return None
+
         print(f"\n  Region: {width}x{height} Pixel ({x1},{y1}) → ({x2},{y2})")
 
         region = (x1, y1, x2, y2)

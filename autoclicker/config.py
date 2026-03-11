@@ -69,6 +69,46 @@ class AppConfig:
     show_pixel_position: bool = False               # Maus kurz zum Prüf-Pixel bewegen beim Start
     debug_save_templates: bool = False              # Speichert Scan+Template in items/debug/
 
+    # Erlaubte Werte für String-Optionen
+    _VALID_TIMEOUT_ACTIONS = {"skip_cycle", "restart", "stop"}
+    _VALID_CONSEC_ACTIONS = {"stop", "quit", "exit"}
+
+    def __post_init__(self):
+        """Validiert Config-Werte nach Erstellung."""
+        warnings = []
+        # Numerische Grenzen (negative Werte korrigieren)
+        if self.clicks_per_point < 1:
+            warnings.append(f"clicks_per_point={self.clicks_per_point} → 1")
+            self.clicks_per_point = 1
+        if self.pixel_wait_timeout < 0:
+            warnings.append(f"pixel_wait_timeout={self.pixel_wait_timeout} → 0")
+            self.pixel_wait_timeout = 0
+        if self.pixel_check_interval <= 0:
+            warnings.append(f"pixel_check_interval={self.pixel_check_interval} → 0.1")
+            self.pixel_check_interval = 0.1
+        if self.pause_check_interval <= 0:
+            warnings.append(f"pause_check_interval={self.pause_check_interval} → 0.1")
+            self.pause_check_interval = 0.1
+        if self.max_consecutive_timeouts < 0:
+            warnings.append(f"max_consecutive_timeouts={self.max_consecutive_timeouts} → 0")
+            self.max_consecutive_timeouts = 0
+        if self.default_min_confidence < 0 or self.default_min_confidence > 1:
+            warnings.append(f"default_min_confidence={self.default_min_confidence} → 0.8")
+            self.default_min_confidence = 0.8
+        if self.marker_count < 1:
+            warnings.append(f"marker_count={self.marker_count} → 1")
+            self.marker_count = 1
+        # String-Werte validieren
+        if self.pixel_timeout_action not in self._VALID_TIMEOUT_ACTIONS:
+            warnings.append(f"pixel_timeout_action='{self.pixel_timeout_action}' → 'skip_cycle'")
+            self.pixel_timeout_action = "skip_cycle"
+        if self.consecutive_timeout_action not in self._VALID_CONSEC_ACTIONS:
+            warnings.append(f"consecutive_timeout_action='{self.consecutive_timeout_action}' → 'stop'")
+            self.consecutive_timeout_action = "stop"
+        if warnings:
+            for w in warnings:
+                print(f"[CONFIG WARNUNG] Ungültiger Wert korrigiert: {w}")
+
     def to_dict(self) -> dict:
         """Konvertiert zu JSON-serialisierbarem dict."""
         return asdict(self)

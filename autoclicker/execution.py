@@ -10,7 +10,11 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import CONFIG
-from .models import AutoClickerState, SequenceStep
+from .models import (
+    AutoClickerState, SequenceStep,
+    ELSE_SKIP, ELSE_SKIP_CYCLE, ELSE_RESTART, ELSE_CLICK, ELSE_KEY,
+    SCAN_MODE_ALL, SCAN_MODE_BEST, SCAN_MODE_EVERY,
+)
 from .winapi import (
     send_click, send_key, check_failsafe, set_cursor_pos
 )
@@ -87,7 +91,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
 
     _c = _phase_color(phase)
 
-    if ec.action == "skip":
+    if ec.action == ELSE_SKIP:
         if debug:
             print(dbg("ELSE: übersprungen"))
         else:
@@ -95,7 +99,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: übersprungen", _c), end="", flush=True)
         return True
 
-    elif ec.action == "click":
+    elif ec.action == ELSE_CLICK:
         if ec.delay > 0:
             if not wait_with_pause_skip(state, ec.delay, phase, step_num, total_steps,
                                         f"ELSE: klicke in"):
@@ -117,7 +121,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
             print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Klick auf {name}!", _c), end="", flush=True)
         return True
 
-    elif ec.action == "key":
+    elif ec.action == ELSE_KEY:
         if ec.delay > 0:
             if not wait_with_pause_skip(state, ec.delay, phase, step_num, total_steps,
                                         f"ELSE: Taste in"):
@@ -136,7 +140,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
                 print(col(f"[{phase}] Schritt {step_num}/{total_steps} | ELSE: Taste '{ec.key}'!", _c), end="", flush=True)
         return True
 
-    elif ec.action == "restart":
+    elif ec.action == ELSE_RESTART:
         if debug:
             print(dbg("ELSE: Neustart!"))
         else:
@@ -145,7 +149,7 @@ def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
         state.restart_event.set()
         return False
 
-    elif ec.action == "skip_cycle":
+    elif ec.action == ELSE_SKIP_CYCLE:
         if debug:
             print(dbg("ELSE: Zyklus überspringen!"))
         else:
@@ -188,12 +192,22 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
         if isinstance(park_pos, (list, tuple)) and len(park_pos) == 2:
             px, py = int(park_pos[0]), int(park_pos[1])
         else:
-            # true = Bildschirmmitte
+            # true = Bildschirmmitte (virtueller Desktop für Multi-Monitor)
             try:
-                px = ctypes.windll.user32.GetSystemMetrics(0) // 2
-                py = ctypes.windll.user32.GetSystemMetrics(1) // 2
+                SM_CXVIRTUALSCREEN = 78
+                SM_CYVIRTUALSCREEN = 79
+                SM_XVIRTUALSCREEN = 76
+                SM_YVIRTUALSCREEN = 77
+                vw = ctypes.windll.user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+                vh = ctypes.windll.user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+                vx = ctypes.windll.user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+                vy = ctypes.windll.user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+                px = vx + vw // 2
+                py = vy + vh // 2
             except (AttributeError, OSError):
-                px, py = 960, 540  # Fallback 1920x1080
+                # Letzter Fallback: Primärmonitor
+                px = ctypes.windll.user32.GetSystemMetrics(0) // 2 if hasattr(ctypes, 'windll') else 960
+                py = ctypes.windll.user32.GetSystemMetrics(1) // 2 if hasattr(ctypes, 'windll') else 540
         set_cursor_pos(px, py)
         time.sleep(0.05)  # Kurz warten bis Maus angekommen & Tooltip weg
 
@@ -279,7 +293,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     if not found_items:
         return []
 
-    if mode == "every":
+    if mode == SCAN_MODE_EVERY:
         print(col(f"[SCAN] {len(found_items)} Item(s) gefunden - klicke alle!", "cyan"))
         # Items werden in Scan-Reihenfolge geklickt (bei scan_reverse: von hinten nach vorne)
         return [(slot.click_pos, item, priority) for slot, item, priority in found_items]
@@ -307,7 +321,7 @@ def execute_item_scan(state: AutoClickerState, scan_name: str, mode: str = "all"
     # Items in Scan-Reihenfolge zurückgeben (bei scan_reverse: von hinten nach vorne)
     filtered_items = [best_per_category[cat] for cat in ordered_categories]
 
-    if mode == "all":
+    if mode == SCAN_MODE_ALL:
         print(col(f"[SCAN] {len(filtered_items)} Item(s) gefunden - klicke alle!", "cyan"))
         return [(slot.click_pos, item, priority) for slot, item, priority in filtered_items]
     else:
@@ -362,7 +376,7 @@ def _execute_item_scan_step(state: AutoClickerState, step: SequenceStep,
     """Führt einen Item-Scan Schritt aus."""
     debug = state.config.debug_mode
     mode = step.item_scan_mode
-    mode_str = "alle" if mode == "all" else "bestes"
+    mode_str = "alle" if mode == SCAN_MODE_ALL else "bestes"
     immediate = state.config.scan_click_immediate
 
     if debug:
@@ -654,7 +668,10 @@ def _execute_screenshot_step(state: AutoClickerState, step: SequenceStep,
         return True  # Nicht als Fehler werten, Sequenz läuft weiter
 
     if not state.session_screenshots_dir:
-        session_ts = datetime.now().strftime("%Y-%m-%d")
+        # Session-Start-Datum verwenden (nicht aktuelles), damit über Mitternacht
+        # alle Screenshots einer Session im selben Ordner landen
+        session_dt = datetime.fromtimestamp(state.start_time) if state.start_time else datetime.now()
+        session_ts = session_dt.strftime("%Y-%m-%d")
         state.session_screenshots_dir = Path(SCREENSHOTS_DIR) / session_ts
     screenshots_dir = state.session_screenshots_dir
     screenshots_dir.mkdir(parents=True, exist_ok=True)

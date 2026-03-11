@@ -182,11 +182,10 @@ def get_next_point_id(state: AutoClickerState) -> int:
 
 
 def get_point_by_id(state: AutoClickerState, point_id: int) -> Optional[ClickPoint]:
-    """Findet einen Punkt anhand seiner ID."""
-    for p in state.points:
-        if p.id == point_id:
-            return p
-    return None
+    """Findet einen Punkt anhand seiner ID (O(1) Dict-Lookup mit Fallback)."""
+    # Schneller Dict-Lookup
+    points_by_id = {p.id: p for p in state.points}
+    return points_by_id.get(point_id)
 
 
 def load_sequence_file(filepath: Path) -> Optional[Sequence]:
