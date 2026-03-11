@@ -523,6 +523,9 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 current_name = get_color_name(current_color)
 
                 if condition_met:
+                    # Erfolg → Consecutive-Timeout-Zähler zurücksetzen
+                    with state.lock:
+                        state.consecutive_timeouts = 0
                     msg = "Farbe weg!" if wc.until_gone else "Farbe erkannt!"
                     if debug:
                         print(dbg(f"{msg} | Erwartet: {expected_name} RGB{wc.color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
@@ -543,8 +546,21 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         if timeout > 0 and elapsed >= timeout:
             with state.lock:
                 state.timeouts += 1
+                state.consecutive_timeouts += 1
+                consec = state.consecutive_timeouts
             clear_line()
-            print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
+            max_consec = state.config.max_consecutive_timeouts
+            if max_consec > 0:
+                print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s! ({consec}/{max_consec} in Folge)", "red"), end="", flush=True)
+            else:
+                print(col(f"\n[TIMEOUT] Farbe nicht erkannt nach {timeout}s!", "red"), end="", flush=True)
+
+            # Notbremse: Zu viele aufeinanderfolgende Timeouts → hart stoppen
+            if max_consec > 0 and consec >= max_consec:
+                print(col(f"\n[NOTBREMSE] {consec}x Timeout in Folge erreicht → Stoppe komplett!", "red"))
+                state.stop_event.set()
+                return False
+
             if step.else_config:
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
@@ -747,6 +763,7 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.skipped_cycles = 0
         state.restarts = 0
         state.timeouts = 0
+        state.consecutive_timeouts = 0
         state.start_time = time.time()
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
@@ -882,6 +899,9 @@ def sequence_worker(state: AutoClickerState) -> None:
         print(f"  {col('Tasten:', 'cyan'):22s} {state.key_presses}")
     if state.timeouts > 0:
         print(f"  {col('Timeouts:', 'yellow'):22s} {state.timeouts}")
+        max_consec = state.config.max_consecutive_timeouts
+        if max_consec > 0 and state.consecutive_timeouts >= max_consec:
+            print(f"  {col('Notbremse:', 'red'):22s} Ja ({state.consecutive_timeouts}x in Folge)")
     if state.skipped_cycles > 0:
         print(f"  {col('Übersprungen:', 'yellow'):22s} {state.skipped_cycles}")
     if state.restarts > 0:
