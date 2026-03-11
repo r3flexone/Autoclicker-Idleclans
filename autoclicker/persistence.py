@@ -682,13 +682,18 @@ def shift_category_priorities(state: AutoClickerState, category: str) -> int:
     return shifted
 
 
-def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[str] = None) -> int:
-    """Aktualisiert ein Item in allen Scan-Konfigurationen."""
+def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[str] = None) -> tuple[int, int]:
+    """Aktualisiert ein Item in allen Scan-Konfigurationen.
+
+    Returns:
+        (updated_count, failed_count) - Anzahl aktualisierter und fehlgeschlagener Scans.
+    """
     updated_scans = 0
+    failed_scans = 0
     scan_dir = Path(ITEM_SCANS_DIR)
 
     if not scan_dir.exists():
-        return 0
+        return 0, 0
 
     for scan_file in scan_dir.glob("*.json"):
         try:
@@ -709,9 +714,10 @@ def update_item_in_scans(old_name: str, new_name: str, new_template: Optional[st
                 updated_scans += 1
 
         except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
+            failed_scans += 1
             print(f"  {warn(f'Konnte {scan_file.name} nicht aktualisieren: {e}')}")
 
-    return updated_scans
+    return updated_scans, failed_scans
 
 
 def print_points(state: AutoClickerState) -> None:

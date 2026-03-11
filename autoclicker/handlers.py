@@ -426,12 +426,14 @@ def handle_schedule(state: AutoClickerState) -> None:
         # Bei relativen Zeiten: target_timestamp ist None, wird nach Enter berechnet
         if target_timestamp is not None:
             target_time = target_timestamp
+            target_dt = datetime.fromtimestamp(target_time)
+            print(f"\n{col('[GEPLANT]', 'cyan')} Sequenz '{seq_name}' startet {desc}")
+            print(f"          {col('Zielzeit:', 'cyan')} {target_dt.strftime('%H:%M:%S')}")
+            print(f"          {col('Wartezeit:', 'cyan')} {format_duration(seconds)}")
         else:
-            target_time = datetime.now().timestamp() + seconds
-        target_dt = datetime.fromtimestamp(target_time)
-        print(f"\n{col('[GEPLANT]', 'cyan')} Sequenz '{seq_name}' startet {desc}")
-        print(f"          {col('Zielzeit:', 'cyan')} {target_dt.strftime('%H:%M:%S')}")
-        print(f"          {col('Wartezeit:', 'cyan')} {format_duration(seconds)}")
+            target_time = datetime.now().timestamp() + seconds  # Nur für Vorschau
+            print(f"\n{col('[GEPLANT]', 'cyan')} Sequenz '{seq_name}' startet {desc}")
+            print(f"          {col('Wartezeit:', 'cyan')} {format_duration(seconds)} (ab Enter-Bestätigung)")
         print(f"\n          {col('Enter', 'yellow')} drücken zum Starten, {col('cancel', 'yellow')} zum Abbrechen")
 
         # Bestätigung abwarten

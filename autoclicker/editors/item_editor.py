@@ -888,9 +888,11 @@ def handle_rename_command(state: AutoClickerState, cmd: str) -> None:
             state.global_items[new_name] = item
 
         # Auch in allen Scan-Konfigurationen aktualisieren
-        updated_scans = update_item_in_scans(old_name, new_name, item.template)
+        updated_scans, failed_scans = update_item_in_scans(old_name, new_name, item.template)
         if updated_scans > 0:
             print(f"  + {updated_scans} Scan-Konfiguration(en) aktualisiert")
+        if failed_scans > 0:
+            print(f"  {warn(f'{failed_scans} Scan-Datei(en) konnten nicht aktualisiert werden!')}")
 
         print(f"  + Item umbenannt: '{old_name}' -> '{new_name}' (gespeichert)")
     except ValueError:
