@@ -798,6 +798,7 @@ def sequence_worker(state: AutoClickerState) -> None:
             print(col("=" * 60, 'gray'))
             if not state.scheduled_start:
                 print(dbg("Drücke Enter zum Starten..."))
+                time.sleep(0.3)  # Rest-Events von CTRL+ALT+S abklingen lassen
                 safe_input()
             state.scheduled_start = False
 

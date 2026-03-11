@@ -267,7 +267,7 @@ def flush_input_buffer() -> None:
     if _REAL_CONSOLE:
         try:
             while msvcrt.kbhit():
-                msvcrt.getch()
+                msvcrt.getwch()  # getwch statt getch — gleicher Buffer-Typ wie safe_input
         except Exception:
             pass
     else:
@@ -306,7 +306,7 @@ def safe_input(prompt: str = "") -> str:
             if ch == '\x1b':  # ESC
                 print()
                 return "\x1b"
-            elif ch == '\r':  # Enter
+            elif ch in ('\r', '\n'):  # Enter (auch \n falls CTRL noch gehalten)
                 print()
                 return ''.join(chars)
             elif ch in ('\x08', '\x7f'):  # Backspace
