@@ -179,13 +179,15 @@ def run_sequence_loader(state: AutoClickerState) -> None:
         return
 
     # Sequenzen einmal laden und cachen
+    with state.lock:
+        active_name = state.active_sequence.name if state.active_sequence else None
     loaded_sequences = []  # (seq, filepath) Paare
     menu_options = []
     for name, path in sequences:
         seq = load_sequence_file(path)
         if seq:
             loaded_sequences.append((seq, path))
-            active_marker = " *AKTIV*" if state.active_sequence and state.active_sequence.name == seq.name else ""
+            active_marker = " *AKTIV*" if active_name and active_name == seq.name else ""
             menu_options.append(f"{seq}{active_marker}")
 
     choice = interactive_select(menu_options, title="\nSEQUENZ LADEN:")

@@ -495,6 +495,13 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         set_cursor_pos(wc.pixel[0], wc.pixel[1])
         time.sleep(state.config.show_pixel_delay)
 
+    if not PILLOW_AVAILABLE:
+        print(col(f"\n[FEHLER] Pillow nicht installiert - Farbprüfung nicht möglich!", "red"))
+        if step.else_config:
+            return execute_else_action(state, step, phase, step_num, total_steps)
+        state.stop_event.set()
+        return False
+
     timeout = state.config.pixel_wait_timeout
     start_time = time.time()
     expected_name = get_color_name(wc.color)
@@ -509,39 +516,38 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
         if not wait_while_paused(state, "Warte auf Farbe..."):
             break
 
-        if PILLOW_AVAILABLE:
-            img = take_screenshot((wc.pixel[0], wc.pixel[1],
-                                   wc.pixel[0]+1, wc.pixel[1]+1))
-            if img:
-                current_color = img.getpixel((0, 0))[:3]
-                dist = color_distance(current_color, wc.color)
-                pixel_tolerance = state.config.pixel_wait_tolerance
-                color_matches = dist <= pixel_tolerance
-                condition_met = (not color_matches) if wc.until_gone else color_matches
+        img = take_screenshot((wc.pixel[0], wc.pixel[1],
+                               wc.pixel[0]+1, wc.pixel[1]+1))
+        if img:
+            current_color = img.getpixel((0, 0))[:3]
+            dist = color_distance(current_color, wc.color)
+            pixel_tolerance = state.config.pixel_wait_tolerance
+            color_matches = dist <= pixel_tolerance
+            condition_met = (not color_matches) if wc.until_gone else color_matches
 
-                # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
-                elapsed = time.time() - start_time
-                current_name = get_color_name(current_color)
+            # Debug-Ausgabe: Zeige erwartete und aktuelle Farbe
+            elapsed = time.time() - start_time
+            current_name = get_color_name(current_color)
 
-                if condition_met:
-                    # Erfolg → Consecutive-Timeout-Zähler zurücksetzen
-                    with state.lock:
-                        state.consecutive_timeouts = 0
-                    msg = "Farbe weg!" if wc.until_gone else "Farbe erkannt!"
-                    if debug:
-                        print(dbg(f"{msg} | Erwartet: {expected_name} RGB{wc.color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
-                    else:
-                        clear_line()
-                        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", _phase_color(phase)), end="", flush=True)
-                    break
-
+            if condition_met:
+                # Erfolg → Consecutive-Timeout-Zähler zurücksetzen
+                with state.lock:
+                    state.consecutive_timeouts = 0
+                msg = "Farbe weg!" if wc.until_gone else "Farbe erkannt!"
                 if debug:
-                    # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
-                    print(dbg(f"Warte auf {expected_name} RGB{wc.color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
+                    print(dbg(f"{msg} | Erwartet: {expected_name} RGB{wc.color} | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
                 else:
-                    # Ohne Debug: Auf gleicher Zeile überschreiben
                     clear_line()
-                    print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", _phase_color(phase)), end="", flush=True)
+                    print(col(f"[{phase}] Schritt {step_num}/{total_steps} | {msg}", _phase_color(phase)), end="", flush=True)
+                break
+
+            if debug:
+                # Debug: Auf neuer Zeile ausgeben (nicht überschreiben)
+                print(dbg(f"Warte auf {expected_name} RGB{wc.color} ({elapsed:.0f}s) | Aktuell: {current_name} RGB{current_color} Dist={dist:.0f}"))
+            else:
+                # Ohne Debug: Auf gleicher Zeile überschreiben
+                clear_line()
+                print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Warte auf {expected_name}... ({elapsed:.0f}s)", _phase_color(phase)), end="", flush=True)
 
         elapsed = time.time() - start_time
         if timeout > 0 and elapsed >= timeout:
@@ -706,11 +712,12 @@ def print_status(state: AutoClickerState) -> None:
     """Gibt den aktuellen Status aus."""
     with state.lock:
         is_running = state.is_running
-        seq_name = state.active_sequence.name if state.active_sequence else "Keine"
+        active_seq = state.active_sequence
+        seq_name = active_seq.name if active_seq else "Keine"
         points_str = f"{len(state.points)} Punkt(e)"
 
         clear_line()
-        if is_running and state.active_sequence:
+        if is_running and active_seq:
             status_tag = col("[RUNNING]", "green")
             duration = format_duration(time.time() - state.start_time) if state.start_time else "0:00"
             stats = f"Klicks: {state.total_clicks}"
@@ -723,10 +730,9 @@ def print_status(state: AutoClickerState) -> None:
                 status_tag = col("[STOPPED]", "red")
             else:
                 status_tag = col("[BEREIT]", "green")
-            if state.active_sequence:
-                _seq = state.active_sequence
-                init_part = f"Init: {len(_seq.init_steps)}, " if _seq.init_steps else ""
-                seq_info = f"{init_part}Loops: {len(_seq.loop_phases)}"
+            if active_seq:
+                init_part = f"Init: {len(active_seq.init_steps)}, " if active_seq.init_steps else ""
+                seq_info = f"{init_part}Loops: {len(active_seq.loop_phases)}"
                 print(f"{status_tag} {points_str} | Sequenz: {col(seq_name, 'cyan')} ({seq_info})", flush=True)
             else:
                 print(f"{status_tag} {points_str} | Sequenz: {seq_name}", flush=True)
