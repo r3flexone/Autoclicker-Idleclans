@@ -329,6 +329,37 @@ Wenn ein Farb-Trigger die eingestellte Zeit (`pixel_wait_timeout`, Standard: 300
 
 **`pixel_wait_timeout: 0`** deaktiviert den Timeout komplett → wartet unendlich auf die Farbe (nur manueller Skip/Stop beendet)
 
+### Notbremse (Consecutive Timeout)
+
+Wenn ein Farb-Trigger **mehrfach hintereinander** in den Timeout läuft (z.B. weil das Spiel abgestürzt ist), greift die **Notbremse**. Das verhindert, dass der Autoclicker 200x sinnlos den Zyklus neu startet.
+
+**Konfiguration:**
+```json
+{
+  "max_consecutive_timeouts": 5,
+  "consecutive_timeout_action": "stop"
+}
+```
+
+| Option | Beschreibung |
+|--------|--------------|
+| `max_consecutive_timeouts` | Nach X Timeouts in Folge → Notbremse (`0` = deaktiviert) |
+| `consecutive_timeout_action` | Was passiert bei Auslösung (siehe unten) |
+
+**Eskalationsstufen:**
+
+| Wert | Verhalten |
+|------|-----------|
+| `stop` (Standard) | Sequenz wird gestoppt, Menü bleibt offen |
+| `quit` | Menü wird sauber beendet (END-Phase übersprungen) |
+| `exit` | Python-Prozess wird sofort beendet (`os._exit`), muss manuell neu gestartet werden |
+
+**Verhalten:**
+- Bei jedem Timeout wird der Zähler hochgezählt: `[TIMEOUT] Farbe nicht erkannt nach 300s! (3/5 in Folge)`
+- Bei **erfolgreicher** Farberkennung wird der Zähler auf 0 zurückgesetzt
+- Die Notbremse greift **vor** der normalen Timeout-Aktion (`pixel_timeout_action`)
+- In den Statistiken wird angezeigt ob die Notbremse ausgelöst wurde
+
 ### Restart vs. Skip Cycle
 
 | Aktion | Beschreibung |
@@ -348,9 +379,11 @@ STATISTIKEN:
   Items:          56
   Tasten:         12
   Timeouts:       3
+  Notbremse:      Ja (5x in Folge)
   Übersprungen:   2
   Neustarts:      1
 ```
+(Einträge erscheinen nur wenn > 0, Notbremse nur wenn ausgelöst)
 
 ### Zeitplan (`CTRL+ALT+Z`)
 
@@ -495,6 +528,8 @@ Wird beim ersten Start automatisch erstellt:
   "pixel_wait_timeout": 300,
   "pixel_timeout_action": "skip_cycle",
   "pixel_check_interval": 1,
+  "max_consecutive_timeouts": 5,
+  "consecutive_timeout_action": "stop",
   "scan_pixel_step": 2,
   "show_pixel_delay": 0.3,
   "scan_reverse": true,
@@ -544,6 +579,8 @@ Wird beim ersten Start automatisch erstellt:
 | `pixel_wait_timeout` | Timeout in Sekunden für Farb-Trigger (Standard: 300, `0` = unendlich) |
 | `pixel_timeout_action` | **Nur Fallback** wenn kein `else` definiert: `skip_cycle` (Standard), `restart`, `stop` |
 | `pixel_check_interval` | Wie oft auf Farbe prüfen (Sekunden) |
+| `max_consecutive_timeouts` | Nach X aufeinanderfolgenden Timeouts → Notbremse (`0` = deaktiviert, Standard: 5) |
+| `consecutive_timeout_action` | Notbremse-Aktion: `stop` (Sequenz stoppen), `quit` (Menü beenden), `exit` (Prozess killen) |
 | `scan_pixel_step` | Pixel-Schrittweite bei Farbsuche (1=genauer, 2=schneller) |
 | `show_pixel_delay` | Wie lange Pixel-Position angezeigt wird in Sekunden (Standard: 0.3) |
 
@@ -585,7 +622,7 @@ Wird beim ersten Start automatisch erstellt:
 ```
 Autoclicker-Idleclans/
 ├── main.py                 # Einstiegspunkt
-├── autoclicker/            # Hauptmodul (~6600 Zeilen)
+├── autoclicker/            # Hauptmodul (~7600 Zeilen)
 │   ├── __init__.py
 │   ├── config.py           # Konfiguration (Hotkeys, Defaults)
 │   ├── models.py           # Datenmodelle (ClickPoint, Sequence, etc.)
@@ -628,7 +665,7 @@ Autoclicker-Idleclans/
 
 ### Architektur
 
-Das Programm ist modular aufgebaut (~6600 Zeilen in 15 Dateien):
+Das Programm ist modular aufgebaut (~7600 Zeilen in 15 Dateien):
 
 ```
 main.py                      Einstiegspunkt, Event-Loop
@@ -722,6 +759,19 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Notbremse (Consecutive Timeout)**: Stoppt automatisch nach X aufeinanderfolgenden Timeouts (`max_consecutive_timeouts`). Drei Eskalationsstufen: `stop`, `quit`, `exit` (Prozess killen)
+- **Config-Validierung**: Ungültige Werte in `config.json` werden automatisch korrigiert mit Warnung (z.B. negative Timeouts, unbekannte Aktions-Strings)
+- **Race Condition Fix**: Alle Zugriffe auf `state.active_sequence` sind jetzt thread-safe unter Lock
+- **PILLOW-Guard**: Farb-Trigger bricht sofort ab wenn Pillow nicht installiert ist (statt sinnlos zu loopen)
+- **Bounds-Checks**: Region-Validierung bei Screenshots (BitBlt, ImageGrab, Region-Auswahl)
+- **GDI Cleanup**: Jeder GDI-Resource-Cleanup einzeln abgesichert (kein Überspringen bei Fehler)
+- **String-Konstanten**: `ELSE_SKIP`, `SCAN_MODE_ALL` etc. zentral definiert (verhindert Tippfehler)
+- **Screenshot-Ordner**: Session-Start-Datum statt `datetime.now()` (ein Ordner pro Session, auch über Mitternacht)
+- **scan_park_mouse**: Nutzt Virtual Screen Metrics für echte Bildschirmmitte (Multi-Monitor-kompatibel)
+- **NumPy-Optimierung**: `np.asarray` (Zero-Copy) + quadrierte Distanz ohne `sqrt`
+
+### Vorherige Änderungen
 
 - **Checkbox-Ansicht**: `show`/`s` im Scan-Editor zeigt `[X]`/`[ ]` für zugewiesene Slots/Items
 - **Screenshots nach Tag**: Sequenz-Screenshots werden nach Tag gruppiert (`YYYY-MM-DD/`) statt pro Session
