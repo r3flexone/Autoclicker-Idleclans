@@ -599,6 +599,7 @@ def _execute_wait_for_color(state: AutoClickerState, step: SequenceStep,
                 return False
 
             if step.else_config:
+                print()  # Newline nach TIMEOUT-Zeile (end="" oben)
                 return execute_else_action(state, step, phase, step_num, total_steps)
             # Kein else definiert → globale Config-Option auswerten
             timeout_action = state.config.pixel_timeout_action
