@@ -9,6 +9,8 @@ from dataclasses import dataclass, fields, asdict
 from pathlib import Path
 from typing import Optional, Union
 
+from .utils import col, ok, warn, err
+
 # Logger
 logger = logging.getLogger("autoclicker")
 
@@ -107,7 +109,7 @@ class AppConfig:
             self.consecutive_timeout_action = "stop"
         if warnings:
             for w in warnings:
-                print(f"[CONFIG WARNUNG] Ungültiger Wert korrigiert: {w}")
+                print(warn(f"Config-Wert korrigiert: {w}"))
 
     def to_dict(self) -> dict:
         """Konvertiert zu JSON-serialisierbarem dict."""
@@ -139,17 +141,17 @@ def load_config() -> AppConfig:
                 missing_keys = set(DEFAULT_CONFIG.keys()) - set(loaded.keys())
                 if missing_keys:
                     save_config(config)
-                    print(f"[CONFIG] Geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}")
+                    print(ok(f"Config geladen + {len(missing_keys)} neue Option(en) ergänzt: {', '.join(missing_keys)}"))
                 else:
-                    print(f"[CONFIG] Geladen aus {CONFIG_FILE}")
+                    print(col(f"[CONFIG] Geladen aus {CONFIG_FILE}", "green"))
                 return config
         except (json.JSONDecodeError, IOError) as e:
-            print(f"[WARNUNG] Config konnte nicht geladen werden: {e}")
-            print("[CONFIG] Verwende Standard-Konfiguration")
+            print(warn(f"Config konnte nicht geladen werden: {e}"))
+            print(col("[CONFIG] Verwende Standard-Konfiguration", "yellow"))
     else:
         # Erstelle Standard-Config-Datei
         save_config(AppConfig())
-        print(f"[CONFIG] Standard-Konfiguration erstellt: {CONFIG_FILE}")
+        print(ok(f"Standard-Konfiguration erstellt: {CONFIG_FILE}"))
 
     return AppConfig()
 
@@ -160,7 +162,7 @@ def save_config(config: AppConfig) -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config.to_dict(), f, indent=2, ensure_ascii=False)
     except IOError as e:
-        print(f"[FEHLER] Config konnte nicht gespeichert werden: {e}")
+        print(err(f"Config konnte nicht gespeichert werden: {e}"))
 
 
 # Konfiguration laden (wird beim Import ausgeführt)

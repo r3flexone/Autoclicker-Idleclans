@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from ..models import ClickPoint, ElseConfig, WaitCondition, SequenceStep, LoopPhase, Sequence, AutoClickerState
+from ..models import ClickPoint, ElseConfig, WaitCondition, SequenceStep, LoopPhase, Sequence, AutoClickerState, ELSE_CLICK
 from ..utils import safe_input, is_cancel, confirm, interactive_select, col, ok, err, info, warn, header, hint, cmd_hint, breadcrumb, suggest_command, coord_context, cancel_hint, parse_non_negative_float, parse_non_negative_range
 from ..winapi import get_cursor_pos, VK_CODES
 from ..persistence import (
@@ -130,7 +130,7 @@ def _remap_sequence_to_local_points(state: AutoClickerState, sequence: Sequence,
 
         # Else-Klick-Punkt
         ec = step.else_config
-        if ec and ec.action == "click" and ec.name:
+        if ec and ec.action == ELSE_CLICK and ec.name:
             if ec.name in local_by_name:
                 lp = local_by_name[ec.name]
                 if ec.x != lp.x or ec.y != lp.y:
