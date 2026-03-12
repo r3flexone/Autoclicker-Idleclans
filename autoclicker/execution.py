@@ -11,11 +11,13 @@ from pathlib import Path
 
 from .config import CONFIG
 from .models import (
-    AutoClickerState, SequenceStep,
+    AutoClickerState, SequenceStep, BossScanConfig, BossProfile,
     ELSE_SKIP, ELSE_SKIP_CYCLE, ELSE_RESTART, ELSE_CLICK, ELSE_KEY,
     SCAN_MODE_ALL, SCAN_MODE_BEST, SCAN_MODE_EVERY,
     TIMEOUT_SKIP_CYCLE, TIMEOUT_RESTART,
     CONSEC_EXIT, CONSEC_QUIT,
+    BOSS_ACTION_SCAN, BOSS_ACTION_CLICK, BOSS_ACTION_KEY,
+    BOSS_ACTION_SKIP, BOSS_ACTION_SKIP_CYCLE, BOSS_ACTION_RESTART,
 )
 from .winapi import (
     send_click, send_key, check_failsafe, set_cursor_pos
@@ -472,6 +474,241 @@ def _execute_item_scan_immediate(state: AutoClickerState, step: SequenceStep,
     return True
 
 
+# =============================================================================
+# BOSS-SCAN AUSFÜHRUNG
+# =============================================================================
+def execute_boss_scan(state: AutoClickerState, config_name: str) -> tuple[bool, BossProfile | None]:
+    """Erkennt welcher Boss in der Scan-Region ist.
+
+    Returns:
+        (found, boss_profile) - True + BossProfile wenn Boss erkannt, sonst (False, None).
+    """
+    if config_name not in state.boss_scans:
+        print(err(f"Boss-Scan '{config_name}' nicht gefunden!"))
+        return False, None
+
+    config = state.boss_scans[config_name]
+    if not config.bosses:
+        print(err(f"Boss-Scan '{config_name}' hat keine Bosse definiert!"))
+        return False, None
+
+    debug = state.config.debug_detection
+    tolerance = config.color_tolerance
+
+    # Screenshot der Boss-Region
+    img = take_screenshot(config.scan_region)
+    if img is None:
+        if debug:
+            print(dbg("Boss-Scan: Screenshot fehlgeschlagen!"))
+        return False, None
+
+    if debug:
+        r = config.scan_region
+        print(dbg(f"Boss-Scan '{config_name}': Region ({r[0]},{r[1]})-({r[2]},{r[3]}), {len(config.bosses)} Bosse"))
+
+    # Bosse der Reihe nach prüfen (Reihenfolge = Priorität)
+    for boss in config.bosses:
+        template_ok = True
+        template_info = ""
+        marker_ok = True
+        marker_info = ""
+
+        # 1. Template-Matching
+        if boss.template:
+            match, confidence, pos = match_template_in_image(
+                img, boss.template, boss.min_confidence
+            )
+            template_ok = match
+            template_info = f"Template {confidence:.1%}" if match else f"Template {confidence:.1%} (min: {boss.min_confidence:.0%})"
+
+        # 2. Marker-Farben
+        if boss.marker_colors:
+            markers_total = len(boss.marker_colors)
+            markers_found = sum(1 for marker in boss.marker_colors
+                               if find_color_in_image(img, marker, tolerance))
+
+            require_all = state.config.require_all_markers
+            min_required = state.config.min_markers_required
+
+            if require_all:
+                marker_ok = (markers_found == markers_total)
+            else:
+                marker_ok = (markers_found >= min_required)
+
+            marker_info = f"Marker {markers_found}/{markers_total}"
+
+        # 3. Debug-Ausgabe
+        if debug:
+            info_parts = []
+            if boss.template:
+                info_parts.append(template_info)
+            if boss.marker_colors:
+                info_parts.append(marker_info)
+
+            if not info_parts:
+                print(dbg(f"  → {boss.name}: kein Template/Marker definiert"))
+            elif template_ok and marker_ok:
+                print(dbg(f"  → {boss.name} ERKANNT! ({', '.join(info_parts)})"))
+            else:
+                print(dbg(f"  → {boss.name}: {', '.join(info_parts)}"))
+
+        # 4. Boss erkannt?
+        if template_ok and marker_ok and (boss.template or boss.marker_colors):
+            return True, boss
+
+    if debug:
+        print(dbg("  → Kein Boss erkannt"))
+    return False, None
+
+
+def _execute_boss_action(state: AutoClickerState, boss: BossProfile,
+                         step: SequenceStep, step_num: int, total_steps: int,
+                         phase: str, debug: bool) -> bool:
+    """Führt die einem Boss zugeordnete Aktion aus."""
+    _c = _phase_color(phase)
+
+    if boss.action_delay > 0:
+        if debug:
+            print(dbg(f"Boss-Aktion Delay: {boss.action_delay}s"))
+        if state.stop_event.wait(boss.action_delay):
+            return False
+
+    if boss.action == BOSS_ACTION_SCAN:
+        if not boss.action_scan:
+            print(err(f"Boss '{boss.name}': Kein Item-Scan definiert!"))
+            return True
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Starte Scan '{boss.action_scan}' ({boss.action_scan_mode})"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss '{boss.name}' → Scan '{boss.action_scan}'", _c), end="", flush=True)
+
+        scan_results = execute_item_scan(state, boss.action_scan, boss.action_scan_mode)
+        if scan_results:
+            for pos, item, priority in scan_results:
+                if state.stop_event.is_set():
+                    return False
+                if not _click_scan_result(state, pos, item, priority, debug):
+                    return False
+            if debug:
+                print(dbg(f"Boss-Scan fertig: {len(scan_results)} Item(s) geklickt"))
+        else:
+            if debug:
+                print(dbg("Boss-Scan: kein Item gefunden"))
+
+    elif boss.action == BOSS_ACTION_CLICK:
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Klick ({boss.action_x},{boss.action_y})"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss '{boss.name}' → Klick ({boss.action_x},{boss.action_y})", _c), end="", flush=True)
+        send_click(boss.action_x, boss.action_y)
+        with state.lock:
+            state.total_clicks += 1
+
+    elif boss.action == BOSS_ACTION_KEY:
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Taste '{boss.action_key}'"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss '{boss.name}' → Taste '{boss.action_key}'", _c), end="", flush=True)
+        if boss.action_key:
+            send_key(boss.action_key)
+            with state.lock:
+                state.key_presses += 1
+
+    elif boss.action == BOSS_ACTION_SKIP:
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Schritt überspringen"))
+
+    elif boss.action == BOSS_ACTION_SKIP_CYCLE:
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Zyklus überspringen"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss '{boss.name}' → Zyklus überspringen", _c))
+        state.skip_cycle_event.set()
+        return False
+
+    elif boss.action == BOSS_ACTION_RESTART:
+        if debug:
+            print(dbg(f"Boss '{boss.name}' → Sequenz neustarten"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss '{boss.name}' → Neustart", _c))
+        state.restart_event.set()
+        return False
+
+    return True
+
+
+def _execute_boss_scan_step(state: AutoClickerState, step: SequenceStep,
+                            step_num: int, total_steps: int, phase: str) -> bool:
+    """Führt einen Boss-Scan Schritt aus."""
+    debug = state.config.debug_mode
+    _c = _phase_color(phase)
+
+    if debug:
+        print(dbg(f"Starte Boss-Scan '{step.boss_scan}'..."))
+    else:
+        clear_line()
+        print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss-Scan '{step.boss_scan}'...", _c), flush=True)
+
+    found, boss = execute_boss_scan(state, step.boss_scan)
+
+    if found and boss:
+        if debug:
+            print(dbg(f"Boss erkannt: {boss.name}"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Boss: {boss.name}", _c), end="", flush=True)
+        return _execute_boss_action(state, boss, step, step_num, total_steps, phase, debug)
+    else:
+        # Kein Boss erkannt → Else-Config oder Default-Aktion
+        if step.else_config:
+            if debug:
+                print(dbg("Kein Boss erkannt → else-Aktion"))
+            return execute_else_action(state, step, phase, step_num, total_steps)
+
+        # Default-Aktion aus der BossScanConfig
+        config = state.boss_scans.get(step.boss_scan)
+        if config and config.default_action != BOSS_ACTION_SKIP:
+            if config.default_action == BOSS_ACTION_SKIP_CYCLE:
+                if debug:
+                    print(dbg("Kein Boss erkannt → Zyklus überspringen (Default)"))
+                else:
+                    clear_line()
+                    print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Kein Boss → Zyklus überspringen", _c))
+                state.skip_cycle_event.set()
+                return False
+            elif config.default_action == BOSS_ACTION_RESTART:
+                if debug:
+                    print(dbg("Kein Boss erkannt → Neustart (Default)"))
+                else:
+                    clear_line()
+                    print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Kein Boss → Neustart", _c))
+                state.restart_event.set()
+                return False
+            elif config.default_action == BOSS_ACTION_SCAN and config.default_scan:
+                if debug:
+                    print(dbg(f"Kein Boss erkannt → Default-Scan '{config.default_scan}'"))
+                scan_results = execute_item_scan(state, config.default_scan)
+                if scan_results:
+                    for pos, item, priority in scan_results:
+                        if state.stop_event.is_set():
+                            return False
+                        if not _click_scan_result(state, pos, item, priority, debug):
+                            return False
+
+        if debug:
+            print(dbg("Kein Boss erkannt → übersprungen"))
+        else:
+            clear_line()
+            print(col(f"[{phase}] Schritt {step_num}/{total_steps} | Kein Boss erkannt", _c), end="", flush=True)
+
+    return True
+
+
 def _execute_key_press_step(state: AutoClickerState, step: SequenceStep,
                             step_num: int, total_steps: int, phase: str) -> bool:
     """Führt einen Tastendruck-Schritt aus."""
@@ -704,6 +941,9 @@ def execute_step(state: AutoClickerState, step: SequenceStep, step_num: int,
 
     if step.screenshot_only:
         return _execute_screenshot_step(state, step, step_num, total_steps, phase)
+
+    if step.boss_scan:
+        return _execute_boss_scan_step(state, step, step_num, total_steps, phase)
 
     if step.item_scan:
         return _execute_item_scan_step(state, step, step_num, total_steps, phase)

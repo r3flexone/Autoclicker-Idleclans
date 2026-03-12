@@ -13,7 +13,8 @@ from typing import Optional
 from .config import SEQUENCES_DIR, DEFAULT_MIN_CONFIDENCE
 from .models import (
     ClickPoint, ElseConfig, WaitCondition, SequenceStep, LoopPhase, Sequence,
-    ItemProfile, ItemSlot, ItemScanConfig, AutoClickerState
+    ItemProfile, ItemSlot, ItemScanConfig, BossProfile, BossScanConfig, AutoClickerState,
+    BOSS_ACTION_SCAN, SCAN_MODE_ALL
 )
 from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_tag, err, info, warn
 
@@ -21,6 +22,7 @@ from .utils import compact_json, sanitize_filename, save_tag, load_tag, delete_t
 logger = logging.getLogger("autoclicker")
 
 # Verzeichnisse
+BOSS_SCANS_DIR: str = "boss_scans"
 ITEM_SCANS_DIR: str = "item_scans"
 SLOTS_DIR: str = "slots"
 ITEMS_DIR: str = "items"
@@ -35,8 +37,8 @@ ITEM_PRESETS_DIR: str = os.path.join(ITEMS_DIR, "presets")
 
 def init_directories() -> None:
     """Erstellt alle benötigten Verzeichnisse."""
-    for folder in [ITEM_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR, SEQUENCE_SCREENSHOTS_DIR,
-                   TEMPLATES_DIR, SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
+    for folder in [ITEM_SCANS_DIR, BOSS_SCANS_DIR, SLOTS_DIR, ITEMS_DIR, SCREENSHOTS_DIR,
+                   SEQUENCE_SCREENSHOTS_DIR, TEMPLATES_DIR, SLOT_PRESETS_DIR, ITEM_PRESETS_DIR]:
         os.makedirs(folder, exist_ok=True)
 
 
@@ -94,6 +96,7 @@ def _step_to_dict(s: SequenceStep) -> dict:
             "wait_color": wc.color if wc else None,
             "wait_until_gone": wc.until_gone if wc else False,
             "item_scan": s.item_scan, "item_scan_mode": s.item_scan_mode,
+            "boss_scan": s.boss_scan,
             "wait_only": s.wait_only, "delay_max": s.delay_max,
             "key_press": s.key_press,
             "else_action": ec.action if ec else None,
@@ -235,6 +238,7 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                         wait_condition=wait_cond,
                         item_scan=s.get("item_scan"),
                         item_scan_mode=s.get("item_scan_mode", "all"),
+                        boss_scan=s.get("boss_scan"),
                         wait_only=s.get("wait_only", False),
                         delay_max=float(delay_max_raw) if delay_max_raw is not None else None,
                         key_press=s.get("key_press"),
@@ -426,6 +430,122 @@ def load_all_item_scans(state: AutoClickerState) -> None:
             state.item_scans[config.name] = config
     if state.item_scans:
         print(load_tag(f"{len(state.item_scans)} Item-Scan(s) geladen"))
+
+
+# =============================================================================
+# BOSS-SCAN PERSISTENZ
+# =============================================================================
+def ensure_boss_scans_dir() -> Path:
+    """Stellt sicher, dass der Boss-Scans-Ordner existiert."""
+    path = Path(BOSS_SCANS_DIR)
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def _boss_profile_to_dict(boss: BossProfile) -> dict:
+    """Serialisiert ein BossProfile zu einem Dict."""
+    return {
+        "name": boss.name,
+        "marker_colors": [list(c) for c in boss.marker_colors],
+        "template": boss.template,
+        "min_confidence": boss.min_confidence,
+        "action": boss.action,
+        "action_scan": boss.action_scan,
+        "action_scan_mode": boss.action_scan_mode,
+        "action_x": boss.action_x,
+        "action_y": boss.action_y,
+        "action_key": boss.action_key,
+        "action_delay": boss.action_delay,
+    }
+
+
+def _boss_profile_from_dict(data: dict) -> BossProfile:
+    """Deserialisiert ein BossProfile aus einem Dict."""
+    return BossProfile(
+        name=data["name"],
+        marker_colors=[tuple(c) for c in data.get("marker_colors", [])],
+        template=data.get("template"),
+        min_confidence=data.get("min_confidence", DEFAULT_MIN_CONFIDENCE),
+        action=data.get("action", BOSS_ACTION_SCAN),
+        action_scan=data.get("action_scan"),
+        action_scan_mode=data.get("action_scan_mode", SCAN_MODE_ALL),
+        action_x=data.get("action_x", 0),
+        action_y=data.get("action_y", 0),
+        action_key=data.get("action_key"),
+        action_delay=data.get("action_delay", 0),
+    )
+
+
+def save_boss_scan(config: BossScanConfig) -> None:
+    """Speichert eine Boss-Scan Konfiguration."""
+    ensure_boss_scans_dir()
+
+    data = {
+        "name": config.name,
+        "scan_region": list(config.scan_region),
+        "color_tolerance": config.color_tolerance,
+        "default_action": config.default_action,
+        "default_scan": config.default_scan,
+        "bosses": [_boss_profile_to_dict(b) for b in config.bosses],
+    }
+
+    filename = f"{sanitize_filename(config.name)}.json"
+    try:
+        with open(Path(BOSS_SCANS_DIR) / filename, "w", encoding="utf-8") as f:
+            f.write(compact_json(data))
+        print(save_tag(f"Boss-Scan '{config.name}' gespeichert in '{BOSS_SCANS_DIR}/'"))
+    except (IOError, OSError) as e:
+        print(err(f"Boss-Scan konnte nicht gespeichert werden: {e}"))
+
+
+def load_boss_scan_file(filepath: Path) -> Optional[BossScanConfig]:
+    """Lädt eine Boss-Scan Konfiguration."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+            bosses = [_boss_profile_from_dict(b) for b in data.get("bosses", [])]
+
+            return BossScanConfig(
+                name=data["name"],
+                scan_region=tuple(data["scan_region"]),
+                color_tolerance=data.get("color_tolerance", 30),
+                default_action=data.get("default_action", "skip"),
+                default_scan=data.get("default_scan"),
+                bosses=bosses,
+            )
+
+    except (json.JSONDecodeError, IOError, KeyError, TypeError) as e:
+        logger.error(f"Konnte {filepath} nicht laden: {e}")
+        return None
+
+
+def list_available_boss_scans() -> list[tuple[str, Path]]:
+    """Listet alle verfügbaren Boss-Scan Konfigurationen auf."""
+    scan_dir = Path(BOSS_SCANS_DIR)
+    if not scan_dir.exists():
+        return []
+
+    scans = []
+    for f in scan_dir.glob("*.json"):
+        try:
+            with open(f, "r", encoding="utf-8") as file:
+                data = json.load(file)
+                name = data.get("name", f.stem)
+                scans.append((name, f))
+        except (json.JSONDecodeError, IOError, KeyError, TypeError):
+            pass
+    return scans
+
+
+def load_all_boss_scans(state: AutoClickerState) -> None:
+    """Lädt alle Boss-Scan Konfigurationen."""
+    for name, path in list_available_boss_scans():
+        config = load_boss_scan_file(path)
+        if config:
+            state.boss_scans[config.name] = config
+    if state.boss_scans:
+        print(load_tag(f"{len(state.boss_scans)} Boss-Scan(s) geladen"))
 
 
 # =============================================================================

@@ -39,6 +39,16 @@ SCAN_MODE_BEST = "best"       # Nur 1 bestes Item total
 SCAN_MODE_EVERY = "every"     # Jedes gefundene Item
 VALID_SCAN_MODES = {SCAN_MODE_ALL, SCAN_MODE_BEST, SCAN_MODE_EVERY}
 
+# BossProfile.action
+BOSS_ACTION_SCAN = "item_scan"      # Item-Scan ausführen
+BOSS_ACTION_CLICK = "click"          # Punkt klicken
+BOSS_ACTION_KEY = "key"              # Taste drücken
+BOSS_ACTION_SKIP = "skip"            # Schritt überspringen
+BOSS_ACTION_SKIP_CYCLE = "skip_cycle"  # Zyklus überspringen
+BOSS_ACTION_RESTART = "restart"      # Sequenz neustarten
+VALID_BOSS_ACTIONS = {BOSS_ACTION_SCAN, BOSS_ACTION_CLICK, BOSS_ACTION_KEY,
+                      BOSS_ACTION_SKIP, BOSS_ACTION_SKIP_CYCLE, BOSS_ACTION_RESTART}
+
 
 # =============================================================================
 # DATENKLASSEN
@@ -96,6 +106,8 @@ class SequenceStep:
     key_press: Optional[str] = None      # z.B. "enter", "space", "f1"
     # Optional: Fallback/Else-Aktion wenn Bedingung fehlschlägt
     else_config: Optional[ElseConfig] = None
+    # Optional: Boss-Scan ausführen (erkennt Boss → bedingte Aktion)
+    boss_scan: Optional[str] = None      # Name der BossScanConfig
     # Optional: Screenshot machen (kein Klick, kein Scan)
     screenshot_only: bool = False        # True = nur Screenshot, kein Klick
     screenshot_region: Optional[tuple[int, int, int, int]] = None  # (x1,y1,x2,y2) oder None = Vollbild
@@ -110,6 +122,8 @@ class SequenceStep:
         if self.key_press:
             delay_str = self._delay_str()
             return f"{delay_str} → drücke Taste '{self.key_press}'{else_str}"
+        if self.boss_scan:
+            return f"BOSS-SCAN '{self.boss_scan}'{else_str}"
         if self.item_scan:
             mode_strs = {SCAN_MODE_ALL: "bestes/Kategorie", SCAN_MODE_BEST: "1 bestes", SCAN_MODE_EVERY: "JEDES"}
             mode_str = mode_strs.get(self.item_scan_mode, self.item_scan_mode)
@@ -264,6 +278,69 @@ class ItemScanConfig:
 
 
 # =============================================================================
+# BOSS-SCAN DATENKLASSEN
+# =============================================================================
+@dataclass
+class BossProfile:
+    """Ein Boss-Typ mit Erkennungsmethode und zugeordneter Aktion."""
+    name: str
+    marker_colors: list[tuple[int, int, int]] = field(default_factory=list)  # Farb-Marker
+    template: Optional[str] = None              # Template-Bild (in items/templates/)
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE  # Für Template-Matching
+    # Aktion wenn dieser Boss erkannt wird:
+    action: str = BOSS_ACTION_SCAN              # "item_scan", "click", "key", "skip", "skip_cycle", "restart"
+    action_scan: Optional[str] = None           # Name des Item-Scans (wenn action="item_scan")
+    action_scan_mode: str = SCAN_MODE_ALL       # Scan-Modus ("all", "best", "every")
+    action_x: int = 0                           # Klick-X (wenn action="click")
+    action_y: int = 0                           # Klick-Y (wenn action="click")
+    action_key: Optional[str] = None            # Taste (wenn action="key")
+    action_delay: float = 0                     # Verzögerung vor Aktion
+
+    def __str__(self) -> str:
+        detect_parts = []
+        if self.template:
+            detect_parts.append(f"Template: {self.template} (≥{self.min_confidence:.0%})")
+        if self.marker_colors:
+            colors_str = ", ".join([f"RGB{c}" for c in self.marker_colors[:2]])
+            if len(self.marker_colors) > 2:
+                colors_str += f" (+{len(self.marker_colors)-2})"
+            detect_parts.append(colors_str)
+        detect_str = " + ".join(detect_parts) if detect_parts else "keine Erkennung"
+
+        if self.action == BOSS_ACTION_SCAN:
+            mode_strs = {SCAN_MODE_ALL: "alle", SCAN_MODE_BEST: "bestes", SCAN_MODE_EVERY: "jedes"}
+            action_str = f"→ Scan '{self.action_scan}' ({mode_strs.get(self.action_scan_mode, self.action_scan_mode)})"
+        elif self.action == BOSS_ACTION_CLICK:
+            action_str = f"→ Klick ({self.action_x},{self.action_y})"
+        elif self.action == BOSS_ACTION_KEY:
+            action_str = f"→ Taste '{self.action_key}'"
+        elif self.action == BOSS_ACTION_SKIP:
+            action_str = "→ überspringen"
+        elif self.action == BOSS_ACTION_SKIP_CYCLE:
+            action_str = "→ Zyklus überspringen"
+        elif self.action == BOSS_ACTION_RESTART:
+            action_str = "→ Neustart"
+        else:
+            action_str = f"→ {self.action}"
+        return f"{self.name}: {detect_str} {action_str}"
+
+
+@dataclass
+class BossScanConfig:
+    """Konfiguration für Boss-Erkennung mit bedingten Aktionen."""
+    name: str
+    scan_region: tuple[int, int, int, int] = (0, 0, 100, 100)  # Feste Region wo der Boss erscheint
+    bosses: list[BossProfile] = field(default_factory=list)      # Erkennbare Bosse (Reihenfolge = Priorität)
+    color_tolerance: int = 30                                     # Farbtoleranz für Marker
+    default_action: str = BOSS_ACTION_SKIP                        # Fallback wenn kein Boss erkannt
+    default_scan: Optional[str] = None                            # Fallback Item-Scan
+
+    def __str__(self) -> str:
+        r = self.scan_region
+        return f"{self.name} ({len(self.bosses)} Bosse, Region ({r[0]},{r[1]})-({r[2]},{r[3]}))"
+
+
+# =============================================================================
 # AUTOCLICKER STATE
 # =============================================================================
 @dataclass
@@ -281,6 +358,9 @@ class AutoClickerState:
 
     # Item-Scan Konfigurationen (verknüpft Slots + Items)
     item_scans: dict[str, ItemScanConfig] = field(default_factory=dict)
+
+    # Boss-Scan Konfigurationen (Boss erkennen → bedingte Aktion)
+    boss_scans: dict[str, BossScanConfig] = field(default_factory=dict)
 
     # Aktive Sequenz
     active_sequence: Optional[Sequence] = None

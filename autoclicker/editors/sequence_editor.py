@@ -579,6 +579,7 @@ def _print_phase_help(full: bool = False) -> None:
         print("  Kurzübersicht (? / ?? = vollständige Hilfe):")
         print(cmd_hint("<Nr> <Zeit>", "Warte Xs, klicke Punkt    (z.B. '1 30')"))
         print(cmd_hint("scan <Name>", "Item-Scan ausführen"))
+        print(cmd_hint("boss <Name>", "Boss-Scan (erkennt Boss → Aktion)"))
         print(cmd_hint("key <Taste>", "Taste drücken              (z.B. 'key enter')"))
         print(cmd_hint("wait <Zeit>", "Nur warten, kein Klick"))
         print(cmd_hint("del <Nr>", "Schritt löschen"))
@@ -606,7 +607,8 @@ def _print_phase_help(full: bool = False) -> None:
     print(cmd_hint("scan <Name>", "Item-Scan: bestes pro Kategorie (Standard)"))
     print(cmd_hint("scan <Name> best", "Item-Scan: nur 1 Item total"))
     print(cmd_hint("scan <Name> every", "Item-Scan: alle Treffer (für Duplikate)"))
-    print("ELSE-Bedingungen (falls Scan/Pixel fehlschlägt):")
+    print(cmd_hint("boss <Name>", "Boss-Scan: Boss erkennen → bedingte Aktion"))
+    print("ELSE-Bedingungen (falls Scan/Pixel/Boss fehlschlägt):")
     print(cmd_hint("... else skip", "Schritt überspringen, weiter (z.B. 'scan items else skip')"))
     print(cmd_hint("... else skip_cycle", "Zyklus abbrechen, nächster startet (z.B. 'scan items else skip_cycle')"))
     print(cmd_hint("... else restart", "Sequenz neu starten (z.B. 'scan items else restart')"))
@@ -817,6 +819,38 @@ def edit_phase(state: AutoClickerState, steps: list[SequenceStep], phase_name: s
                     name=f"Scan:{scan_name}",
                     item_scan=scan_name,
                     item_scan_mode=mode
+                )
+
+                apply_else_to_step(step, else_parts, state)
+                add_step(step)
+                continue
+
+            # === BOSS-SCAN-BEFEHL ===
+            elif user_input.lower().startswith("boss "):
+                parts_raw = user_input.split()
+                # Parse else-Bedingung
+                else_parts = []
+                main_parts = []
+                in_else = False
+                for p in parts_raw[1:]:  # Skip "boss"
+                    if p.lower() == "else":
+                        in_else = True
+                        continue
+                    if in_else:
+                        else_parts.append(p)
+                    else:
+                        main_parts.append(p)
+
+                if not main_parts:
+                    print("  -> Format: boss <Name> [else ...]")
+                    continue
+
+                boss_name = main_parts[0]
+
+                step = SequenceStep(
+                    x=0, y=0, delay_before=0,
+                    name=f"Boss:{boss_name}",
+                    boss_scan=boss_name,
                 )
 
                 apply_else_to_step(step, else_parts, state)
