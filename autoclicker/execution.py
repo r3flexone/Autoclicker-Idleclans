@@ -5,6 +5,7 @@ Enthält die Worker-Funktion und Step-Ausführungslogik.
 
 import ctypes
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -84,29 +85,35 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
     return True
 
 
-def check_scheduled_triggers(loop_phases, scheduled_pending: dict, scheduled_last_executed: dict) -> None:
-    """Prüft ALLE zeitgesteuerten Phasen und markiert sie als 'pending'.
+def _schedule_watcher(loop_phases, scheduled_pending: dict, scheduled_last_executed: dict,
+                      stop_event: 'threading.Event', lock: 'threading.Lock') -> None:
+    """Background-Thread: Überwacht Uhrzeiten und setzt pending-Flags.
 
-    Wird bei jedem Schritt aufgerufen (Interrupt-Style), damit keine Zeit
-    verpasst werden kann. Die Phase wird aber erst an ihrer natürlichen
-    Position im Ablauf ausgeführt.
+    Prüft alle 10 Sekunden ob eine geplante Startzeit erreicht ist.
+    Setzt das pending-Flag thread-safe, damit die Phase an ihrer
+    natürlichen Position im Ablauf ausgeführt wird.
     """
-    now = datetime.now()
-    current_h, current_m = now.hour, now.minute
-    today = now.strftime('%Y-%m-%d')
+    while not stop_event.is_set():
+        now = datetime.now()
+        current_h, current_m = now.hour, now.minute
+        today = now.strftime('%Y-%m-%d')
 
-    for lp in loop_phases:
-        if not lp.scheduled_start:
-            continue
+        for lp in loop_phases:
+            if not lp.scheduled_start:
+                continue
 
-        h, m = map(int, lp.scheduled_start.split(":"))
+            h, m = map(int, lp.scheduled_start.split(":"))
 
-        # Zeit erreicht? → als pending markieren (einmal pro Tag)
-        if current_h == h and current_m == m:
-            tracking_key = f"{lp.scheduled_start}_{today}"
-            if scheduled_last_executed.get(lp.name) != tracking_key:
-                scheduled_last_executed[lp.name] = tracking_key
-                scheduled_pending[lp.name] = True
+            if current_h == h and current_m == m:
+                tracking_key = f"{lp.scheduled_start}_{today}"
+                with lock:
+                    if scheduled_last_executed.get(lp.name) != tracking_key:
+                        scheduled_last_executed[lp.name] = tracking_key
+                        scheduled_pending[lp.name] = True
+                        print(col(f"\n[TIMER] {lp.name}: Startzeit {lp.scheduled_start} erreicht! (wird bei nächster Position ausgeführt)", "green"), flush=True)
+
+        # Alle 10 Sekunden prüfen (reicht für Minuten-Genauigkeit)
+        stop_event.wait(10.0)
 
 
 def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
@@ -1079,9 +1086,22 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
 
-    # Tracking für zeitgesteuerte Loop-Phasen
-    scheduled_last_executed = {}  # Verhindert doppelte Ausführung pro Tag/Minute
-    scheduled_pending = {}        # Pending-Flags: {phase_name: True} wenn Zeit erreicht
+    # Zeitgesteuerter Background-Thread (nur wenn nötig)
+    scheduled_pending = {}
+    scheduled_last_executed = {}
+    schedule_lock = threading.Lock()
+    has_scheduled = any(lp.scheduled_start for lp in sequence.loop_phases)
+    schedule_thread = None
+    if has_scheduled:
+        schedule_thread = threading.Thread(
+            target=_schedule_watcher,
+            args=(sequence.loop_phases, scheduled_pending, scheduled_last_executed,
+                  state.stop_event, schedule_lock),
+            daemon=True
+        )
+        schedule_thread.start()
+        scheduled_names = [f"'{lp.name}' um {lp.scheduled_start}" for lp in sequence.loop_phases if lp.scheduled_start]
+        print(col(f"[TIMER] Zeitsteuerung aktiv: {', '.join(scheduled_names)}", "yellow"))
 
     # Äußere Schleife: Ermöglicht kompletten Neustart (inkl. INIT) bei restart_event
     cycle_count = 0
@@ -1131,9 +1151,6 @@ def sequence_worker(state: AutoClickerState) -> None:
 
             # LOOP-Phasen
             if has_loops and not state.stop_event.is_set():
-                # Zeitgesteuerte Phasen prüfen (Interrupt-Style: vor jedem Zyklus)
-                check_scheduled_triggers(sequence.loop_phases, scheduled_pending, scheduled_last_executed)
-
                 for loop_phase in sequence.loop_phases:
                     if state.stop_event.is_set() or state.quit_event.is_set():
                         break
@@ -1142,17 +1159,14 @@ def sequence_worker(state: AutoClickerState) -> None:
                     if total_steps == 0:
                         continue
 
-                    # Zeitgesteuerte Phase: nur ausführen wenn pending-Flag gesetzt
+                    # Zeitgesteuerte Phase: nur ausführen wenn pending-Flag gesetzt (vom Timer-Thread)
                     if loop_phase.scheduled_start:
-                        # Nochmal prüfen (falls Zeit während vorherigem Loop erreicht wurde)
-                        check_scheduled_triggers(sequence.loop_phases, scheduled_pending, scheduled_last_executed)
-                        if not scheduled_pending.get(loop_phase.name):
+                        with schedule_lock:
+                            is_pending = scheduled_pending.pop(loop_phase.name, False)
+                        if not is_pending:
                             if debug:
                                 print(dbg(f"'{loop_phase.name}' übersprungen (wartet auf {loop_phase.scheduled_start})"))
                             continue
-                        # Pending-Flag verbrauchen
-                        del scheduled_pending[loop_phase.name]
-                        print(col(f"\n[{loop_phase.name}] Startzeit {loop_phase.scheduled_start} erreicht!", "green"))
 
                     print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
 
@@ -1166,9 +1180,6 @@ def sequence_worker(state: AutoClickerState) -> None:
                         for i, step in enumerate(loop_phase.steps):
                             if state.stop_event.is_set() or state.quit_event.is_set():
                                 break
-
-                            # Zeitgesteuerte Phasen bei jedem Schritt prüfen (Interrupt-Check)
-                            check_scheduled_triggers(sequence.loop_phases, scheduled_pending, scheduled_last_executed)
 
                             phase_label = f"{loop_phase.name} #{repeat_num}/{loop_phase.repeat}"
                             if not execute_step(state, step, i + 1, total_steps, phase_label):
