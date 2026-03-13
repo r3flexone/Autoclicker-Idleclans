@@ -438,6 +438,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
 
                 # Geplante Startzeit abfragen
                 scheduled_start = None
+                print(hint("  (Phase wird nur zur angegebenen Uhrzeit ausgeführt, sonst übersprungen)"))
                 time_input = safe_input(f"  Startzeit? (z.B. '12:30', Enter = sofort): ").strip()
                 if time_input:
                     scheduled_start = _parse_time_input(time_input)

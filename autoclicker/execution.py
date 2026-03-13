@@ -84,48 +84,33 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
     return True
 
 
-def wait_for_scheduled_time(state: AutoClickerState, target_time: str, phase_name: str) -> bool:
-    """Wartet bis zur geplanten Uhrzeit. Failsafe wird NICHT geprüft.
+def is_scheduled_time_reached(target_time: str, last_executed: dict, phase_name: str) -> bool:
+    """Prüft ob die geplante Uhrzeit erreicht ist (±1 Minute Fenster).
 
-    Returns: True wenn Zeit erreicht, False wenn gestoppt.
+    Verhindert doppelte Ausführung innerhalb derselben Minute.
+    Failsafe wird NICHT geprüft, da die Phase einfach übersprungen wird.
+
+    Args:
+        target_time: Uhrzeit im Format "HH:MM"
+        last_executed: Dict {phase_name: "HH:MM_YYYY-MM-DD"} für Tracking
+        phase_name: Name der Phase (für Tracking-Key)
+
+    Returns: True wenn Zeit erreicht und noch nicht ausgeführt.
     """
     h, m = map(int, target_time.split(":"))
     now = datetime.now()
-    target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    current_h, current_m = now.hour, now.minute
 
-    # Wenn die Zeit heute schon vorbei ist, nächsten Tag nehmen
-    if target <= now:
-        from datetime import timedelta
-        target = target + timedelta(days=1)
-
-    remaining = (target - datetime.now()).total_seconds()
-    if remaining <= 0:
+    # Prüfe ob aktuelle Zeit im Fenster liegt (exakte Minute)
+    if current_h == h and current_m == m:
+        # Tracking: nicht nochmal in derselben Minute ausführen
+        tracking_key = f"{target_time}_{now.strftime('%Y-%m-%d')}"
+        if last_executed.get(phase_name) == tracking_key:
+            return False  # Bereits in dieser Minute ausgeführt
+        last_executed[phase_name] = tracking_key
         return True
 
-    print(col(f"\n[{phase_name}] Warte bis {target_time} Uhr ({format_duration(remaining)} verbleibend)...", "yellow"))
-
-    last_remaining = -1
-    while remaining > 0:
-        if state.stop_event.is_set() or state.quit_event.is_set():
-            return False
-
-        if not wait_while_paused(state, f"Warte bis {target_time}"):
-            return False
-
-        current_remaining = int(remaining)
-        if current_remaining != last_remaining and current_remaining % 60 == 0 and current_remaining > 0:
-            clear_line()
-            print(col(f"[{phase_name}] Warte bis {target_time} Uhr ({format_duration(remaining)})...", "yellow"), end="", flush=True)
-            last_remaining = current_remaining
-
-        wait_time = min(5.0, remaining)
-        if state.stop_event.wait(wait_time):
-            return False
-        remaining = (target - datetime.now()).total_seconds()
-
-    clear_line()
-    print(col(f"[{phase_name}] Startzeit {target_time} erreicht!", "green"))
-    return True
+    return False
 
 
 def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
@@ -1098,6 +1083,9 @@ def sequence_worker(state: AutoClickerState) -> None:
         state.session_screenshots_dir = None  # Wird beim ersten Screenshot-Schritt angelegt
         state.finish_event.clear()
 
+    # Tracking für zeitgesteuerte Loop-Phasen (verhindert doppelte Ausführung)
+    scheduled_last_executed = {}
+
     # Äußere Schleife: Ermöglicht kompletten Neustart (inkl. INIT) bei restart_event
     cycle_count = 0
     do_restart = True  # Erster Durchlauf startet immer
@@ -1154,10 +1142,13 @@ def sequence_worker(state: AutoClickerState) -> None:
                     if total_steps == 0:
                         continue
 
-                    # Geplante Startzeit: Warten bis Uhrzeit erreicht (Failsafe deaktiviert)
+                    # Zeitgesteuerte Phase: nur ausführen wenn Uhrzeit erreicht, sonst überspringen
                     if loop_phase.scheduled_start:
-                        if not wait_for_scheduled_time(state, loop_phase.scheduled_start, loop_phase.name):
-                            break
+                        if not is_scheduled_time_reached(loop_phase.scheduled_start, scheduled_last_executed, loop_phase.name):
+                            if debug:
+                                print(dbg(f"'{loop_phase.name}' übersprungen (wartet auf {loop_phase.scheduled_start})"))
+                            continue
+                        print(col(f"\n[{loop_phase.name}] Startzeit {loop_phase.scheduled_start} erreicht!", "green"))
 
                     print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
 
