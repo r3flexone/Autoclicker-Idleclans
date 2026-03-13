@@ -84,6 +84,50 @@ def wait_with_pause_skip(state: AutoClickerState, seconds: float, phase: str, st
     return True
 
 
+def wait_for_scheduled_time(state: AutoClickerState, target_time: str, phase_name: str) -> bool:
+    """Wartet bis zur geplanten Uhrzeit. Failsafe wird NICHT geprüft.
+
+    Returns: True wenn Zeit erreicht, False wenn gestoppt.
+    """
+    h, m = map(int, target_time.split(":"))
+    now = datetime.now()
+    target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+    # Wenn die Zeit heute schon vorbei ist, nächsten Tag nehmen
+    if target <= now:
+        from datetime import timedelta
+        target = target + timedelta(days=1)
+
+    remaining = (target - datetime.now()).total_seconds()
+    if remaining <= 0:
+        return True
+
+    print(col(f"\n[{phase_name}] Warte bis {target_time} Uhr ({format_duration(remaining)} verbleibend)...", "yellow"))
+
+    last_remaining = -1
+    while remaining > 0:
+        if state.stop_event.is_set() or state.quit_event.is_set():
+            return False
+
+        if not wait_while_paused(state, f"Warte bis {target_time}"):
+            return False
+
+        current_remaining = int(remaining)
+        if current_remaining != last_remaining and current_remaining % 60 == 0 and current_remaining > 0:
+            clear_line()
+            print(col(f"[{phase_name}] Warte bis {target_time} Uhr ({format_duration(remaining)})...", "yellow"), end="", flush=True)
+            last_remaining = current_remaining
+
+        wait_time = min(5.0, remaining)
+        if state.stop_event.wait(wait_time):
+            return False
+        remaining = (target - datetime.now()).total_seconds()
+
+    clear_line()
+    print(col(f"[{phase_name}] Startzeit {target_time} erreicht!", "green"))
+    return True
+
+
 def execute_else_action(state: AutoClickerState, step: SequenceStep, phase: str,
                         step_num: int, total_steps: int) -> bool:
     """Führt die Else-Aktion eines Schritts aus. Gibt False zurück wenn abgebrochen."""
@@ -1109,6 +1153,11 @@ def sequence_worker(state: AutoClickerState) -> None:
                     total_steps = len(loop_phase.steps)
                     if total_steps == 0:
                         continue
+
+                    # Geplante Startzeit: Warten bis Uhrzeit erreicht (Failsafe deaktiviert)
+                    if loop_phase.scheduled_start:
+                        if not wait_for_scheduled_time(state, loop_phase.scheduled_start, loop_phase.name):
+                            break
 
                     print(col(f"\n[{loop_phase.name}] Starte ({loop_phase.repeat}x) | {cycle_str}", "magenta"))
 

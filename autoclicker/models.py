@@ -183,12 +183,14 @@ class LoopPhase:
     name: str
     steps: list[SequenceStep] = field(default_factory=list)
     repeat: int = 1  # Wie oft diese Phase wiederholt wird
+    scheduled_start: Optional[str] = None  # Startzeit z.B. "12:30" – wartet bis diese Uhrzeit
 
     def __str__(self) -> str:
         step_count = len(self.steps)
         pixel_triggers = sum(1 for s in self.steps if s.wait_condition)
         trigger_str = f" [Farb: {pixel_triggers}]" if pixel_triggers > 0 else ""
-        return f"{self.name}: {step_count} Schritte x{self.repeat}{trigger_str}"
+        time_str = f" [Start: {self.scheduled_start}]" if self.scheduled_start else ""
+        return f"{self.name}: {step_count} Schritte x{self.repeat}{trigger_str}{time_str}"
 
 
 @dataclass

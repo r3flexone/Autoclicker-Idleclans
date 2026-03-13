@@ -3,6 +3,7 @@ Sequenz-Editor für den Autoclicker.
 Ermöglicht das Erstellen und Bearbeiten von Klick-Sequenzen.
 """
 
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -212,7 +213,7 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
         print(f"\n--- Bearbeite Sequenz: {existing.name} ---")
         seq_name = existing.name
         init_steps = list(existing.init_steps)
-        loop_phases = [LoopPhase(lp.name, list(lp.steps), lp.repeat) for lp in existing.loop_phases]
+        loop_phases = [LoopPhase(lp.name, list(lp.steps), lp.repeat, lp.scheduled_start) for lp in existing.loop_phases]
         end_steps = list(existing.end_steps)
         total_cycles = existing.total_cycles
     else:
@@ -353,6 +354,17 @@ def edit_sequence(state: AutoClickerState, existing: Optional[Sequence]) -> None
     print()
 
 
+def _parse_time_input(time_str: str) -> Optional[str]:
+    """Parst eine Uhrzeit-Eingabe (z.B. '12:30', '9:05') und gibt 'HH:MM' zurück oder None."""
+    match = re.match(r'^(\d{1,2}):(\d{2})$', time_str.strip())
+    if match:
+        h, m = int(match.group(1)), int(match.group(2))
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+    print(err(f"  Ungültige Zeit '{time_str}' – Format: HH:MM (z.B. 12:30)"))
+    return None
+
+
 def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> Optional[list[LoopPhase]]:
     """Bearbeitet mehrere Loop-Phasen.
 
@@ -373,6 +385,7 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
         print("  del <Nr>       - Loop-Phase löschen")
         print("  del <Nr>-<Nr>  - Bereich löschen (z.B. del 1-3)")
         print("  del all        - ALLE Loop-Phasen löschen")
+        print("  time <Nr>      - Startzeit setzen/ändern (z.B. 'time 1')")
         print("  show / s       - Alle Loop-Phasen anzeigen")
         print(f"  help / ? | done / d | cancel / {cancel_hint()}")
         print("-" * 60)
@@ -423,8 +436,15 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                 except ValueError:
                     repeat = 1
 
-                loop_phases.append(LoopPhase(loop_name, steps, repeat))
-                print(f"  + {loop_name} hinzugefügt ({len(steps)} Schritte x{repeat})")
+                # Geplante Startzeit abfragen
+                scheduled_start = None
+                time_input = safe_input(f"  Startzeit? (z.B. '12:30', Enter = sofort): ").strip()
+                if time_input:
+                    scheduled_start = _parse_time_input(time_input)
+
+                loop_phases.append(LoopPhase(loop_name, steps, repeat, scheduled_start=scheduled_start))
+                time_info = f", Start: {scheduled_start}" if scheduled_start else ""
+                print(f"  + {loop_name} hinzugefügt ({len(steps)} Schritte x{repeat}{time_info})")
                 continue
 
             elif user_input.startswith("edit "):
@@ -443,6 +463,13 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                                 lp.repeat = max(1, int(repeat_input))
                         except ValueError:
                             pass
+                        # Geplante Startzeit bearbeiten
+                        current_time = lp.scheduled_start or "sofort"
+                        time_input = safe_input(f"  Startzeit (aktuell {current_time}, Enter = behalten, '0' = entfernen): ").strip()
+                        if time_input == "0":
+                            lp.scheduled_start = None
+                        elif time_input:
+                            lp.scheduled_start = _parse_time_input(time_input)
                         print(f"  + {lp.name} aktualisiert")
                     else:
                         print(f"  -> Ungültige Nr! Verfügbar: 1-{len(loop_phases)}")
@@ -492,8 +519,29 @@ def edit_loop_phases(state: AutoClickerState, loop_phases: list[LoopPhase]) -> O
                     print("  -> Format: del <Nr>")
                 continue
 
+            elif user_input.startswith("time "):
+                try:
+                    time_num = int(user_input[5:])
+                    if 1 <= time_num <= len(loop_phases):
+                        lp = loop_phases[time_num - 1]
+                        current_time = lp.scheduled_start or "sofort"
+                        time_input = safe_input(f"  Startzeit für '{lp.name}' (aktuell {current_time}, '0' = entfernen): ").strip()
+                        if time_input == "0":
+                            lp.scheduled_start = None
+                            print(f"  + Startzeit für '{lp.name}' entfernt")
+                        elif time_input:
+                            parsed = _parse_time_input(time_input)
+                            if parsed:
+                                lp.scheduled_start = parsed
+                                print(f"  + '{lp.name}' startet ab jetzt um {parsed}")
+                    else:
+                        print(f"  -> Ungültige Nr! Verfügbar: 1-{len(loop_phases)}")
+                except ValueError:
+                    print("  -> Format: time <Nr>")
+                continue
+
             else:
-                _known = ["add", "edit", "del", "show", "help", "done", "cancel"]
+                _known = ["add", "edit", "del", "show", "time", "help", "done", "cancel"]
                 suggestion = suggest_command(user_input, _known)
                 print(f"  -> Unbekannter Befehl.{suggestion} {hint('(? = Hilfe)')}")
 

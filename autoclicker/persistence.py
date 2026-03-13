@@ -117,7 +117,8 @@ def _sequence_to_dict(seq: Sequence) -> dict:
             {
                 "name": lp.name,
                 "repeat": lp.repeat,
-                "steps": [_step_to_dict(s) for s in lp.steps]
+                "steps": [_step_to_dict(s) for s in lp.steps],
+                **({"scheduled_start": lp.scheduled_start} if lp.scheduled_start else {})
             }
             for lp in seq.loop_phases
         ],
@@ -264,7 +265,8 @@ def load_sequence_file(filepath: Path) -> Optional[Sequence]:
                     lp = LoopPhase(
                         name=lp_data.get("name", "Loop"),
                         steps=parse_steps(lp_data.get("steps", [])),
-                        repeat=lp_data.get("repeat", 1)
+                        repeat=lp_data.get("repeat", 1),
+                        scheduled_start=lp_data.get("scheduled_start")
                     )
                     loop_phases.append(lp)
                 total_cycles = data.get("total_cycles", 1)
