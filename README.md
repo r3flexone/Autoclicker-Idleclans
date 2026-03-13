@@ -19,6 +19,7 @@ Ein Windows-Autoclicker mit Sequenz-Unterstützung, automatischer Item-Erkennung
 - **Template-Matching**: Items per Screenshot erkennen (OpenCV)
 - **Preset-System**: Slots und Items als benannte Presets speichern
 - **Bedingte Logik**: ELSE-Aktionen wenn Scan/Pixel-Trigger fehlschlägt
+- **Zeitgesteuerte Loops**: Loop-Phasen nur zu bestimmter Uhrzeit ausführen (z.B. Loop 3 nur um 12:30)
 - **Pause/Resume**: Sequenz pausieren ohne Fortschritt zu verlieren
 - **Skip**: Aktuelle Wartezeit überspringen
 - **Statistiken**: Laufzeit, Klicks, Items gefunden
@@ -238,6 +239,45 @@ Eine Sequenz besteht aus drei Phasen:
 2. **LOOP**: Wird wiederholt (konfigurierbare Anzahl, mehrere Loops möglich)
 3. **END**: Einmalig nach allen Zyklen (optional)
 
+### Loop-Phasen
+
+Jede Sequenz kann mehrere Loop-Phasen haben, die nacheinander durchlaufen werden. Beim Erstellen einer Loop-Phase werden Name und Wiederholungen abgefragt.
+
+**Befehle im Loop-Editor:**
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `add` | Neue Loop-Phase hinzufügen |
+| `edit <Nr>` | Schritte einer Loop-Phase bearbeiten |
+| `del <Nr>` | Loop-Phase löschen |
+| `time <Nr>` | Startzeit für Loop-Phase setzen/entfernen (z.B. `12:30`) |
+| `show` | Alle Loop-Phasen anzeigen |
+| `done` | Weiter zur END-Phase |
+
+### Zeitgesteuerte Loops
+
+Loop-Phasen können an eine bestimmte **Uhrzeit** gebunden werden (z.B. "Loop 3 startet nur um 12:30"):
+
+- **Normale Loops** (ohne Zeit) laufen im Zyklus wie gewohnt
+- **Zeitgesteuerte Loops** werden übersprungen, bis ihre Startzeit erreicht ist
+- Die Zeit wird **nie verpasst**: Ein Hintergrund-Thread überwacht die Uhr und setzt ein Pending-Flag
+- Die Ausführung erfolgt an der **natürlichen Position** im Zyklus (nicht als Interrupt)
+- Der **Failsafe-Timer** wird durch das Warten nicht ausgelöst
+
+**Einrichten:**
+- Beim Erstellen: `Startzeit (HH:MM, leer = immer):` eingeben
+- Nachträglich: `time <Nr>` im Loop-Editor (z.B. `time 3`)
+- Entfernen: `time <Nr>` und dann `0` eingeben
+
+**Beispiel:**
+```
+Loop 1: Ressourcen sammeln x5         ← läuft immer
+Loop 2: Items verkaufen x3            ← läuft immer
+Loop 3: Boss-Fight x1 [Start: 12:30] ← nur um 12:30
+```
+
+Loops 1 und 2 laufen im Zyklus weiter. Wenn 12:30 erreicht wird, führt der nächste Zyklus auch Loop 3 aus – danach wird Loop 3 wieder übersprungen bis zum nächsten Tag um 12:30.
+
 ### Editor-Befehle
 
 | Befehl | Beschreibung |
@@ -301,6 +341,30 @@ Zyklen: 10                 # 10 Durchläufe
 [END: 1] > key enter       # Enter drücken
 [END: 2] > done
 ```
+
+### Beispiel mit zeitgesteuertem Loop
+
+```
+[INIT: 0] > 1 5            # Login
+[INIT: 1] > done
+
+[Loop 1: Sammeln x5]       # Läuft immer (5 Wiederholungen)
+  > 2 30-45                 # Ressourcen sammeln
+  > 3 0                     # Inventar öffnen
+  > done
+
+[Loop 2: Boss x1 [Start: 12:30]]  # Nur um 12:30 Uhr
+  > 4 pixel                 # Warte auf Boss-Spawn
+  > 5 0                     # Angreifen
+  > done
+
+Zyklen: 100
+
+[END: 0] > 6 0              # Logout
+[END: 1] > done
+```
+
+Loop 1 läuft in jedem Zyklus. Loop 2 wird übersprungen bis 12:30 erreicht ist – dann wird es einmal ausgeführt und danach wieder übersprungen bis zum nächsten Tag.
 
 ## Sequenzen zwischen PCs teilen
 
@@ -709,6 +773,20 @@ main.py                      Einstiegspunkt, Event-Loop
 │  - skip_event    │     │  - pause_event → Warten          │
 │  - quit_event    │     │  - skip_event → Wartezeit skip   │
 └──────────────────┘     └──────────────────────────────────┘
+                               │
+                               │ (nur bei zeitgesteuerten Loops)
+                               ▼
+                         ┌──────────────────────────────────┐
+                         │       Timer Thread (Daemon)      │
+                         │                                  │
+                         │  _schedule_watcher():             │
+                         │  - Prüft alle 10s die Uhrzeit    │
+                         │  - Setzt pending-Flag wenn Zeit  │
+                         │    erreicht (thread-safe)         │
+                         │  - Verhindert Doppel-Ausführung   │
+                         │    pro Tag                        │
+                         │  - Stoppt mit stop_event          │
+                         └──────────────────────────────────┘
 ```
 
 ### Abhängigkeiten
@@ -759,6 +837,10 @@ python tools/slot_tester.py
 ## Changelog
 
 ### Neueste Änderungen
+
+- **Zeitgesteuerte Loops**: Loop-Phasen können an eine Uhrzeit gebunden werden (z.B. `12:30`). Ein Daemon-Thread überwacht die Zeit im Hintergrund und setzt ein Pending-Flag – normale Loops laufen weiter, der zeitgesteuerte Loop wird nur an seiner natürlichen Position ausgeführt. Neuer `time <Nr>` Befehl im Loop-Editor.
+
+### Vorherige Änderungen
 
 - **Notbremse (Consecutive Timeout)**: Stoppt automatisch nach X aufeinanderfolgenden Timeouts (`max_consecutive_timeouts`). Drei Eskalationsstufen: `stop`, `quit`, `exit` (Prozess killen)
 - **Config-Validierung**: Ungültige Werte in `config.json` werden automatisch korrigiert mit Warnung (z.B. negative Timeouts, unbekannte Aktions-Strings)
