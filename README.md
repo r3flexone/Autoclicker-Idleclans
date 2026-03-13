@@ -76,23 +76,40 @@ Im Sequenz-Editor:
 
 ## Hotkeys
 
+### Aufnahme
+
 | Hotkey | Funktion |
 |--------|----------|
-| `CTRL+ALT+A` | Aktuelle Mausposition als Punkt speichern |
+| `CTRL+ALT+A` | Mausposition als Punkt speichern |
 | `CTRL+ALT+U` | Letzten Punkt entfernen (Undo) |
 | `CTRL+ALT+C` | Alle Punkte löschen |
-| `CTRL+ALT+X` | Factory Reset (ALLES löschen - wie frisch von GitHub) |
-| `CTRL+ALT+E` | Sequenz-Editor öffnen |
-| `CTRL+ALT+N` | Item-Scan System (Slots, Items, Scans) |
+
+### Editoren
+
+| Hotkey | Funktion |
+|--------|----------|
+| `CTRL+ALT+E` | Sequenz-Editor (Punkte + Zeiten verknüpfen) |
+| `CTRL+ALT+N` | Item-Scan Editor (Items erkennen + vergleichen) |
 | `CTRL+ALT+L` | Gespeicherte Sequenz laden |
-| `CTRL+ALT+P` | Punkte anzeigen/testen/umbenennen |
-| `CTRL+ALT+T` | Farb-Analysator |
-| `CTRL+ALT+S` | Start/Stop (öffnet Lade-Menü wenn keine Sequenz geladen, startet automatisch nach Laden) |
-| `CTRL+ALT+G` | Pause/Resume (während Sequenz läuft) |
+| `CTRL+ALT+P` | Punkte testen/anzeigen/umbenennen |
+| `CTRL+ALT+T` | Farb-Analysator (für Bilderkennung) |
+
+### Ausführung
+
+| Hotkey | Funktion |
+|--------|----------|
+| `CTRL+ALT+S` | Start/Stop der aktiven Sequenz |
+| `CTRL+ALT+F` | Sanft beenden (Zyklus abschließen, dann END + Stop) |
+| `CTRL+ALT+G` | Pause/Resume |
 | `CTRL+ALT+K` | Skip (aktuelle Wartezeit überspringen) |
-| `CTRL+ALT+F` | Sanfter Abbruch (aktuellen Zyklus abschließen, dann END + Stop) |
 | `CTRL+ALT+W` | Quick-Switch (schnell Sequenz wechseln) |
-| `CTRL+ALT+Z` | Zeitplan (Sequenz zu bestimmter Zeit starten) |
+| `CTRL+ALT+Z` | Zeitplan (Start zu bestimmter Zeit) |
+
+### System
+
+| Hotkey | Funktion |
+|--------|----------|
+| `CTRL+ALT+X` | Factory Reset (Punkte + Sequenzen) |
 | `CTRL+ALT+Q` | Programm beenden |
 
 ## Item-Scan System (`CTRL+ALT+N`)
